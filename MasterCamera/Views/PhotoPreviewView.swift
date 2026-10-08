@@ -141,18 +141,21 @@ struct PhotoPreviewView: View {
 
     @ViewBuilder
     private var debugSummary: some View {
-        VStack(spacing: 8) {
-            if let analysis = photo.analysis {
-                debugPill(analysis.summaryText)
-            }
+        let diagnostics = PhotoDiagnostics(photo: photo)
 
-            if let decision = photo.decision {
-                debugPill(decision.summaryText, lineLimit: 2)
+        if diagnostics.isEmpty {
+            debugPill("暂无成片诊断信息")
+        } else {
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 12) {
+                    ForEach(diagnostics.sections) { section in
+                        diagnosticSection(section)
+                    }
+                }
+                .padding(14)
             }
-
-            if let qualityCheck = photo.qualityCheck {
-                debugPill(qualityCheck.summaryText, color: qualityCheck.statusTextColor)
-            }
+            .frame(maxHeight: 280)
+            .background(.black.opacity(0.58), in: RoundedRectangle(cornerRadius: 8))
         }
     }
 
@@ -169,6 +172,30 @@ struct PhotoPreviewView: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
             .background(.black.opacity(0.5), in: RoundedRectangle(cornerRadius: 8))
+    }
+
+    private func diagnosticSection(_ section: PhotoDiagnosticSection) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(section.title)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.white)
+
+            VStack(alignment: .leading, spacing: 6) {
+                ForEach(section.items) { item in
+                    HStack(alignment: .top, spacing: 10) {
+                        Text(item.label)
+                            .font(.caption2.weight(.medium))
+                            .foregroundStyle(.white.opacity(0.58))
+                            .frame(width: 62, alignment: .leading)
+
+                        Text(item.value)
+                            .font(.caption2)
+                            .foregroundStyle(.white.opacity(0.86))
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+        }
     }
 
     private func versionBadge(_ text: String) -> some View {
@@ -188,67 +215,6 @@ private extension SaveState {
             return .white
         case .failed:
             return .red
-        }
-    }
-}
-
-private extension QualityCheckResult {
-    var statusTextColor: Color {
-        switch status {
-        case .passed:
-            return .white.opacity(0.86)
-        case .warning:
-            return .yellow
-        case .failed:
-            return .red
-        }
-    }
-}
-
-private extension PhotoAnalysis {
-    var summaryText: String {
-        let faces = faceCount == 1 ? "1 张人脸" : "\(faceCount) 张人脸"
-        return "\(exposureProfile.title) · \(contrastProfile.title) · \(colorCast.title) · \(faces)"
-    }
-}
-
-private extension ExposureProfile {
-    var title: String {
-        switch self {
-        case .underexposed:
-            return "偏暗"
-        case .balanced:
-            return "曝光均衡"
-        case .overexposed:
-            return "偏亮"
-        }
-    }
-}
-
-private extension ContrastProfile {
-    var title: String {
-        switch self {
-        case .flat:
-            return "层次偏平"
-        case .balanced:
-            return "对比均衡"
-        case .highContrast:
-            return "高对比"
-        }
-    }
-}
-
-private extension ColorCast {
-    var title: String {
-        switch self {
-        case .cool:
-            return "偏冷"
-        case .neutral:
-            return "色彩自然"
-        case .warm:
-            return "偏暖"
-        case .green:
-            return "偏绿"
         }
     }
 }

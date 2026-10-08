@@ -196,6 +196,21 @@ GitHub Actions 云端 Xcode 编译已经通过。
 
 - `MasterCamera/Views/PhotoPreviewView.swift`
 
+### Phase 13：成片诊断面板
+
+已完成：
+
+- 将分析、决策、质检信息整理成结构化诊断模型
+- 预览页信息按钮展示完整中文诊断
+- 显示曝光、亮度、层次、对比、色彩、人脸数量
+- 显示 AI 摄影决策意图和每个处理动作
+- 显示成片质检状态、问题、安全回退和成片测量值
+
+主要文件：
+
+- `MasterCamera/Models/PhotoDiagnostics.swift`
+- `MasterCamera/Views/PhotoPreviewView.swift`
+
 ### 调参配置骨架
 
 已完成：
@@ -278,7 +293,8 @@ PhotoLibraryManager
 
 但从以下任务开始，就应该进入 Mac / Xcode / 真机验证：
 
-- Phase 13 高级光照
+- Phase 14 高级光照
+- 复杂局部光照模拟
 - 更复杂的人脸 / 天空 / 主体 mask
 - 人脸补光强度调参
 - 输出效果审美调参

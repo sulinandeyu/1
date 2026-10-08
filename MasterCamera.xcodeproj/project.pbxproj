@@ -33,6 +33,7 @@
 		A00000000000000000000019 /* ProcessingState.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000039 /* ProcessingState.swift */; };
 		A0000000000000000000001A /* SaveState.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000003A /* SaveState.swift */; };
 		A0000000000000000000001B /* ProcessingConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000003B /* ProcessingConfiguration.swift */; };
+		A0000000000000000000001C /* PhotoDiagnostics.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000003C /* PhotoDiagnostics.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -64,6 +65,7 @@
 		A00000000000000000000039 /* ProcessingState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProcessingState.swift; sourceTree = "<group>"; };
 		A0000000000000000000003A /* SaveState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SaveState.swift; sourceTree = "<group>"; };
 		A0000000000000000000003B /* ProcessingConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProcessingConfiguration.swift; sourceTree = "<group>"; };
+		A0000000000000000000003C /* PhotoDiagnostics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoDiagnostics.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -140,6 +142,7 @@
 				A00000000000000000000027 /* CameraState.swift */,
 				A00000000000000000000039 /* ProcessingState.swift */,
 				A0000000000000000000003A /* SaveState.swift */,
+				A0000000000000000000003C /* PhotoDiagnostics.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -323,6 +326,7 @@
 				A00000000000000000000019 /* ProcessingState.swift in Sources */,
 				A0000000000000000000001A /* SaveState.swift in Sources */,
 				A0000000000000000000001B /* ProcessingConfiguration.swift in Sources */,
+				A0000000000000000000001C /* PhotoDiagnostics.swift in Sources */,
 				A0000000000000000000000C /* PhotoLibraryManager.swift in Sources */,
 				A0000000000000000000000D /* Logger.swift in Sources */,
 			);

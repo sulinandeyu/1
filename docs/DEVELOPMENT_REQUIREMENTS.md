@@ -428,7 +428,14 @@ Phase 12 acceptance criteria:
 - Debug information remains available for development and tuning.
 - The info toggle uses Chinese accessibility labels.
 
-### Phase 13: Advanced Lighting
+### Phase 13: Diagnostics Panel
+
+- Show structured analysis, decision, and quality information in the preview page.
+- Keep the panel hidden by default.
+- Use Chinese copy for all user-facing diagnostic text.
+- Support later real-photo tuning without changing the main camera flow.
+
+### Phase 14: Advanced Lighting
 
 - Add depth-aware or mask-aware relighting.
 - Keep results subtle and photographic.
