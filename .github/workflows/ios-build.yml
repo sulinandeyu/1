@@ -1,0 +1,37 @@
+name: iOS Build
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Show Xcode version
+        run: xcodebuild -version
+
+      - name: Resolve build settings
+        run: |
+          xcodebuild \
+            -project MasterCamera.xcodeproj \
+            -scheme MasterCamera \
+            -showBuildSettings
+
+      - name: Build for iOS Simulator
+        run: |
+          xcodebuild build \
+            -project MasterCamera.xcodeproj \
+            -scheme MasterCamera \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            CODE_SIGNING_ALLOWED=NO
+

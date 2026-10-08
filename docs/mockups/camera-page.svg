@@ -1,0 +1,61 @@
+<svg width="390" height="844" viewBox="0 0 390 844" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="preview" x1="0" y1="0" x2="390" y2="844" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#7BA7B8"/>
+      <stop offset="0.34" stop-color="#D8B07E"/>
+      <stop offset="0.66" stop-color="#3A4B42"/>
+      <stop offset="1" stop-color="#111314"/>
+    </linearGradient>
+    <radialGradient id="sun" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(292 132) rotate(90) scale(126)">
+      <stop offset="0" stop-color="#FFE3A3" stop-opacity="0.86"/>
+      <stop offset="1" stop-color="#FFE3A3" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="person" x1="193" y1="294" x2="193" y2="592" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#E0B28F"/>
+      <stop offset="0.48" stop-color="#4B5158"/>
+      <stop offset="1" stop-color="#1C2024"/>
+    </linearGradient>
+    <filter id="softShadow" x="-40%" y="-40%" width="180%" height="180%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="12" stdDeviation="18" flood-color="#000000" flood-opacity="0.3"/>
+    </filter>
+  </defs>
+
+  <rect width="390" height="844" fill="#050607"/>
+  <rect width="390" height="844" fill="url(#preview)"/>
+  <rect width="390" height="844" fill="url(#sun)"/>
+
+  <path d="M0 502C53 456 97 431 151 452C202 472 226 519 275 508C322 497 353 447 390 438V844H0V502Z" fill="#18201F" opacity="0.86"/>
+  <path d="M0 551C61 510 105 501 154 527C206 554 247 600 319 571C350 559 370 540 390 532V844H0V551Z" fill="#0D1112" opacity="0.92"/>
+
+  <ellipse cx="194" cy="304" rx="49" ry="57" fill="#D3A283"/>
+  <path d="M135 588C140 462 159 366 194 366C229 366 249 462 254 588H135Z" fill="url(#person)"/>
+  <path d="M145 346C143 291 161 247 195 247C226 247 247 284 242 340C223 323 170 323 145 346Z" fill="#202326"/>
+  <path d="M155 590C168 610 221 612 239 590V844H155V590Z" fill="#0B0D0E"/>
+
+  <rect width="390" height="844" fill="#000000" opacity="0.12"/>
+
+  <rect x="18" y="18" width="354" height="808" rx="42" stroke="#FFFFFF" stroke-opacity="0.18" stroke-width="2"/>
+
+  <g filter="url(#softShadow)">
+    <circle cx="336" cy="58" r="24" fill="#000000" fill-opacity="0.45"/>
+    <path d="M328 58C328 53.58 331.58 50 336 50H339.6L342 47H348L350.4 50H352C356.42 50 360 53.58 360 58V65C360 69.42 356.42 73 352 73H336C331.58 73 328 69.42 328 65V58Z" fill="white" fill-opacity="0.96" transform="translate(-8 -2) scale(0.72) translate(130 41)"/>
+    <path d="M336 50L343 57L336 64" stroke="#050607" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M343 57H329" stroke="#050607" stroke-width="2.2" stroke-linecap="round"/>
+  </g>
+
+  <g transform="translate(0 596)">
+    <circle cx="195" cy="168" r="39" stroke="#FFFFFF" stroke-width="4"/>
+    <circle cx="195" cy="168" r="31" fill="#FFFFFF"/>
+    <text x="195" y="226" text-anchor="middle" fill="#FFFFFF" fill-opacity="0.68" font-family="Arial, Helvetica, sans-serif" font-size="12">按下快门，剩下交给 MasterCamera。</text>
+  </g>
+
+  <g filter="url(#softShadow)">
+    <rect x="45" y="332" width="300" height="160" rx="8" fill="#000000" fill-opacity="0.74"/>
+    <circle cx="195" cy="374" r="15" stroke="#FFFFFF" stroke-opacity="0.95" stroke-width="4"/>
+    <path d="M195 359A15 15 0 0 1 210 374" stroke="#9DD6FF" stroke-width="4" stroke-linecap="round"/>
+    <text x="195" y="421" text-anchor="middle" fill="#FFFFFF" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="700">正在生成 AI 成片</text>
+    <text x="195" y="449" text-anchor="middle" fill="#FFFFFF" fill-opacity="0.82" font-family="Arial, Helvetica, sans-serif" font-size="13">正在应用自然的摄影级后期。</text>
+  </g>
+
+  <rect x="139" y="786" width="112" height="5" rx="2.5" fill="#FFFFFF" fill-opacity="0.76"/>
+</svg>

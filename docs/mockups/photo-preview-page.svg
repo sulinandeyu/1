@@ -1,0 +1,65 @@
+<svg width="390" height="844" viewBox="0 0 390 844" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="photo" x1="0" y1="0" x2="390" y2="844" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#8EB6C3"/>
+      <stop offset="0.35" stop-color="#E1B276"/>
+      <stop offset="0.68" stop-color="#44584F"/>
+      <stop offset="1" stop-color="#08090A"/>
+    </linearGradient>
+    <radialGradient id="faceLight" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(196 310) rotate(90) scale(92 78)">
+      <stop offset="0" stop-color="#FFE1B8" stop-opacity="0.54"/>
+      <stop offset="1" stop-color="#FFE1B8" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="shadow" x="-40%" y="-40%" width="180%" height="180%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="10" stdDeviation="18" flood-color="#000000" flood-opacity="0.34"/>
+    </filter>
+  </defs>
+
+  <rect width="390" height="844" fill="#030405"/>
+  <rect width="390" height="844" fill="url(#photo)"/>
+  <path d="M0 522C57 474 103 449 158 470C206 489 231 536 278 526C325 516 354 464 390 454V844H0V522Z" fill="#1A2421" opacity="0.86"/>
+  <path d="M135 594C140 466 159 370 194 370C229 370 249 466 254 594H135Z" fill="#22282D"/>
+  <ellipse cx="194" cy="307" rx="50" ry="58" fill="#D5A483"/>
+  <path d="M145 349C143 292 162 248 196 248C226 248 248 286 242 342C222 324 169 325 145 349Z" fill="#1C2024"/>
+  <rect width="390" height="844" fill="url(#faceLight)"/>
+  <rect width="390" height="844" fill="#000000" opacity="0.08"/>
+
+  <g filter="url(#shadow)">
+    <circle cx="42" cy="58" r="22" fill="#000000" fill-opacity="0.5"/>
+    <path d="M48 51L35 64M35 51L48 64" stroke="white" stroke-width="2.6" stroke-linecap="round"/>
+
+    <circle cx="348" cy="58" r="22" fill="#000000" fill-opacity="0.5"/>
+    <path d="M348 47V65" stroke="white" stroke-width="2.5" stroke-linecap="round"/>
+    <path d="M340 57L348 65L356 57" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M339 70H357" stroke="white" stroke-width="2.5" stroke-linecap="round"/>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="82" y="92" width="226" height="38" rx="8" fill="#000000" fill-opacity="0.5"/>
+    <rect x="86" y="96" width="109" height="30" rx="6" fill="#FFFFFF" fill-opacity="0.18"/>
+    <text x="140" y="116" text-anchor="middle" fill="#FFFFFF" font-family="Arial, Helvetica, sans-serif" font-size="13" font-weight="700">原图</text>
+    <rect x="195" y="96" width="109" height="30" rx="6" fill="#FFFFFF"/>
+    <text x="250" y="116" text-anchor="middle" fill="#080A0B" font-family="Arial, Helvetica, sans-serif" font-size="13" font-weight="700">AI 成片</text>
+  </g>
+
+  <text x="195" y="153" text-anchor="middle" fill="#FFFFFF" fill-opacity="0.72" font-family="Arial, Helvetica, sans-serif" font-size="12">长按照片可临时查看原图</text>
+
+  <g filter="url(#shadow)">
+    <rect x="131" y="183" width="128" height="31" rx="15.5" fill="#000000" fill-opacity="0.58"/>
+    <text x="195" y="203" text-anchor="middle" fill="#FFFFFF" font-family="Arial, Helvetica, sans-serif" font-size="12" font-weight="700">AI 成片</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="39" y="658" width="312" height="32" rx="8" fill="#000000" fill-opacity="0.52"/>
+    <text x="195" y="679" text-anchor="middle" fill="#FFFFFF" fill-opacity="0.88" font-family="Arial, Helvetica, sans-serif" font-size="12">曝光均衡 · 层次偏平 · 偏暖 · 1 张人脸</text>
+
+    <rect x="45" y="699" width="300" height="44" rx="8" fill="#000000" fill-opacity="0.52"/>
+    <text x="195" y="717" text-anchor="middle" fill="#FFFFFF" fill-opacity="0.88" font-family="Arial, Helvetica, sans-serif" font-size="12">人像：保护肤色并补亮人脸，</text>
+    <text x="195" y="735" text-anchor="middle" fill="#FFFFFF" fill-opacity="0.88" font-family="Arial, Helvetica, sans-serif" font-size="12">增加层次</text>
+
+    <rect x="106" y="752" width="178" height="32" rx="8" fill="#000000" fill-opacity="0.52"/>
+    <text x="195" y="773" text-anchor="middle" fill="#FFFFFF" fill-opacity="0.88" font-family="Arial, Helvetica, sans-serif" font-size="12">质量检查通过</text>
+  </g>
+
+  <rect x="139" y="786" width="112" height="5" rx="2.5" fill="#FFFFFF" fill-opacity="0.76"/>
+</svg>

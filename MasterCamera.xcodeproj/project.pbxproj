@@ -1,0 +1,524 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		A00000000000000000000001 /* MasterCameraApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000021 /* MasterCameraApp.swift */; };
+		A00000000000000000000002 /* CameraManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000022 /* CameraManager.swift */; };
+		A00000000000000000000003 /* CameraPermissionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000023 /* CameraPermissionManager.swift */; };
+		A00000000000000000000004 /* CameraPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000024 /* CameraPreview.swift */; };
+		A00000000000000000000005 /* PhotoCaptureService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000025 /* PhotoCaptureService.swift */; };
+		A00000000000000000000006 /* CapturedPhoto.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000026 /* CapturedPhoto.swift */; };
+		A00000000000000000000007 /* CameraState.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000027 /* CameraState.swift */; };
+		A00000000000000000000008 /* CameraView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000028 /* CameraView.swift */; };
+		A00000000000000000000009 /* PhotoPreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000029 /* PhotoPreviewView.swift */; };
+		A0000000000000000000000A /* CameraViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000002A /* CameraViewModel.swift */; };
+		A0000000000000000000000B /* CoreImageRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000002B /* CoreImageRenderer.swift */; };
+		A0000000000000000000000C /* PhotoLibraryManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000002C /* PhotoLibraryManager.swift */; };
+		A0000000000000000000000D /* Logger.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000002D /* Logger.swift */; };
+		A0000000000000000000000E /* AutomaticEditingRecipe.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000002E /* AutomaticEditingRecipe.swift */; };
+		A0000000000000000000000F /* PhotoAnalysis.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000002F /* PhotoAnalysis.swift */; };
+		A00000000000000000000011 /* PhotoAnalyzer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000031 /* PhotoAnalyzer.swift */; };
+		A00000000000000000000012 /* PhotographyDecision.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000032 /* PhotographyDecision.swift */; };
+		A00000000000000000000013 /* SceneStrategy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000033 /* SceneStrategy.swift */; };
+		A00000000000000000000014 /* PhotographyDecisionEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000034 /* PhotographyDecisionEngine.swift */; };
+		A00000000000000000000015 /* LocalAdjustmentProcessor.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000035 /* LocalAdjustmentProcessor.swift */; };
+		A00000000000000000000016 /* QualityCheckResult.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000036 /* QualityCheckResult.swift */; };
+		A00000000000000000000017 /* QualityCheckService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000037 /* QualityCheckService.swift */; };
+		A00000000000000000000018 /* PhotoProcessingPipeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000038 /* PhotoProcessingPipeline.swift */; };
+		A00000000000000000000019 /* ProcessingState.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000039 /* ProcessingState.swift */; };
+		A0000000000000000000001A /* SaveState.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000003A /* SaveState.swift */; };
+		A0000000000000000000001B /* ProcessingConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000003B /* ProcessingConfiguration.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		A00000000000000000000010 /* MasterCamera.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MasterCamera.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A00000000000000000000020 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		A00000000000000000000021 /* MasterCameraApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MasterCameraApp.swift; sourceTree = "<group>"; };
+		A00000000000000000000022 /* CameraManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraManager.swift; sourceTree = "<group>"; };
+		A00000000000000000000023 /* CameraPermissionManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraPermissionManager.swift; sourceTree = "<group>"; };
+		A00000000000000000000024 /* CameraPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraPreview.swift; sourceTree = "<group>"; };
+		A00000000000000000000025 /* PhotoCaptureService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoCaptureService.swift; sourceTree = "<group>"; };
+		A00000000000000000000026 /* CapturedPhoto.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CapturedPhoto.swift; sourceTree = "<group>"; };
+		A00000000000000000000027 /* CameraState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraState.swift; sourceTree = "<group>"; };
+		A00000000000000000000028 /* CameraView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraView.swift; sourceTree = "<group>"; };
+		A00000000000000000000029 /* PhotoPreviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoPreviewView.swift; sourceTree = "<group>"; };
+		A0000000000000000000002A /* CameraViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraViewModel.swift; sourceTree = "<group>"; };
+		A0000000000000000000002B /* CoreImageRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoreImageRenderer.swift; sourceTree = "<group>"; };
+		A0000000000000000000002C /* PhotoLibraryManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoLibraryManager.swift; sourceTree = "<group>"; };
+		A0000000000000000000002D /* Logger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Logger.swift; sourceTree = "<group>"; };
+		A0000000000000000000002E /* AutomaticEditingRecipe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AutomaticEditingRecipe.swift; sourceTree = "<group>"; };
+		A0000000000000000000002F /* PhotoAnalysis.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoAnalysis.swift; sourceTree = "<group>"; };
+		A00000000000000000000031 /* PhotoAnalyzer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoAnalyzer.swift; sourceTree = "<group>"; };
+		A00000000000000000000032 /* PhotographyDecision.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotographyDecision.swift; sourceTree = "<group>"; };
+		A00000000000000000000033 /* SceneStrategy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneStrategy.swift; sourceTree = "<group>"; };
+		A00000000000000000000034 /* PhotographyDecisionEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotographyDecisionEngine.swift; sourceTree = "<group>"; };
+		A00000000000000000000035 /* LocalAdjustmentProcessor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalAdjustmentProcessor.swift; sourceTree = "<group>"; };
+		A00000000000000000000036 /* QualityCheckResult.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QualityCheckResult.swift; sourceTree = "<group>"; };
+		A00000000000000000000037 /* QualityCheckService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QualityCheckService.swift; sourceTree = "<group>"; };
+		A00000000000000000000038 /* PhotoProcessingPipeline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoProcessingPipeline.swift; sourceTree = "<group>"; };
+		A00000000000000000000039 /* ProcessingState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProcessingState.swift; sourceTree = "<group>"; };
+		A0000000000000000000003A /* SaveState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SaveState.swift; sourceTree = "<group>"; };
+		A0000000000000000000003B /* ProcessingConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProcessingConfiguration.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		A00000000000000000000030 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		A00000000000000000000040 = {
+			isa = PBXGroup;
+			children = (
+				A00000000000000000000020 /* Info.plist */,
+				A00000000000000000000041 /* MasterCamera */,
+				A00000000000000000000042 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		A00000000000000000000041 /* MasterCamera */ = {
+			isa = PBXGroup;
+			children = (
+				A00000000000000000000043 /* App */,
+				A00000000000000000000044 /* Camera */,
+				A00000000000000000000045 /* Models */,
+				A00000000000000000000046 /* Views */,
+				A00000000000000000000047 /* ViewModels */,
+				A00000000000000000000048 /* ImageEngine */,
+				A00000000000000000000049 /* Storage */,
+				A0000000000000000000004A /* Utilities */,
+				A0000000000000000000004B /* Analysis */,
+				A0000000000000000000004C /* PhotographerAI */,
+				A0000000000000000000004D /* QualityControl */,
+				A0000000000000000000004E /* Processing */,
+				A0000000000000000000004F /* Configuration */,
+			);
+			path = MasterCamera;
+			sourceTree = "<group>";
+		};
+		A00000000000000000000042 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				A00000000000000000000010 /* MasterCamera.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		A00000000000000000000043 /* App */ = {
+			isa = PBXGroup;
+			children = (
+				A00000000000000000000021 /* MasterCameraApp.swift */,
+			);
+			path = App;
+			sourceTree = "<group>";
+		};
+		A00000000000000000000044 /* Camera */ = {
+			isa = PBXGroup;
+			children = (
+				A00000000000000000000022 /* CameraManager.swift */,
+				A00000000000000000000023 /* CameraPermissionManager.swift */,
+				A00000000000000000000024 /* CameraPreview.swift */,
+				A00000000000000000000025 /* PhotoCaptureService.swift */,
+			);
+			path = Camera;
+			sourceTree = "<group>";
+		};
+		A00000000000000000000045 /* Models */ = {
+			isa = PBXGroup;
+			children = (
+				A00000000000000000000026 /* CapturedPhoto.swift */,
+				A00000000000000000000027 /* CameraState.swift */,
+				A00000000000000000000039 /* ProcessingState.swift */,
+				A0000000000000000000003A /* SaveState.swift */,
+			);
+			path = Models;
+			sourceTree = "<group>";
+		};
+		A00000000000000000000046 /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				A00000000000000000000028 /* CameraView.swift */,
+				A00000000000000000000029 /* PhotoPreviewView.swift */,
+			);
+			path = Views;
+			sourceTree = "<group>";
+		};
+		A00000000000000000000047 /* ViewModels */ = {
+			isa = PBXGroup;
+			children = (
+				A0000000000000000000002A /* CameraViewModel.swift */,
+			);
+			path = ViewModels;
+			sourceTree = "<group>";
+		};
+		A00000000000000000000048 /* ImageEngine */ = {
+			isa = PBXGroup;
+			children = (
+				A0000000000000000000002B /* CoreImageRenderer.swift */,
+				A0000000000000000000002E /* AutomaticEditingRecipe.swift */,
+				A00000000000000000000035 /* LocalAdjustmentProcessor.swift */,
+			);
+			path = ImageEngine;
+			sourceTree = "<group>";
+		};
+		A00000000000000000000049 /* Storage */ = {
+			isa = PBXGroup;
+			children = (
+				A0000000000000000000002C /* PhotoLibraryManager.swift */,
+			);
+			path = Storage;
+			sourceTree = "<group>";
+		};
+		A0000000000000000000004A /* Utilities */ = {
+			isa = PBXGroup;
+			children = (
+				A0000000000000000000002D /* Logger.swift */,
+			);
+			path = Utilities;
+			sourceTree = "<group>";
+		};
+		A0000000000000000000004B /* Analysis */ = {
+			isa = PBXGroup;
+			children = (
+				A0000000000000000000002F /* PhotoAnalysis.swift */,
+				A00000000000000000000031 /* PhotoAnalyzer.swift */,
+			);
+			path = Analysis;
+			sourceTree = "<group>";
+		};
+		A0000000000000000000004C /* PhotographerAI */ = {
+			isa = PBXGroup;
+			children = (
+				A00000000000000000000032 /* PhotographyDecision.swift */,
+				A00000000000000000000033 /* SceneStrategy.swift */,
+				A00000000000000000000034 /* PhotographyDecisionEngine.swift */,
+			);
+			path = PhotographerAI;
+			sourceTree = "<group>";
+		};
+		A0000000000000000000004D /* QualityControl */ = {
+			isa = PBXGroup;
+			children = (
+				A00000000000000000000036 /* QualityCheckResult.swift */,
+				A00000000000000000000037 /* QualityCheckService.swift */,
+			);
+			path = QualityControl;
+			sourceTree = "<group>";
+		};
+		A0000000000000000000004E /* Processing */ = {
+			isa = PBXGroup;
+			children = (
+				A00000000000000000000038 /* PhotoProcessingPipeline.swift */,
+			);
+			path = Processing;
+			sourceTree = "<group>";
+		};
+		A0000000000000000000004F /* Configuration */ = {
+			isa = PBXGroup;
+			children = (
+				A0000000000000000000003B /* ProcessingConfiguration.swift */,
+			);
+			path = Configuration;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		A00000000000000000000050 /* MasterCamera */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A00000000000000000000070 /* Build configuration list for PBXNativeTarget "MasterCamera" */;
+			buildPhases = (
+				A00000000000000000000060 /* Sources */,
+				A00000000000000000000030 /* Frameworks */,
+				A00000000000000000000061 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = MasterCamera;
+			productName = MasterCamera;
+			productReference = A00000000000000000000010 /* MasterCamera.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		A00000000000000000000051 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1600;
+				LastUpgradeCheck = 1600;
+				TargetAttributes = {
+					A00000000000000000000050 = {
+						CreatedOnToolsVersion = 16.0;
+					};
+				};
+			};
+			buildConfigurationList = A00000000000000000000071 /* Build configuration list for PBXProject "MasterCamera" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = A00000000000000000000040;
+			productRefGroup = A00000000000000000000042 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				A00000000000000000000050 /* MasterCamera */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		A00000000000000000000061 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		A00000000000000000000060 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A00000000000000000000001 /* MasterCameraApp.swift in Sources */,
+				A00000000000000000000002 /* CameraManager.swift in Sources */,
+				A00000000000000000000003 /* CameraPermissionManager.swift in Sources */,
+				A00000000000000000000004 /* CameraPreview.swift in Sources */,
+				A00000000000000000000005 /* PhotoCaptureService.swift in Sources */,
+				A00000000000000000000006 /* CapturedPhoto.swift in Sources */,
+				A00000000000000000000007 /* CameraState.swift in Sources */,
+				A00000000000000000000008 /* CameraView.swift in Sources */,
+				A00000000000000000000009 /* PhotoPreviewView.swift in Sources */,
+				A0000000000000000000000A /* CameraViewModel.swift in Sources */,
+				A0000000000000000000000B /* CoreImageRenderer.swift in Sources */,
+				A0000000000000000000000E /* AutomaticEditingRecipe.swift in Sources */,
+				A0000000000000000000000F /* PhotoAnalysis.swift in Sources */,
+				A00000000000000000000011 /* PhotoAnalyzer.swift in Sources */,
+				A00000000000000000000012 /* PhotographyDecision.swift in Sources */,
+				A00000000000000000000013 /* SceneStrategy.swift in Sources */,
+				A00000000000000000000014 /* PhotographyDecisionEngine.swift in Sources */,
+				A00000000000000000000015 /* LocalAdjustmentProcessor.swift in Sources */,
+				A00000000000000000000016 /* QualityCheckResult.swift in Sources */,
+				A00000000000000000000017 /* QualityCheckService.swift in Sources */,
+				A00000000000000000000018 /* PhotoProcessingPipeline.swift in Sources */,
+				A00000000000000000000019 /* ProcessingState.swift in Sources */,
+				A0000000000000000000001A /* SaveState.swift in Sources */,
+				A0000000000000000000001B /* ProcessingConfiguration.swift in Sources */,
+				A0000000000000000000000C /* PhotoLibraryManager.swift in Sources */,
+				A0000000000000000000000D /* Logger.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		A00000000000000000000080 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		A00000000000000000000081 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		A00000000000000000000082 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.mastercamera.app;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		A00000000000000000000083 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.mastercamera.app;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		A00000000000000000000070 /* Build configuration list for PBXNativeTarget "MasterCamera" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A00000000000000000000082 /* Debug */,
+				A00000000000000000000083 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A00000000000000000000071 /* Build configuration list for PBXProject "MasterCamera" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A00000000000000000000080 /* Debug */,
+				A00000000000000000000081 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = A00000000000000000000051 /* Project object */;
+}
+

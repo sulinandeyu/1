@@ -1,0 +1,20 @@
+# Xcode
+DerivedData/
+build/
+*.xcuserstate
+xcuserdata/
+
+# Swift Package Manager
+.build/
+Package.resolved
+
+# macOS
+.DS_Store
+
+# Archives and logs
+*.xcarchive
+*.log
+
+# Local environment
+.env
+.env.*
