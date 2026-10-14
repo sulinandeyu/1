@@ -39,5 +39,7 @@ MasterCamera 是一款 AI 自动摄影师相机 App 原型。
 
 没有 Mac 的编译方案见：[docs/NO_MAC_BUILD.md](docs/NO_MAC_BUILD.md)
 
+TestFlight 发布指南见：[docs/TESTFLIGHT_RELEASE.md](docs/TESTFLIGHT_RELEASE.md)
+
 第一轮真机编译检查清单见：[docs/FIRST_BUILD_CHECKLIST.md](docs/FIRST_BUILD_CHECKLIST.md)
 

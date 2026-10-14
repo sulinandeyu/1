@@ -26,6 +26,8 @@ GitHub Actions 云端 Xcode 编译已经通过。
 
 当前仍未进行 iPhone 真机验证，因为本机环境是 Windows，没有 `swift` / `xcodebuild`，也无法直接连接真实 iPhone 运行相机。
 
+Apple Developer 账号已准备，项目已进入 TestFlight 发布准备阶段。
+
 ## 已完成阶段
 
 ### Phase 1：相机基础层
@@ -211,6 +213,20 @@ GitHub Actions 云端 Xcode 编译已经通过。
 - `MasterCamera/Models/PhotoDiagnostics.swift`
 - `MasterCamera/Views/PhotoPreviewView.swift`
 
+### Phase 14：TestFlight 发布准备
+
+已完成：
+
+- 将 Bundle ID 调整为 `com.sulinandeyu.mastercamera`
+- 新增 GitHub Actions TestFlight 手动发布 workflow
+- 新增 Apple Developer / App Store Connect / GitHub Secrets 配置文档
+
+主要文件：
+
+- `.github/workflows/testflight-release.yml`
+- `docs/TESTFLIGHT_RELEASE.md`
+- `MasterCamera.xcodeproj/project.pbxproj`
+
 ### 调参配置骨架
 
 已完成：
@@ -293,7 +309,7 @@ PhotoLibraryManager
 
 但从以下任务开始，就应该进入 Mac / Xcode / 真机验证：
 
-- Phase 14 高级光照
+- Phase 15 高级光照
 - 复杂局部光照模拟
 - 更复杂的人脸 / 天空 / 主体 mask
 - 人脸补光强度调参

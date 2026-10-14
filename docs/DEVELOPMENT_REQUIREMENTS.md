@@ -435,7 +435,13 @@ Phase 12 acceptance criteria:
 - Use Chinese copy for all user-facing diagnostic text.
 - Support later real-photo tuning without changing the main camera flow.
 
-### Phase 14: Advanced Lighting
+### Phase 14: TestFlight Release Preparation
+
+- Prepare Bundle ID, App Store Connect, and signing configuration.
+- Add a manual GitHub Actions workflow for TestFlight upload.
+- Keep signing secrets outside the repository.
+
+### Phase 15: Advanced Lighting
 
 - Add depth-aware or mask-aware relighting.
 - Keep results subtle and photographic.
