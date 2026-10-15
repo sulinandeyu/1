@@ -6,7 +6,7 @@
 
 MasterCamera 已完成 Phase 1–13 的 MVP 主链路原型，包括相机拍摄、本地照片分析、摄影决策、Core Image 自动成片、人脸局部补光、质量检查、安全回退、预览对比、相册保存状态和诊断面板。
 
-Phase 14 TestFlight 发布准备已在本地提交中开始，但尚未完成远端 CI、签名归档、App Store 上传和真机验证。Phase 15 高级光照尚未开始。
+Phase 14 TestFlight 发布准备已推送到远端，最新功能代码已经通过 GitHub Actions 云端 Xcode 编译，但尚未完成签名归档、App Store 上传和真机验证。Phase 15 高级光照尚未开始。
 
 ## 本轮完成
 
@@ -33,7 +33,8 @@ Phase 14 TestFlight 发布准备已在本地提交中开始，但尚未完成远
 - AppIcon 文件检查：1024 × 1024、24-bit RGB、不含 Alpha 通道。
 - Asset Catalog JSON 解析检查：通过。
 - AppIcon target 引用检查：通过，已进入 Resources Build Phase，Debug/Release 均指定 `AppIcon`。
-- Xcode 编译：当前 Windows 主机没有 `xcodebuild`，尚未执行；需要在 GitHub Actions 或 Mac 上补充验证。
+- GitHub Actions `iOS Build #5`：通过；提交 `e14739e` 已完成 iOS Simulator Debug 构建。
+- 本地 Xcode 编译：当前 Windows 主机没有 `xcodebuild`，仍需在 Mac 上补充归档和真机验证。
 
 ## 重要技术决策
 
@@ -44,7 +45,7 @@ Phase 14 TestFlight 发布准备已在本地提交中开始，但尚未完成远
 
 ## 已知问题
 
-- 当前本地提交比 `origin/main` 领先，TestFlight workflow 尚未经过远端 CI 验证。
+- TestFlight workflow 已推送，但尚未使用真实签名材料执行归档和上传。
 - 照片 EXIF 方向、Vision 人脸框和 Core Image mask 坐标尚未通过真机验证。
 - `ProcessingConfiguration` 尚未接入分析、决策和质量检查模块，阈值仍为硬编码。
 - 原图保存通过 `UIImage` 写入相册，尚不能保证原始 JPEG 字节和完整元数据不变。
@@ -53,8 +54,8 @@ Phase 14 TestFlight 发布准备已在本地提交中开始，但尚未完成远
 
 ## 下一步计划
 
-1. 在当前 HEAD 上执行一次 Xcode/GitHub Actions 编译，修复本轮可能暴露的 Swift 并发或类型错误。
-2. 检查并补齐其余 TestFlight 发布元数据和自动递增 build number。
+1. 检查并补齐其余 TestFlight 发布元数据和自动递增 build number。
+2. 使用真实签名材料执行一次 TestFlight 归档和上传。
 3. 在真实 iPhone 上验证相机权限、拍摄方向、人脸补光位置和相册保存。
 4. 将 `ProcessingConfiguration` 注入分析、决策和质量检查模块。
 5. 增加处理管线和决策规则的自动化测试。
