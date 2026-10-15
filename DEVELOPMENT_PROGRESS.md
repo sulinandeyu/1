@@ -10,6 +10,13 @@ Phase 14 TestFlight 发布准备已推送到远端，最新功能代码已经通
 
 ## 本轮完成
 
+### TestFlight 自动 build number
+
+- `TestFlight Release` 默认使用 GitHub Actions `run_number` 覆盖归档的 `CURRENT_PROJECT_VERSION`。
+- workflow 支持可选的纯数字 build number 手动覆盖，以兼容 App Store Connect 中已经存在的更大编号。
+- 发布开始前会验证 build number，并在日志中输出 Bundle ID 和最终编号。
+- 发布文档已补充自动编号、手动覆盖和重新运行规则。
+
 ### AppIcon 与资源目录
 
 - 新增 `Assets.xcassets`，并将其加入 MasterCamera target 的 Resources Build Phase。
@@ -42,6 +49,7 @@ Phase 14 TestFlight 发布准备已推送到远端，最新功能代码已经通
 - 安全回退属于质量优化步骤；回退失败不应覆盖或丢弃已经成功生成的初版成片。
 - UI 层负责呈现处理错误，图像处理管线不再通过返回原始照片隐藏错误。
 - 保持现有 MVVM、Service 和 Engine 分层，不在当前模块中同时重构配置、方向或存储系统。
+- TestFlight build number 由发布 workflow 在归档时注入，工程中的默认值继续保留为本地开发基线。
 
 ## 已知问题
 
@@ -54,7 +62,7 @@ Phase 14 TestFlight 发布准备已推送到远端，最新功能代码已经通
 
 ## 下一步计划
 
-1. 检查并补齐其余 TestFlight 发布元数据和自动递增 build number。
+1. 检查 Apple Developer、App Store Connect 和 GitHub Actions 签名材料是否齐全。
 2. 使用真实签名材料执行一次 TestFlight 归档和上传。
 3. 在真实 iPhone 上验证相机权限、拍摄方向、人脸补光位置和相册保存。
 4. 将 `ProcessingConfiguration` 注入分析、决策和质量检查模块。

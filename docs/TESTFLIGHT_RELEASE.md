@@ -188,6 +188,14 @@ IOS_APPSTORE_PROFILE_BASE64
 Actions -> TestFlight Release -> Run workflow
 ```
 
+默认情况下，workflow 会使用本次 `TestFlight Release` 的 GitHub Actions `run_number` 作为 build number，并在归档时覆盖工程里的 `CURRENT_PROJECT_VERSION`。
+
+每次新建一次 workflow run，build number 都会自动递增。不要为了上传一个新构建而重复运行旧的 workflow run；应该重新点击 `Run workflow`。
+
+如果 App Store Connect 中已经存在更大的 build number，可以在运行界面的可选 `build_number` 输入框中填写一个更大的纯数字。留空时继续使用自动编号。
+
+发布日志中的 `Validate release metadata` step 会显示本次使用的 Bundle ID 和 build number，并在编号不是纯数字时提前失败。
+
 成功后，App 会上传到 App Store Connect。
 
 随后进入：
@@ -207,5 +215,5 @@ App Store Connect -> My Apps -> MasterCamera -> TestFlight
 - Provisioning Profile 不是 App Store 类型。
 - GitHub Secrets 复制时漏字符。
 - App Store Connect App 还没创建。
-- 版本号或 build number 重复。
+- 手动填写的 build number 不大于 App Store Connect 中已经存在的编号。
 
