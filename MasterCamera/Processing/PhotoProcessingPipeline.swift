@@ -18,62 +18,62 @@ final class PhotoProcessingPipeline {
         self.qualityService = qualityService
     }
 
-    func process(_ photo: CapturedPhoto) -> CapturedPhoto {
-        do {
-            let analysis = try analyzer.analyze(data: photo.originalImageData)
-            let decision = decisionEngine.makeDecision(for: analysis)
-            let initialEditedData = try renderer.renderAutomaticEdit(
-                from: photo.originalImageData,
-                recipe: decision.recipe,
-                analysis: analysis
-            )
-            let initialQualityCheck = try qualityService.check(
-                originalData: photo.originalImageData,
-                editedData: initialEditedData
-            )
-            let finalEdit = try chooseFinalEdit(
-                originalData: photo.originalImageData,
-                initialEditedData: initialEditedData,
-                initialQualityCheck: initialQualityCheck
-            )
+    func process(_ photo: CapturedPhoto) throws -> CapturedPhoto {
+        let analysis = try analyzer.analyze(data: photo.originalImageData)
+        let decision = decisionEngine.makeDecision(for: analysis)
+        let initialEditedData = try renderer.renderAutomaticEdit(
+            from: photo.originalImageData,
+            recipe: decision.recipe,
+            analysis: analysis
+        )
+        let initialQualityCheck = try qualityService.check(
+            originalData: photo.originalImageData,
+            editedData: initialEditedData
+        )
+        let finalEdit = chooseFinalEdit(
+            originalData: photo.originalImageData,
+            initialEditedData: initialEditedData,
+            initialQualityCheck: initialQualityCheck
+        )
 
-            return CapturedPhoto(
-                originalImageData: photo.originalImageData,
-                editedImageData: finalEdit.data,
-                capturedAt: photo.capturedAt,
-                analysis: analysis,
-                decision: decision,
-                qualityCheck: finalEdit.qualityCheck
-            )
-        } catch {
-            AppLogger.imageEngine.error("照片处理失败：\(error.localizedDescription)")
-            return photo
-        }
+        return CapturedPhoto(
+            originalImageData: photo.originalImageData,
+            editedImageData: finalEdit.data,
+            capturedAt: photo.capturedAt,
+            analysis: analysis,
+            decision: decision,
+            qualityCheck: finalEdit.qualityCheck
+        )
     }
 
     private func chooseFinalEdit(
         originalData: Data,
         initialEditedData: Data,
         initialQualityCheck: QualityCheckResult
-    ) throws -> (data: Data, qualityCheck: QualityCheckResult) {
+    ) -> (data: Data, qualityCheck: QualityCheckResult) {
         guard initialQualityCheck.status == .failed else {
             return (initialEditedData, initialQualityCheck)
         }
 
-        let fallbackData = try renderer.renderAutomaticEdit(
-            from: originalData,
-            recipe: .safeFallback,
-            analysis: nil
-        )
-        let fallbackQualityCheck = try qualityService
-            .check(originalData: originalData, editedData: fallbackData)
-            .applyingFallback()
+        do {
+            let fallbackData = try renderer.renderAutomaticEdit(
+                from: originalData,
+                recipe: .safeFallback,
+                analysis: nil
+            )
+            let fallbackQualityCheck = try qualityService
+                .check(originalData: originalData, editedData: fallbackData)
+                .applyingFallback()
 
-        if fallbackQualityCheck.status.isBetter(than: initialQualityCheck.status) {
-            return (fallbackData, fallbackQualityCheck)
+            if fallbackQualityCheck.status.isBetter(than: initialQualityCheck.status) {
+                return (fallbackData, fallbackQualityCheck)
+            }
+
+            return (initialEditedData, initialQualityCheck)
+        } catch {
+            AppLogger.imageEngine.error("安全回退处理失败，保留初版成片：\(error.localizedDescription)")
+            return (initialEditedData, initialQualityCheck)
         }
-
-        return (initialEditedData, initialQualityCheck)
     }
 }
 

@@ -34,6 +34,7 @@
 		A0000000000000000000001A /* SaveState.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000003A /* SaveState.swift */; };
 		A0000000000000000000001B /* ProcessingConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000003B /* ProcessingConfiguration.swift */; };
 		A0000000000000000000001C /* PhotoDiagnostics.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000003C /* PhotoDiagnostics.swift */; };
+		A0000000000000000000001D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000003D /* Assets.xcassets */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -66,6 +67,7 @@
 		A0000000000000000000003A /* SaveState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SaveState.swift; sourceTree = "<group>"; };
 		A0000000000000000000003B /* ProcessingConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProcessingConfiguration.swift; sourceTree = "<group>"; };
 		A0000000000000000000003C /* PhotoDiagnostics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoDiagnostics.swift; sourceTree = "<group>"; };
+		A0000000000000000000003D /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -91,6 +93,7 @@
 		A00000000000000000000041 /* MasterCamera */ = {
 			isa = PBXGroup;
 			children = (
+				A0000000000000000000003D /* Assets.xcassets */,
 				A00000000000000000000043 /* App */,
 				A00000000000000000000044 /* Camera */,
 				A00000000000000000000045 /* Models */,
@@ -292,6 +295,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A0000000000000000000001D /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -453,6 +457,7 @@
 		A00000000000000000000082 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = "";
@@ -478,6 +483,7 @@
 		A00000000000000000000083 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = "";

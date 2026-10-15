@@ -35,6 +35,7 @@ final class CameraViewModel: ObservableObject {
     func capturePhoto() {
         guard !processingState.isProcessing else { return }
 
+        errorMessage = nil
         cameraManager.capturePhoto { [weak self] result in
             Task { @MainActor in
                 switch result {
@@ -81,23 +82,27 @@ final class CameraViewModel: ObservableObject {
         processingState = .analyzing
 
         Task { [weak self] in
+            guard let self else { return }
+
             try? await Task.sleep(nanoseconds: 120_000_000)
-            await MainActor.run {
-                self?.processingState = .rendering
-            }
+            processingState = .rendering
 
-            let processedPhoto = await Task.detached(priority: .userInitiated) {
-                PhotoProcessingPipeline().process(photo)
-            }
-            .value
+            do {
+                let processedPhoto = try await Task.detached(priority: .userInitiated) {
+                    try PhotoProcessingPipeline().process(photo)
+                }
+                .value
 
-            await MainActor.run {
-                self?.processingState = .finalizing
-            }
-            try? await Task.sleep(nanoseconds: 120_000_000)
+                processingState = .finalizing
+                try? await Task.sleep(nanoseconds: 120_000_000)
 
-            self?.capturedPhoto = processedPhoto
-            self?.processingState = .idle
+                capturedPhoto = processedPhoto
+                processingState = .idle
+            } catch {
+                AppLogger.imageEngine.error("照片处理失败：\(error.localizedDescription)")
+                errorMessage = "照片处理失败：\(error.localizedDescription)"
+                processingState = .idle
+            }
         }
     }
 }
