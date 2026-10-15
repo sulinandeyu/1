@@ -10,6 +10,13 @@ Phase 14 TestFlight 发布准备已推送到远端，最新功能代码已经通
 
 ## 本轮完成
 
+### TestFlight 签名材料预检
+
+- 发布前检查 7 个必需 GitHub Secrets 是否存在，但不输出任何 Secret 内容。
+- Provisioning Profile 解码后检查 Bundle ID 和 Team Identifier 是否与发布配置一致。
+- 发布日志会显示 Profile 名称和过期时间，便于定位失效材料。
+- `.p12` 导入过程继续作为证书内容和密码的实际校验。
+
 ### TestFlight 自动 build number
 
 - `TestFlight Release` 默认使用 GitHub Actions `run_number` 覆盖归档的 `CURRENT_PROJECT_VERSION`。
@@ -50,6 +57,7 @@ Phase 14 TestFlight 发布准备已推送到远端，最新功能代码已经通
 - UI 层负责呈现处理错误，图像处理管线不再通过返回原始照片隐藏错误。
 - 保持现有 MVVM、Service 和 Engine 分层，不在当前模块中同时重构配置、方向或存储系统。
 - TestFlight build number 由发布 workflow 在归档时注入，工程中的默认值继续保留为本地开发基线。
+- 签名材料必须在归档前完成存在性和身份一致性检查，避免在较晚的 archive/export 阶段才暴露配置错误。
 
 ## 已知问题
 

@@ -196,6 +196,16 @@ Actions -> TestFlight Release -> Run workflow
 
 发布日志中的 `Validate release metadata` step 会显示本次使用的 Bundle ID 和 build number，并在编号不是纯数字时提前失败。
 
+这个 step 还会在不输出 Secret 内容的前提下，确认全部 7 个必需 GitHub Secrets 都已设置。随后 `Install signing assets` 会验证：
+
+- Base64 内容能够解码。
+- `.p12` 证书及其密码能够导入临时 Keychain。
+- Provisioning Profile 能够解析。
+- Profile 的 Bundle ID 与 `com.sulinandeyu.mastercamera` 匹配。
+- Profile 的 Team Identifier 与 `APPLE_TEAM_ID` 匹配。
+
+校验失败时先修复对应材料，再新建一次 workflow run；不要把证书、私钥或 Secret 内容复制到公开日志。
+
 成功后，App 会上传到 App Store Connect。
 
 随后进入：
@@ -214,6 +224,8 @@ App Store Connect -> My Apps -> MasterCamera -> TestFlight
 - 证书不是 Apple Distribution。
 - Provisioning Profile 不是 App Store 类型。
 - GitHub Secrets 复制时漏字符。
+- Provisioning Profile 的 Bundle ID 或 Team Identifier 与工程不一致。
+- Provisioning Profile 已过期，需要重新创建并更新 `IOS_APPSTORE_PROFILE_BASE64`。
 - App Store Connect App 还没创建。
 - 手动填写的 build number 不大于 App Store Connect 中已经存在的编号。
 
