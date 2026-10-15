@@ -48,6 +48,8 @@ Phase 14 TestFlight 发布准备已推送到远端，最新功能代码已经通
 - Asset Catalog JSON 解析检查：通过。
 - AppIcon target 引用检查：通过，已进入 Resources Build Phase，Debug/Release 均指定 `AppIcon`。
 - GitHub Actions `iOS Build #5`：通过；提交 `e14739e` 已完成 iOS Simulator Debug 构建。
+- GitHub Actions `iOS Build #8`：通过；提交 `31a1a0f` 的签名预检 workflow 修改未影响应用编译。
+- `TestFlight Release #1`：预检按设计失败；仓库尚未配置 7 个必需 GitHub Secrets，因此归档、导出和上传均被安全跳过。
 - 本地 Xcode 编译：当前 Windows 主机没有 `xcodebuild`，仍需在 Mac 上补充归档和真机验证。
 
 ## 重要技术决策
@@ -62,6 +64,7 @@ Phase 14 TestFlight 发布准备已推送到远端，最新功能代码已经通
 ## 已知问题
 
 - TestFlight workflow 已推送，但尚未使用真实签名材料执行归档和上传。
+- GitHub 仓库当前缺少 `APPLE_TEAM_ID`、3 个 App Store Connect API Key 相关 Secrets，以及 3 个证书/Profile 相关 Secrets。
 - 照片 EXIF 方向、Vision 人脸框和 Core Image mask 坐标尚未通过真机验证。
 - `ProcessingConfiguration` 尚未接入分析、决策和质量检查模块，阈值仍为硬编码。
 - 原图保存通过 `UIImage` 写入相册，尚不能保证原始 JPEG 字节和完整元数据不变。
@@ -70,7 +73,7 @@ Phase 14 TestFlight 发布准备已推送到远端，最新功能代码已经通
 
 ## 下一步计划
 
-1. 检查 Apple Developer、App Store Connect 和 GitHub Actions 签名材料是否齐全。
+1. 在 GitHub Actions 中配置文档列出的 7 个 Apple 签名与 App Store Connect Secrets。
 2. 使用真实签名材料执行一次 TestFlight 归档和上传。
 3. 在真实 iPhone 上验证相机权限、拍摄方向、人脸补光位置和相册保存。
 4. 将 `ProcessingConfiguration` 注入分析、决策和质量检查模块。
