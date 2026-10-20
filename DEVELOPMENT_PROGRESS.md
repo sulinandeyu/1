@@ -6,7 +6,7 @@
 
 MasterCamera 已完成 Phase 1–13 的 MVP 主链路原型，包括相机拍摄、本地照片分析、摄影决策、Core Image 自动成片、人脸局部补光、质量检查、安全回退、预览对比、相册保存状态和诊断面板。
 
-Phase 14 TestFlight 发布已进入真实签名归档阶段。Apple Distribution 证书、App Store Provisioning Profile、App Store Connect API Key 和 7 个 GitHub Secrets 已完成配置并通过 workflow 预检；首次真实归档暴露的签名身份选择问题已修复，尚待重新归档、App Store 上传和真机验证。Phase 15 高级光照尚未开始。
+Phase 14 TestFlight 发布链路已完成。Apple Distribution 证书、App Store Provisioning Profile、App Store Connect API Key 和 7 个 GitHub Secrets 已完成配置；`TestFlight Release #4` 已成功完成真实签名归档、IPA 导出并上传到 App Store Connect。当前等待 Apple Processing，随后进入内部 TestFlight 真机验证。Phase 15 高级光照尚未开始。
 
 ## 本轮完成
 
@@ -20,6 +20,7 @@ Phase 14 TestFlight 发布已进入真实签名归档阶段。Apple Distribution
 - 首次 Archive 暴露工程自动签名默认选择 `iOS Development`；发布 workflow 现已明确覆盖 `CODE_SIGN_IDENTITY=Apple Distribution`。
 - `TestFlight Release #3` 已成功使用 Apple Distribution 证书和 App Store Profile 完成编译签名，但 Archive 校验发现自定义 `Info.plist` 缺少标准 Bundle 元数据。
 - `Info.plist` 已补齐 Bundle Identifier、可执行文件、版本、包类型、启动配置和 iPhone/iPad 支持方向，以满足归档与后续 App Store 校验。
+- `TestFlight Release #4` 已成功完成 Archive、Export IPA 和 App Store Connect 上传，build number 为 `4`。
 
 ### TestFlight 签名材料预检
 
@@ -63,7 +64,9 @@ Phase 14 TestFlight 发布已进入真实签名归档阶段。Apple Distribution
 - `TestFlight Release #1`：预检按设计失败；仓库尚未配置 7 个必需 GitHub Secrets，因此归档、导出和上传均被安全跳过。
 - `TestFlight Release #2`：签名材料安装与 Profile 一致性检查通过；Archive 因 Xcode 默认查找 `iOS Development` 证书失败，已定位并修复为明确使用 `Apple Distribution`。
 - `TestFlight Release #3`：Apple Distribution 编译与签名通过；Archive 因自定义 `Info.plist` 缺少 `CFBundleIdentifier` 失败，已补齐标准 Bundle 元数据。
-- 本地 Xcode 编译：当前 Windows 主机没有 `xcodebuild`，仍需在 Mac 上补充归档和真机验证。
+- `iOS Build #11`：通过；补齐标准 Bundle 元数据后模拟器 Debug 编译正常。
+- `TestFlight Release #4`：通过；真实 Apple Distribution 归档、IPA 导出与 TestFlight 上传全部成功。
+- 本地 Xcode 编译：当前 Windows 主机没有 `xcodebuild`；云端真实归档已通过，仍需在 iPhone 上完成真机验证。
 
 ## 重要技术决策
 
@@ -76,7 +79,7 @@ Phase 14 TestFlight 发布已进入真实签名归档阶段。Apple Distribution
 
 ## 已知问题
 
-- TestFlight workflow 尚需使用补齐 Bundle 元数据后的构建重新执行归档、导出和上传。
+- TestFlight build `1.0 (4)` 已上传，尚待 Apple Processing 完成并在 App Store Connect 中处理可能出现的出口合规提示。
 - 照片 EXIF 方向、Vision 人脸框和 Core Image mask 坐标尚未通过真机验证。
 - `ProcessingConfiguration` 尚未接入分析、决策和质量检查模块，阈值仍为硬编码。
 - 原图保存通过 `UIImage` 写入相册，尚不能保证原始 JPEG 字节和完整元数据不变。
@@ -85,8 +88,8 @@ Phase 14 TestFlight 发布已进入真实签名归档阶段。Apple Distribution
 
 ## 下一步计划
 
-1. 重新运行 `TestFlight Release`，验证 Apple Distribution 归档、IPA 导出和 App Store Connect 上传。
-2. 构建通过 Apple Processing 后加入内部 TestFlight 测试组。
-3. 在真实 iPhone 上验证相机权限、拍摄方向、人脸补光位置和相册保存。
+1. 等待 TestFlight build `1.0 (4)` 完成 Apple Processing，并处理出口合规提示。
+2. 将 build `1.0 (4)` 加入内部 TestFlight 测试组并邀请测试账号。
+3. 在真实 iPhone 上验证相机权限、拍摄方向、人脸补光位置、图像处理和相册保存。
 4. 将 `ProcessingConfiguration` 注入分析、决策和质量检查模块。
 5. 增加处理管线和决策规则的自动化测试。
