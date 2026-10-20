@@ -18,6 +18,8 @@ Phase 14 TestFlight 发布已进入真实签名归档阶段。Apple Distribution
 - GitHub 仓库已配置 workflow 所需的 7 个 Repository Secrets。
 - `TestFlight Release #2` 已通过 Secrets、P12、API Key 和 Provisioning Profile 安装及一致性检查。
 - 首次 Archive 暴露工程自动签名默认选择 `iOS Development`；发布 workflow 现已明确覆盖 `CODE_SIGN_IDENTITY=Apple Distribution`。
+- `TestFlight Release #3` 已成功使用 Apple Distribution 证书和 App Store Profile 完成编译签名，但 Archive 校验发现自定义 `Info.plist` 缺少标准 Bundle 元数据。
+- `Info.plist` 已补齐 Bundle Identifier、可执行文件、版本、包类型、启动配置和 iPhone/iPad 支持方向，以满足归档与后续 App Store 校验。
 
 ### TestFlight 签名材料预检
 
@@ -60,6 +62,7 @@ Phase 14 TestFlight 发布已进入真实签名归档阶段。Apple Distribution
 - GitHub Actions `iOS Build #8`：通过；提交 `31a1a0f` 的签名预检 workflow 修改未影响应用编译。
 - `TestFlight Release #1`：预检按设计失败；仓库尚未配置 7 个必需 GitHub Secrets，因此归档、导出和上传均被安全跳过。
 - `TestFlight Release #2`：签名材料安装与 Profile 一致性检查通过；Archive 因 Xcode 默认查找 `iOS Development` 证书失败，已定位并修复为明确使用 `Apple Distribution`。
+- `TestFlight Release #3`：Apple Distribution 编译与签名通过；Archive 因自定义 `Info.plist` 缺少 `CFBundleIdentifier` 失败，已补齐标准 Bundle 元数据。
 - 本地 Xcode 编译：当前 Windows 主机没有 `xcodebuild`，仍需在 Mac 上补充归档和真机验证。
 
 ## 重要技术决策
@@ -73,7 +76,7 @@ Phase 14 TestFlight 发布已进入真实签名归档阶段。Apple Distribution
 
 ## 已知问题
 
-- TestFlight workflow 尚需使用修复后的 `Apple Distribution` 签名身份重新执行归档、导出和上传。
+- TestFlight workflow 尚需使用补齐 Bundle 元数据后的构建重新执行归档、导出和上传。
 - 照片 EXIF 方向、Vision 人脸框和 Core Image mask 坐标尚未通过真机验证。
 - `ProcessingConfiguration` 尚未接入分析、决策和质量检查模块，阈值仍为硬编码。
 - 原图保存通过 `UIImage` 写入相册，尚不能保证原始 JPEG 字节和完整元数据不变。
