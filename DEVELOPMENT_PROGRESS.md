@@ -114,7 +114,7 @@ Phase 14 TestFlight 发布链路和首轮内部真机验证均已完成。build 
 - 如果初版成片已经生成，但安全回退渲染失败，保留带质量诊断的初版成片，而不是丢弃整个处理结果。
 - 用户重新拍照时会清除上一次处理错误，避免旧错误遮罩干扰新的拍摄流程。
 
-### 离线天空语义分割与分区处理（本地开发，等待云端编译）
+### 离线天空语义分割与分区处理（已推送并发布 TestFlight）
 
 - 接入 Apple 发布的 `DETRResnet50SemanticSegmentationF16P6` Core ML 模型，模型采用 Apache-2.0 许可，约 32 MB，完全离线运行。
 - `SkySegmentationService` 把照片缩放到 448 × 448，读取模型 `semanticPredictions` 输出中的 `sky (other)` 类别，生成逐像素 8-bit 天空蒙版。
@@ -140,6 +140,8 @@ Phase 14 TestFlight 发布链路和首轮内部真机验证均已完成。build 
 - `iOS Build #11`：通过；补齐标准 Bundle 元数据后模拟器 Debug 编译正常。
 - `TestFlight Release #4`：通过；真实 Apple Distribution 归档、IPA 导出与 TestFlight 上传全部成功。
 - `iOS Build #13`：通过；真实 1×、4:3 无裁切取景和 0.1× 步进倍率滑杆已完成 iOS Simulator Debug 编译。
+- `iOS Build #15`：通过；提交 `02f664c` 的场景决策、问题诊断、人物/人脸补光、皮肤 matte、天空 Core ML 模型和分区渲染已完成 iOS Simulator Debug 编译。
+- `TestFlight Release #5`：通过；正式 Archive、IPA 导出和 App Store Connect 上传全部成功，build number 为 `5`。
 - 本地 Xcode 编译：当前 Windows 主机没有 `xcodebuild`；云端真实归档已通过，仍需在 iPhone 上完成真机验证。
 
 ## 重要技术决策
@@ -160,7 +162,7 @@ Phase 14 TestFlight 发布链路和首轮内部真机验证均已完成。build 
 - Vision 通用场景标签需要使用真实样张验证准确率；语义置信度不足时会回退到曝光/对比规则，而不会强行猜测场景。
 - 人物和显著主体蒙版已实现，但尚需通过新 TestFlight build 验证蒙版方向、边缘和不同设备性能。
 - 天空语义分割已经接入，但 32 MB 权重量化模型的首次加载时间、不同 iPhone 的 Neural Engine 性能和复杂边缘准确度仍需本轮真机验证。
-- 当前 Windows 环境无法直接运行 Xcode；本轮本地代码尚未推送，因此还未执行云端 Xcode 编译。
+- 当前 Windows 环境无法直接运行 Xcode；本轮已由 GitHub Actions 完成模拟器编译和正式 iOS Archive，运行时效果仍需真机验证。
 - 照片 EXIF 方向、Vision 人脸框和 Core Image mask 坐标尚未通过真机验证。
 - `ProcessingConfiguration` 尚未接入分析、决策和质量检查模块，阈值仍为硬编码。
 - 原图保存通过 `UIImage` 写入相册，尚不能保证原始 JPEG 字节和完整元数据不变。
@@ -169,7 +171,6 @@ Phase 14 TestFlight 发布链路和首轮内部真机验证均已完成。build 
 
 ## 下一步计划
 
-1. 推送本轮本地提交并执行云端 Xcode 编译，消除 Swift、Core ML 与工程资源引用错误。
-2. 编译通过后发布新的 TestFlight build，在同一台 iPhone 复测真实 1×、倍率滑杆、皮肤/天空蒙版方向、处理速度和场景成片差异。
-3. 建立固定原片样张回归框架，覆盖人像、逆光、风景、夜景、美食、建筑、日落和室内场景，并记录分析、问题、配方与质检结果。
-4. 根据真实样张和盲评结果校准阈值；大师作品只用于抽象色调、层次和光影原则，不复制具体作品风格。
+1. 等待 App Store Connect 完成 build `1.0 (5)` 处理，在同一台 iPhone 真机复测真实 1×、倍率滑杆、皮肤/天空蒙版方向、处理速度和场景成片差异。
+2. 建立固定原片样张回归框架，覆盖人像、逆光、风景、夜景、美食、建筑、日落和室内场景，并记录分析、问题、配方与质检结果。
+3. 根据真实样张和盲评结果校准阈值；大师作品只用于抽象色调、层次和光影原则，不复制具体作品风格。
