@@ -4,7 +4,46 @@ import CoreImage.CIFilterBuiltins
 import Foundation
 
 final class LocalAdjustmentProcessor {
-    func applyFaceRelighting(
+    func applyLocalizedRelighting(
+        to image: CIImage,
+        analysis: PhotoAnalysis?,
+        recipe: AutomaticEditingRecipe
+    ) -> CIImage {
+        let subjectAdjusted = applySubjectRelighting(
+            to: image,
+            analysis: analysis,
+            recipe: recipe
+        )
+
+        return applyFaceRelighting(
+            to: subjectAdjusted,
+            analysis: analysis,
+            recipe: recipe
+        )
+    }
+
+    private func applySubjectRelighting(
+        to image: CIImage,
+        analysis: PhotoAnalysis?,
+        recipe: AutomaticEditingRecipe
+    ) -> CIImage {
+        guard
+            recipe.subjectExposureEV > 0,
+            let analysis,
+            let photoMask = analysis.personMask ?? analysis.salientSubjectMask,
+            let mask = makePixelMask(from: photoMask, extent: image.extent)
+        else {
+            return image
+        }
+
+        return blendExposure(
+            image: image,
+            exposureEV: recipe.subjectExposureEV,
+            mask: mask
+        )
+    }
+
+    private func applyFaceRelighting(
         to image: CIImage,
         analysis: PhotoAnalysis?,
         recipe: AutomaticEditingRecipe
@@ -17,20 +56,15 @@ final class LocalAdjustmentProcessor {
             return image
         }
 
-        let lifted = applyExposure(to: image, ev: recipe.faceExposureEV)
         guard let mask = makeFaceMask(for: faceRegions, extent: image.extent) else {
             return image
         }
 
-        guard let blend = CIFilter(name: "CIBlendWithMask") else {
-            return image
-        }
-
-        blend.setValue(lifted, forKey: kCIInputImageKey)
-        blend.setValue(image, forKey: kCIInputBackgroundImageKey)
-        blend.setValue(mask, forKey: kCIInputMaskImageKey)
-
-        return blend.outputImage?.cropped(to: image.extent) ?? image
+        return blendExposure(
+            image: image,
+            exposureEV: recipe.faceExposureEV,
+            mask: mask
+        )
     }
 
     private func applyExposure(to image: CIImage, ev: Float) -> CIImage {
@@ -57,6 +91,35 @@ final class LocalAdjustmentProcessor {
         }
 
         return combinedMask?.cropped(to: extent)
+    }
+
+    private func makePixelMask(
+        from photoMask: NormalizedPhotoMask,
+        extent: CGRect
+    ) -> CIImage? {
+        guard photoMask.isValid else { return nil }
+
+        let maskImage = CIImage(
+            bitmapData: photoMask.pixels,
+            bytesPerRow: photoMask.width,
+            size: CGSize(width: photoMask.width, height: photoMask.height),
+            format: .L8,
+            colorSpace: nil
+        )
+        let scaleX = extent.width / CGFloat(photoMask.width)
+        let scaleY = extent.height / CGFloat(photoMask.height)
+        let scaled = maskImage
+            .transformed(by: CGAffineTransform(scaleX: scaleX, y: scaleY))
+            .transformed(by: CGAffineTransform(translationX: extent.minX, y: extent.minY))
+
+        guard let blur = CIFilter(name: "CIGaussianBlur") else {
+            return scaled.cropped(to: extent)
+        }
+
+        let radius = min(max(extent.width, extent.height) * 0.006, 18)
+        blur.setValue(scaled.clampedToExtent(), forKey: kCIInputImageKey)
+        blur.setValue(radius, forKey: kCIInputRadiusKey)
+        return blur.outputImage?.cropped(to: extent) ?? scaled.cropped(to: extent)
     }
 
     private func makeMask(
@@ -91,6 +154,22 @@ final class LocalAdjustmentProcessor {
         compositing.setValue(foreground, forKey: kCIInputImageKey)
         compositing.setValue(background, forKey: kCIInputBackgroundImageKey)
         return compositing.outputImage ?? foreground
+    }
+
+    private func blendExposure(
+        image: CIImage,
+        exposureEV: Float,
+        mask: CIImage
+    ) -> CIImage {
+        let lifted = applyExposure(to: image, ev: exposureEV)
+        guard let blend = CIFilter(name: "CIBlendWithMask") else {
+            return image
+        }
+
+        blend.setValue(lifted, forKey: kCIInputImageKey)
+        blend.setValue(image, forKey: kCIInputBackgroundImageKey)
+        blend.setValue(mask, forKey: kCIInputMaskImageKey)
+        return blend.outputImage?.cropped(to: image.extent) ?? image
     }
 }
 

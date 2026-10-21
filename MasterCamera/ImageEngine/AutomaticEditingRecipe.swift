@@ -14,6 +14,7 @@ struct AutomaticEditingRecipe: Equatable, Sendable {
     var noiseReductionAmount: Float
     var sharpeningAmount: Float
     var vignetteIntensity: Float
+    var subjectExposureEV: Float
     var faceExposureEV: Float
 
     static let naturalEnhancement = AutomaticEditingRecipe(
@@ -30,6 +31,7 @@ struct AutomaticEditingRecipe: Equatable, Sendable {
         noiseReductionAmount: 0.0,
         sharpeningAmount: 0.0,
         vignetteIntensity: 0.0,
+        subjectExposureEV: 0.0,
         faceExposureEV: 0.0
     )
 
@@ -47,14 +49,15 @@ struct AutomaticEditingRecipe: Equatable, Sendable {
         noiseReductionAmount: 0.006,
         sharpeningAmount: 0.08,
         vignetteIntensity: 0.0,
+        subjectExposureEV: 0.0,
         faceExposureEV: 0.0
     )
 
     func clamped() -> AutomaticEditingRecipe {
         AutomaticEditingRecipe(
             exposureEV: exposureEV.clamped(to: -0.35...0.35),
-            highlightAmount: highlightAmount.clamped(to: 0.32...0.92),
-            shadowAmount: shadowAmount.clamped(to: 0.16...0.68),
+            highlightAmount: highlightAmount.clamped(to: 0.32...1.0),
+            shadowAmount: shadowAmount.clamped(to: 0.0...0.68),
             brightness: brightness.clamped(to: -0.06...0.06),
             contrast: contrast.clamped(to: 0.96...1.14),
             saturation: saturation.clamped(to: 0.96...1.08),
@@ -65,6 +68,7 @@ struct AutomaticEditingRecipe: Equatable, Sendable {
             noiseReductionAmount: noiseReductionAmount.clamped(to: 0.0...0.06),
             sharpeningAmount: sharpeningAmount.clamped(to: 0.0...0.34),
             vignetteIntensity: vignetteIntensity.clamped(to: 0.0...0.35),
+            subjectExposureEV: subjectExposureEV.clamped(to: 0.0...0.22),
             faceExposureEV: faceExposureEV.clamped(to: 0.0...0.28)
         )
     }

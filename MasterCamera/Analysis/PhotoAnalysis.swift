@@ -11,6 +11,8 @@ struct PhotoAnalysis: Equatable, Sendable {
     let averageSaturation: Float
     let faceCount: Int
     let faceRegions: [NormalizedPhotoRegion]
+    let personMask: NormalizedPhotoMask?
+    let salientSubjectMask: NormalizedPhotoMask?
     let semanticLabels: [SceneLabel]
 
     var exposureProfile: ExposureProfile {
@@ -108,8 +110,20 @@ struct PhotoAnalysis: Equatable, Sendable {
         averageSaturation: 0.0,
         faceCount: 0,
         faceRegions: [],
+        personMask: nil,
+        salientSubjectMask: nil,
         semanticLabels: []
     )
+}
+
+struct NormalizedPhotoMask: Equatable, Sendable {
+    let width: Int
+    let height: Int
+    let pixels: Data
+
+    var isValid: Bool {
+        width > 0 && height > 0 && pixels.count == width * height
+    }
 }
 
 struct SceneLabel: Equatable, Sendable {

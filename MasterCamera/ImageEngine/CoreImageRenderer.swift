@@ -29,7 +29,7 @@ final class CoreImageRenderer {
             throw ImageRenderingError.invalidImageData
         }
 
-        let locallyAdjusted = localAdjustmentProcessor.applyFaceRelighting(
+        let locallyAdjusted = localAdjustmentProcessor.applyLocalizedRelighting(
             to: inputImage,
             analysis: analysis,
             recipe: recipe

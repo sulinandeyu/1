@@ -181,6 +181,7 @@ final class PhotographyDecisionEngine {
             recipe.noiseReductionAmount = max(recipe.noiseReductionAmount, 0.012)
             recipe.toneCurveAmount = max(recipe.toneCurveAmount, 0.16)
             if analysis.averageLuminance < 0.48 || analysis.shadowRatio > 0.28 {
+                recipe.subjectExposureEV = analysis.personMask == nil ? 0.0 : 0.06
                 recipe.faceExposureEV = 0.12
             }
             actions.append(
@@ -196,6 +197,7 @@ final class PhotographyDecisionEngine {
             recipe.saturation = min(recipe.saturation, 1.01)
             recipe.vibrance = min(max(recipe.vibrance, 0.06), 0.12)
             recipe.sharpeningAmount = min(max(recipe.sharpeningAmount, 0.1), 0.16)
+            recipe.subjectExposureEV = analysis.personMask == nil ? 0.0 : 0.16
             recipe.faceExposureEV = 0.24
             recipe.toneCurveAmount = max(recipe.toneCurveAmount, 0.22)
             actions.append(
@@ -244,6 +246,7 @@ final class PhotographyDecisionEngine {
             recipe.toneCurveAmount = max(recipe.toneCurveAmount, 0.28)
             recipe.sharpeningAmount = max(recipe.sharpeningAmount, 0.18)
             recipe.vignetteIntensity = 0.06
+            recipe.subjectExposureEV = analysis.salientSubjectMask == nil ? 0.0 : 0.04
             actions.append(
                 PhotographyAction(
                     title: "恢复食物质感与自然暖色",

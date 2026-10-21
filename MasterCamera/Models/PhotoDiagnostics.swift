@@ -45,6 +45,8 @@ struct PhotoDiagnosticSection: Identifiable, Equatable, Sendable {
                 PhotoDiagnosticItem(label: "平均饱和度", value: analysis.averageSaturation.percentText),
                 PhotoDiagnosticItem(label: "色彩倾向", value: analysis.colorCast.title),
                 PhotoDiagnosticItem(label: "人脸", value: analysis.faceCount.faceCountText),
+                PhotoDiagnosticItem(label: "人物蒙版", value: analysis.personMask.maskSummary),
+                PhotoDiagnosticItem(label: "主体蒙版", value: analysis.salientSubjectMask.maskSummary),
                 PhotoDiagnosticItem(label: "语义标签", value: analysis.semanticLabels.labelSummary)
             ]
         )
@@ -87,10 +89,11 @@ struct PhotoDiagnosticSection: Identifiable, Equatable, Sendable {
                 PhotoDiagnosticItem(
                     label: "细节参数",
                     value: String(
-                        format: "曲线 %.2f · 降噪 %.3f · 锐化 %.2f · 人脸补光 %+.2f EV",
+                        format: "曲线 %.2f · 降噪 %.3f · 锐化 %.2f · 主体 %+.2f EV · 人脸 %+.2f EV",
                         decision.recipe.toneCurveAmount,
                         decision.recipe.noiseReductionAmount,
                         decision.recipe.sharpeningAmount,
+                        decision.recipe.subjectExposureEV,
                         decision.recipe.faceExposureEV
                     )
                 )
@@ -147,6 +150,13 @@ private extension Array where Element == SceneLabel {
         return prefix(4)
             .map { "\($0.identifier) \(Int(($0.confidence * 100).rounded()))%" }
             .joined(separator: "、")
+    }
+}
+
+private extension Optional where Wrapped == NormalizedPhotoMask {
+    var maskSummary: String {
+        guard let mask = self, mask.isValid else { return "未检测到" }
+        return "已生成 \(mask.width)×\(mask.height)"
     }
 }
 

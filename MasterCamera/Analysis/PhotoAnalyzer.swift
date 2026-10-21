@@ -23,6 +23,8 @@ final class PhotoAnalyzer {
 
         let statistics = try pixelStatistics(for: image)
         let faceRegions = includeFaceDetection ? detectFaceRegions(in: data) : []
+        let personMask = includeFaceDetection ? generatePersonMask(in: data) : nil
+        let salientSubjectMask = includeFaceDetection ? generateSalientSubjectMask(in: data) : nil
         let semanticLabels = includeFaceDetection ? classifyScene(in: data) : []
 
         return PhotoAnalysis(
@@ -36,6 +38,8 @@ final class PhotoAnalyzer {
             averageSaturation: statistics.averageSaturation,
             faceCount: faceRegions.count,
             faceRegions: faceRegions,
+            personMask: personMask,
+            salientSubjectMask: salientSubjectMask,
             semanticLabels: semanticLabels
         )
     }
@@ -153,6 +157,72 @@ final class PhotoAnalyzer {
             AppLogger.imageEngine.error("场景语义识别失败：\(error.localizedDescription)")
             return []
         }
+    }
+
+    private func generatePersonMask(in data: Data) -> NormalizedPhotoMask? {
+        let request = VNGeneratePersonSegmentationRequest()
+        request.qualityLevel = .balanced
+        request.outputPixelFormat = kCVPixelFormatType_OneComponent8
+        let handler = VNImageRequestHandler(data: data, options: [:])
+
+        do {
+            try handler.perform([request])
+            guard let pixelBuffer = request.results?.first?.pixelBuffer else {
+                return nil
+            }
+            return normalizedMask(from: pixelBuffer)
+        } catch {
+            AppLogger.imageEngine.error("人物分割失败：\(error.localizedDescription)")
+            return nil
+        }
+    }
+
+    private func generateSalientSubjectMask(in data: Data) -> NormalizedPhotoMask? {
+        let request = VNGenerateAttentionBasedSaliencyImageRequest()
+        let handler = VNImageRequestHandler(data: data, options: [:])
+
+        do {
+            try handler.perform([request])
+            guard let pixelBuffer = request.results?.first?.pixelBuffer else {
+                return nil
+            }
+            return normalizedMask(from: pixelBuffer)
+        } catch {
+            AppLogger.imageEngine.error("显著主体分析失败：\(error.localizedDescription)")
+            return nil
+        }
+    }
+
+    private func normalizedMask(from pixelBuffer: CVPixelBuffer) -> NormalizedPhotoMask? {
+        let width = CVPixelBufferGetWidth(pixelBuffer)
+        let height = CVPixelBufferGetHeight(pixelBuffer)
+        guard width > 0, height > 0 else { return nil }
+
+        let image = CIImage(cvPixelBuffer: pixelBuffer)
+        var pixels = [UInt8](repeating: 0, count: width * height)
+        context.render(
+            image,
+            toBitmap: &pixels,
+            rowBytes: width,
+            bounds: image.extent,
+            format: .L8,
+            colorSpace: nil
+        )
+
+        let minimumActivePixels = max(4, pixels.count / 1_000)
+        let activePixels = pixels.reduce(into: 0) { count, value in
+            if value > 8 {
+                count += 1
+            }
+        }
+        guard activePixels >= minimumActivePixels else { return nil }
+
+        let mask = NormalizedPhotoMask(
+            width: width,
+            height: height,
+            pixels: Data(pixels)
+        )
+        return mask.isValid ? mask : nil
     }
 
     private func luminance(red: Float, green: Float, blue: Float) -> Float {
