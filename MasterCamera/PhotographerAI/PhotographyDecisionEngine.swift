@@ -274,7 +274,11 @@ final class PhotographyDecisionEngine {
             recipe.sharpeningAmount = min(max(recipe.sharpeningAmount, 0.1), 0.16)
             recipe.noiseReductionAmount = max(recipe.noiseReductionAmount, 0.012)
             recipe.skinTextureProtection = 0.56
-            recipe.toneCurveAmount = max(recipe.toneCurveAmount, 0.16)
+            recipe.toneCurveAmount = max(recipe.toneCurveAmount, 0.38)
+            recipe.toneCurveStyle = .portrait
+            recipe.colorGradeIntensity = max(recipe.colorGradeIntensity, 0.38)
+            recipe.highlightWarmAmount = max(recipe.highlightWarmAmount, 0.42)
+            recipe.shadowCoolAmount = max(recipe.shadowCoolAmount, 0.08)
             if let faceLuminance = analysis.faceAverageLuminance, faceLuminance < 0.44 {
                 let correction = min(max((0.46 - faceLuminance) * 0.9, 0.06), 0.24)
                 recipe.subjectExposureEV = analysis.personMask == nil
@@ -308,7 +312,11 @@ final class PhotographyDecisionEngine {
                 ? 0.0
                 : min(max(0.1 + (backgroundSeparation * 0.42), 0.1), 0.26)
             recipe.faceExposureEV = min(max(0.16 + (faceDeficit * 0.9), 0.16), 0.4)
-            recipe.toneCurveAmount = max(recipe.toneCurveAmount, 0.22)
+            recipe.toneCurveAmount = max(recipe.toneCurveAmount, 0.48)
+            recipe.toneCurveStyle = .softHighlights
+            recipe.colorGradeIntensity = max(recipe.colorGradeIntensity, 0.42)
+            recipe.highlightWarmAmount = max(recipe.highlightWarmAmount, 0.38)
+            recipe.shadowCoolAmount = max(recipe.shadowCoolAmount, 0.12)
             actions.append(
                 PhotographyAction(
                     title: "保天空并单独补亮人物",
@@ -321,7 +329,11 @@ final class PhotographyDecisionEngine {
             recipe.contrast += 0.035
             recipe.saturation += 0.012
             recipe.vibrance += 0.14
-            recipe.toneCurveAmount = max(recipe.toneCurveAmount, 0.42)
+            recipe.toneCurveAmount = max(recipe.toneCurveAmount, 0.62)
+            recipe.toneCurveStyle = .landscape
+            recipe.colorGradeIntensity = max(recipe.colorGradeIntensity, 0.34)
+            recipe.shadowCoolAmount = max(recipe.shadowCoolAmount, 0.28)
+            recipe.highlightWarmAmount = max(recipe.highlightWarmAmount, 0.12)
             recipe.sharpeningAmount = max(recipe.sharpeningAmount, 0.2)
             actions.append(
                 PhotographyAction(
@@ -339,7 +351,12 @@ final class PhotographyDecisionEngine {
             recipe.sharpeningAmount = min(max(recipe.sharpeningAmount, 0.1), 0.16)
             recipe.temperatureShift -= 80
             recipe.tintShift += 2
-            recipe.toneCurveAmount = max(recipe.toneCurveAmount, 0.34)
+            recipe.toneCurveAmount = max(recipe.toneCurveAmount, 0.58)
+            recipe.toneCurveStyle = .cinematic
+            recipe.colorGradeIntensity = max(recipe.colorGradeIntensity, 0.56)
+            recipe.shadowCoolAmount = max(recipe.shadowCoolAmount, 0.55)
+            recipe.highlightWarmAmount = max(recipe.highlightWarmAmount, 0.38)
+            recipe.grainAmount = max(recipe.grainAmount, 0.045)
             recipe.vignetteIntensity = 0.1
             actions.append(
                 PhotographyAction(
@@ -352,7 +369,10 @@ final class PhotographyDecisionEngine {
             recipe.contrast += 0.03
             recipe.saturation += 0.02
             recipe.vibrance += 0.12
-            recipe.toneCurveAmount = max(recipe.toneCurveAmount, 0.28)
+            recipe.toneCurveAmount = max(recipe.toneCurveAmount, 0.48)
+            recipe.toneCurveStyle = .portrait
+            recipe.colorGradeIntensity = max(recipe.colorGradeIntensity, 0.36)
+            recipe.highlightWarmAmount = max(recipe.highlightWarmAmount, 0.5)
             recipe.sharpeningAmount = max(recipe.sharpeningAmount, 0.18)
             recipe.vignetteIntensity = 0.06
             recipe.subjectExposureEV = analysis.salientSubjectMask == nil ? 0.0 : 0.04
@@ -366,7 +386,10 @@ final class PhotographyDecisionEngine {
             recipe.highlightAmount = min(recipe.highlightAmount, 0.76)
             recipe.contrast += 0.045
             recipe.vibrance += 0.06
-            recipe.toneCurveAmount = max(recipe.toneCurveAmount, 0.38)
+            recipe.toneCurveAmount = max(recipe.toneCurveAmount, 0.56)
+            recipe.toneCurveStyle = .landscape
+            recipe.colorGradeIntensity = max(recipe.colorGradeIntensity, 0.28)
+            recipe.shadowCoolAmount = max(recipe.shadowCoolAmount, 0.3)
             recipe.sharpeningAmount = max(recipe.sharpeningAmount, 0.24)
             actions.append(
                 PhotographyAction(
@@ -381,7 +404,10 @@ final class PhotographyDecisionEngine {
             recipe.temperatureShift += 220
             recipe.saturation += 0.018
             recipe.vibrance += 0.12
-            recipe.toneCurveAmount = max(recipe.toneCurveAmount, 0.28)
+            recipe.toneCurveAmount = max(recipe.toneCurveAmount, 0.5)
+            recipe.toneCurveStyle = .softHighlights
+            recipe.colorGradeIntensity = max(recipe.colorGradeIntensity, 0.46)
+            recipe.highlightWarmAmount = max(recipe.highlightWarmAmount, 0.68)
             actions.append(
                 PhotographyAction(
                     title: "保护太阳高光与暖色渐变",
@@ -394,7 +420,10 @@ final class PhotographyDecisionEngine {
             recipe.temperatureShift += 80
             recipe.tintShift += 2
             recipe.noiseReductionAmount = max(recipe.noiseReductionAmount, 0.018)
-            recipe.toneCurveAmount = max(recipe.toneCurveAmount, 0.16)
+            recipe.toneCurveAmount = max(recipe.toneCurveAmount, 0.34)
+            recipe.toneCurveStyle = .portrait
+            recipe.colorGradeIntensity = max(recipe.colorGradeIntensity, 0.26)
+            recipe.highlightWarmAmount = max(recipe.highlightWarmAmount, 0.28)
             actions.append(
                 PhotographyAction(
                     title: "平衡室内色温和明暗",
@@ -403,14 +432,35 @@ final class PhotographyDecisionEngine {
             )
         case .lowLight:
             recipe.noiseReductionAmount = max(recipe.noiseReductionAmount, 0.03)
+            recipe.toneCurveStyle = .cinematic
+            recipe.toneCurveAmount = max(recipe.toneCurveAmount, 0.32)
+            recipe.grainAmount = max(recipe.grainAmount, 0.025)
+            recipe.colorGradeIntensity = max(recipe.colorGradeIntensity, 0.22)
+            recipe.shadowCoolAmount = max(recipe.shadowCoolAmount, 0.28)
         case .brightOutdoor:
             recipe.highlightAmount = min(recipe.highlightAmount, 0.52)
+            recipe.toneCurveStyle = .softHighlights
+            recipe.toneCurveAmount = max(recipe.toneCurveAmount, 0.28)
         case .flatScene:
             recipe.contrast += 0.018
+            recipe.toneCurveStyle = .neutral
+            recipe.toneCurveAmount = max(recipe.toneCurveAmount, 0.4)
+            recipe.vibrance = max(recipe.vibrance, 0.07)
         case .highContrast:
             recipe.shadowAmount += 0.04
+            recipe.toneCurveStyle = .softHighlights
+            recipe.toneCurveAmount = max(recipe.toneCurveAmount, 0.3)
         case .general:
-            break
+            recipe.toneCurveStyle = .neutral
+            recipe.toneCurveAmount = max(recipe.toneCurveAmount, 0.26)
+            recipe.vibrance = max(recipe.vibrance, 0.045)
+            recipe.sharpeningAmount = max(recipe.sharpeningAmount, 0.08)
+            actions.append(
+                PhotographyAction(
+                    title: "克制的通用摄影润色",
+                    reason: "场景置信度不足且没有强问题时，仍执行轻量层次、自然饱和度和亮度锐化，不用固定重滤镜强行改变原片。"
+                )
+            )
         }
     }
 

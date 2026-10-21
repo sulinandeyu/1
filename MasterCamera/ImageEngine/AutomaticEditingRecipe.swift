@@ -1,5 +1,13 @@
 import Foundation
 
+enum ToneCurveStyle: String, Equatable, Sendable {
+    case neutral
+    case portrait
+    case landscape
+    case cinematic
+    case softHighlights
+}
+
 struct AutomaticEditingRecipe: Equatable, Sendable {
     var exposureEV: Float
     var highlightAmount: Float
@@ -11,6 +19,10 @@ struct AutomaticEditingRecipe: Equatable, Sendable {
     var temperatureShift: Float
     var tintShift: Float
     var toneCurveAmount: Float
+    var toneCurveStyle: ToneCurveStyle
+    var shadowCoolAmount: Float
+    var highlightWarmAmount: Float
+    var colorGradeIntensity: Float
     var noiseReductionAmount: Float
     var sharpeningAmount: Float
     var skinTextureProtection: Float
@@ -20,6 +32,7 @@ struct AutomaticEditingRecipe: Equatable, Sendable {
     var skyExposureEV: Float
     var skyHighlightAmount: Float
     var skySaturation: Float
+    var grainAmount: Float
 
     static let naturalEnhancement = AutomaticEditingRecipe(
         exposureEV: 0.0,
@@ -32,6 +45,10 @@ struct AutomaticEditingRecipe: Equatable, Sendable {
         temperatureShift: 0.0,
         tintShift: 0.0,
         toneCurveAmount: 0.0,
+        toneCurveStyle: .neutral,
+        shadowCoolAmount: 0.0,
+        highlightWarmAmount: 0.0,
+        colorGradeIntensity: 0.0,
         noiseReductionAmount: 0.0,
         sharpeningAmount: 0.0,
         skinTextureProtection: 0.0,
@@ -40,7 +57,8 @@ struct AutomaticEditingRecipe: Equatable, Sendable {
         faceExposureEV: 0.0,
         skyExposureEV: 0.0,
         skyHighlightAmount: 1.0,
-        skySaturation: 1.0
+        skySaturation: 1.0,
+        grainAmount: 0.0
     )
 
     static let safeFallback = AutomaticEditingRecipe(
@@ -54,6 +72,10 @@ struct AutomaticEditingRecipe: Equatable, Sendable {
         temperatureShift: 0.0,
         tintShift: 0.0,
         toneCurveAmount: 0.08,
+        toneCurveStyle: .softHighlights,
+        shadowCoolAmount: 0.0,
+        highlightWarmAmount: 0.0,
+        colorGradeIntensity: 0.0,
         noiseReductionAmount: 0.006,
         sharpeningAmount: 0.08,
         skinTextureProtection: 0.0,
@@ -62,7 +84,8 @@ struct AutomaticEditingRecipe: Equatable, Sendable {
         faceExposureEV: 0.0,
         skyExposureEV: 0.0,
         skyHighlightAmount: 1.0,
-        skySaturation: 1.0
+        skySaturation: 1.0,
+        grainAmount: 0.0
     )
 
     func clamped() -> AutomaticEditingRecipe {
@@ -77,6 +100,10 @@ struct AutomaticEditingRecipe: Equatable, Sendable {
             temperatureShift: temperatureShift.clamped(to: -600.0...600.0),
             tintShift: tintShift.clamped(to: -15.0...15.0),
             toneCurveAmount: toneCurveAmount.clamped(to: 0.0...1.0),
+            toneCurveStyle: toneCurveStyle,
+            shadowCoolAmount: shadowCoolAmount.clamped(to: 0.0...1.0),
+            highlightWarmAmount: highlightWarmAmount.clamped(to: 0.0...1.0),
+            colorGradeIntensity: colorGradeIntensity.clamped(to: 0.0...1.0),
             noiseReductionAmount: noiseReductionAmount.clamped(to: 0.0...0.06),
             sharpeningAmount: sharpeningAmount.clamped(to: 0.0...0.34),
             skinTextureProtection: skinTextureProtection.clamped(to: 0.0...0.8),
@@ -85,7 +112,8 @@ struct AutomaticEditingRecipe: Equatable, Sendable {
             faceExposureEV: faceExposureEV.clamped(to: 0.0...0.42),
             skyExposureEV: skyExposureEV.clamped(to: -0.2...0.08),
             skyHighlightAmount: skyHighlightAmount.clamped(to: 0.4...1.0),
-            skySaturation: skySaturation.clamped(to: 0.96...1.08)
+            skySaturation: skySaturation.clamped(to: 0.96...1.08),
+            grainAmount: grainAmount.clamped(to: 0.0...0.12)
         )
     }
 }

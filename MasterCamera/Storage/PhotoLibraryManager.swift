@@ -1,5 +1,4 @@
 import Photos
-import UIKit
 
 enum PhotoLibraryManager {
     static func savePhoto(_ photo: CapturedPhoto) async throws {
@@ -7,10 +6,7 @@ enum PhotoLibraryManager {
     }
 
     static func savePhotos(_ photo: CapturedPhoto) async throws {
-        guard
-            let originalImage = photo.originalImage,
-            let editedImage = photo.editedImage
-        else {
+        guard !photo.originalImageData.isEmpty, !photo.editedImageData.isEmpty else {
             throw PhotoLibraryError.invalidImageData
         }
 
@@ -32,8 +28,25 @@ enum PhotoLibraryManager {
         }
 
         try await PHPhotoLibrary.shared().performChanges {
-            PHAssetChangeRequest.creationRequestForAsset(from: originalImage)
-            PHAssetChangeRequest.creationRequestForAsset(from: editedImage)
+            let stamp = Int(photo.capturedAt.timeIntervalSince1970)
+
+            let originalOptions = PHAssetResourceCreationOptions()
+            originalOptions.originalFilename = "MasterCamera_\(stamp)_Original.jpg"
+            let originalRequest = PHAssetCreationRequest.forAsset()
+            originalRequest.addResource(
+                with: .photo,
+                data: photo.originalImageData,
+                options: originalOptions
+            )
+
+            let editedOptions = PHAssetResourceCreationOptions()
+            editedOptions.originalFilename = "MasterCamera_\(stamp)_AI_Edited.jpg"
+            let editedRequest = PHAssetCreationRequest.forAsset()
+            editedRequest.addResource(
+                with: .photo,
+                data: photo.editedImageData,
+                options: editedOptions
+            )
         }
     }
 }

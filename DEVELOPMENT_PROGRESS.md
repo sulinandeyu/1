@@ -174,7 +174,7 @@ Phase 14 TestFlight 发布链路和首轮内部真机验证均已完成。build 
 - 当前 Windows 环境无法直接运行 Xcode；本轮已由 GitHub Actions 完成模拟器编译和正式 iOS Archive，运行时效果仍需真机验证。
 - 照片 EXIF 方向、Vision 人脸框和 Core Image mask 坐标尚未通过真机验证。
 - `ProcessingConfiguration` 尚未接入分析、决策和质量检查模块，阈值仍为硬编码。
-- 原图保存通过 `UIImage` 写入相册，尚不能保证原始 JPEG 字节和完整元数据不变。
+- 原图与成片现已通过 `PHAssetCreationRequest.addResource(data:)` 直接写入相册；仍需在真机相册信息页核对不同设备照片的 EXIF 展示情况。
 - 尚无 XCTest target、单元测试或固定样张回归测试。
 - 当前 Windows 环境没有 `xcodebuild`，需要通过 GitHub Actions 或 Mac 执行真实编译。
 
@@ -198,3 +198,15 @@ Phase 14 TestFlight 发布链路和首轮内部真机验证均已完成。build 
 - 逆光人像只在“人脸明显暗于背景”且背景较亮或存在明显高光时成立，避免仅因画面同时存在暗部和高光就误判。
 - 人脸和人物补光从固定数值改为根据目标脸部亮度、实测脸部亮度和人脸/背景亮度差动态计算，并保留安全上限。
 - 诊断页增加人脸测光、背景测光和亮度差，便于下一轮真机样张校准。
+
+## Phase 2.1 摄影成片效果强化（2026-10-21）
+
+- 确认成片显示和保存链路实际使用 `editedImageData`，并非通过 UI 或低质量预览伪造差异；效果偏弱的核心是通用曲线幅度保守、没有实际色彩分级，以及局部补光在全局处理之前执行而被后续步骤削弱。
+- `AutomaticEditingRecipe` 增加曲线类型、暗部冷调、高光暖调、色彩分级强度与颗粒参数，所有字段均进入实际 Core Image 像素处理。
+- 色调曲线拆分为 neutral、portrait、landscape、cinematic 和 softHighlights 五种目标曲线，并按强度在恒等曲线与场景目标之间插值，避免全场景固定滤镜。
+- 人像/逆光、风景、夜景、美食、建筑、日落、室内及曝光/对比降级场景均设置独立曲线与调色策略；夜景才使用轻颗粒，优秀原片不会被无条件套用重风格。
+- Pipeline 调整为曝光与动态范围 → 曲线 → 白平衡 → 基础色彩 → 分区色彩分级 → 主体/人脸补光 → 天空保护 → 降噪/锐化 → 肤质保护 → 暗角/颗粒 → sRGB 全分辨率 JPEG。
+- 输入读取显式应用 EXIF 方向；工作空间使用 extended linear sRGB，输出为 sRGB；AI 成片复制可用原始元数据并把已烘焙方向写为 1。
+- 相册保存改为直接写入 Original 与 AI Edited 的原始 Data，避免先解码成 `UIImage` 再次压缩；原图字节与元数据可保留。
+- 增加分析、决策、渲染、质检/回退和总耗时日志，并记录实际执行模块、输出尺寸、JPEG 大小和降级原因；诊断页可查看场景曲线与摄影调色参数。
+- 新增 `docs/PHOTO_QUALITY_VALIDATION.md`，定义七类真实 iPhone 样片和逐项验收标准。仓库当前没有真实照片，不能把编译成功表述为摄影效果已完成真机验证。
