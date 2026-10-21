@@ -153,6 +153,7 @@ Phase 14 TestFlight 发布链路和首轮内部真机验证均已完成。build 
 - `TestFlight Release #5`：通过；正式 Archive、IPA 导出和 App Store Connect 上传全部成功，build number 为 `5`。
 - `iOS Build #20`：按预期发现 Phase 2.1 首版使用了当前 SDK 不支持的 `CIImageRepresentationOption.lossyCompressionQuality`，已恢复兼容的 Core Image JPEG 输出选项。
 - `iOS Build #21`：通过；提交 `f0bd573` 的五类场景曲线、分区色彩分级、局部处理顺序、颗粒、元数据保存、处理日志和原始 Data 相册写入已完成 iOS Simulator Debug 编译。
+- `TestFlight Release #8`：通过；提交 `f604da3` 已完成 Release Archive、IPA 导出与 App Store Connect 上传，build number 为 `8`，用于 Phase 2.1 七类真实样片验收。
 - 本地 Xcode 编译：当前 Windows 主机没有 `xcodebuild`；云端真实归档已通过，仍需在 iPhone 上完成真机验证。
 
 ## 重要技术决策
