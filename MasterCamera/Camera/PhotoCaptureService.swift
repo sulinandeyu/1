@@ -16,7 +16,18 @@ final class PhotoCaptureService {
         self.photoOutput = photoOutput
     }
 
-    func capturePhoto(completion: @escaping (Result<PhotoCaptureResult, Error>) -> Void) {
+    func capturePhoto(
+        videoRotationAngle: CGFloat,
+        completion: @escaping (Result<PhotoCaptureResult, Error>) -> Void
+    ) {
+        if let connection = photoOutput.connection(with: .video),
+           connection.isVideoRotationAngleSupported(videoRotationAngle) {
+            connection.videoRotationAngle = videoRotationAngle
+            AppLogger.camera.info("拍照方向已设置为 \(videoRotationAngle)°")
+        } else {
+            AppLogger.camera.warning("设备不支持拍照旋转角度 \(videoRotationAngle)°，保留连接当前方向")
+        }
+
         let settings = AVCapturePhotoSettings(format: [
             AVVideoCodecKey: AVVideoCodecType.jpeg
         ])

@@ -6,6 +6,8 @@ enum ToneCurveStyle: String, Equatable, Sendable {
     case landscape
     case cinematic
     case softHighlights
+    case interior
+    case workspace
 }
 
 struct AutomaticEditingRecipe: Equatable, Sendable {
@@ -14,6 +16,8 @@ struct AutomaticEditingRecipe: Equatable, Sendable {
     var shadowAmount: Float
     var brightness: Float
     var contrast: Float
+    var blackPoint: Float
+    var localContrastAmount: Float
     var saturation: Float
     var vibrance: Float
     var temperatureShift: Float
@@ -40,6 +44,8 @@ struct AutomaticEditingRecipe: Equatable, Sendable {
         shadowAmount: 0.0,
         brightness: 0.0,
         contrast: 1.0,
+        blackPoint: 0.0,
+        localContrastAmount: 0.0,
         saturation: 1.0,
         vibrance: 0.0,
         temperatureShift: 0.0,
@@ -67,6 +73,8 @@ struct AutomaticEditingRecipe: Equatable, Sendable {
         shadowAmount: 0.08,
         brightness: 0.0,
         contrast: 1.01,
+        blackPoint: 0.0,
+        localContrastAmount: 0.04,
         saturation: 1.0,
         vibrance: 0.03,
         temperatureShift: 0.0,
@@ -95,6 +103,8 @@ struct AutomaticEditingRecipe: Equatable, Sendable {
             shadowAmount: shadowAmount.clamped(to: 0.0...0.68),
             brightness: brightness.clamped(to: -0.06...0.06),
             contrast: contrast.clamped(to: 0.96...1.14),
+            blackPoint: blackPoint.clamped(to: 0.0...0.035),
+            localContrastAmount: localContrastAmount.clamped(to: 0.0...0.45),
             saturation: saturation.clamped(to: 0.96...1.08),
             vibrance: vibrance.clamped(to: 0.0...0.32),
             temperatureShift: temperatureShift.clamped(to: -600.0...600.0),

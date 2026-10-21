@@ -111,7 +111,15 @@ struct PhotoAnalysis: Equatable, Sendable {
             return .landscape
         }
 
-        if identifiers.containsKeyword(["indoor", "interior", "room"] ) {
+        if identifiers.containsKeyword([
+            "desk", "computer", "keyboard", "monitor", "laptop", "electronics", "office"
+        ]) {
+            return .workspace
+        }
+
+        if identifiers.containsKeyword([
+            "indoor", "interior", "room", "living room", "furniture", "couch", "television"
+        ]) {
             return .indoor
         }
 
@@ -164,6 +172,7 @@ enum SemanticScene: String, Equatable, Sendable {
     case architecture
     case sunset
     case indoor
+    case workspace
     case general
 }
 

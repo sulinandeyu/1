@@ -22,6 +22,7 @@ enum AestheticTarget: String, Equatable, Sendable {
     case architecturalClarity
     case warmSunset
     case balancedIndoor
+    case workspaceClarity
     case neutral
 
     var title: String {
@@ -34,6 +35,7 @@ enum AestheticTarget: String, Equatable, Sendable {
         case .architecturalClarity: return "清晰克制的建筑质感"
         case .warmSunset: return "保护暖色与太阳高光"
         case .balancedIndoor: return "色温自然的室内观感"
+        case .workspaceClarity: return "保留黑位与材质的桌面质感"
         case .neutral: return "忠实自然"
         }
     }

@@ -11,6 +11,9 @@ struct CapturedPhoto: Identifiable, Equatable, Sendable {
     let problemReport: PhotoProblemReport?
     let decision: PhotographyDecision?
     let qualityCheck: QualityCheckResult?
+    let processingDiagnostics: ImageProcessingDiagnostics?
+    let differenceImageData: Data?
+    let processingStagePreviews: [ProcessingStagePreview]
 
     init(
         originalImageData: Data,
@@ -20,7 +23,10 @@ struct CapturedPhoto: Identifiable, Equatable, Sendable {
         analysis: PhotoAnalysis? = nil,
         problemReport: PhotoProblemReport? = nil,
         decision: PhotographyDecision? = nil,
-        qualityCheck: QualityCheckResult? = nil
+        qualityCheck: QualityCheckResult? = nil,
+        processingDiagnostics: ImageProcessingDiagnostics? = nil,
+        differenceImageData: Data? = nil,
+        processingStagePreviews: [ProcessingStagePreview] = []
     ) {
         self.originalImageData = originalImageData
         self.editedImageData = editedImageData ?? originalImageData
@@ -30,6 +36,9 @@ struct CapturedPhoto: Identifiable, Equatable, Sendable {
         self.problemReport = problemReport
         self.decision = decision
         self.qualityCheck = qualityCheck
+        self.processingDiagnostics = processingDiagnostics
+        self.differenceImageData = differenceImageData
+        self.processingStagePreviews = processingStagePreviews
     }
 
     var originalImage: UIImage? {
@@ -38,6 +47,11 @@ struct CapturedPhoto: Identifiable, Equatable, Sendable {
 
     var editedImage: UIImage? {
         UIImage(data: editedImageData)
+    }
+
+    var differenceImage: UIImage? {
+        guard let differenceImageData else { return nil }
+        return UIImage(data: differenceImageData)
     }
 }
 

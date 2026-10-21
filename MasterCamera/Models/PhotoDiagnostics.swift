@@ -22,6 +22,10 @@ struct PhotoDiagnostics: Equatable, Sendable {
             sections.append(.quality(qualityCheck))
         }
 
+        if let processingDiagnostics = photo.processingDiagnostics {
+            sections.append(.processing(processingDiagnostics))
+        }
+
         self.sections = sections
     }
 
@@ -178,6 +182,96 @@ struct PhotoDiagnosticSection: Identifiable, Equatable, Sendable {
                 PhotoDiagnosticItem(label: "成片对比", value: qualityCheck.measuredAnalysis.contrastRange.percentText)
             ]
         )
+    }
+
+    static func processing(_ diagnostics: ImageProcessingDiagnostics) -> PhotoDiagnosticSection {
+        let original = diagnostics.original
+        let edited = diagnostics.edited
+        let difference = diagnostics.difference
+        let stageItems = diagnostics.stages.map { stage in
+            PhotoDiagnosticItem(
+                label: stage.name,
+                value: "\(stage.durationMilliseconds) ms · \(stage.executed ? "已执行" : "跳过") · \(stage.detail)"
+            )
+        }
+
+        return PhotoDiagnosticSection(
+            id: "processing",
+            title: "像素与处理链诊断",
+            items: [
+                PhotoDiagnosticItem(
+                    label: "文件标识",
+                    value: "原图 \(original.identifier) · 成片 \(edited.identifier)"
+                ),
+                PhotoDiagnosticItem(
+                    label: "编码尺寸",
+                    value: "原图 \(original.encodedPixelWidth)×\(original.encodedPixelHeight) · 成片 \(edited.encodedPixelWidth)×\(edited.encodedPixelHeight)"
+                ),
+                PhotoDiagnosticItem(
+                    label: "解码尺寸",
+                    value: "原图 \(original.decodedPixelWidth)×\(original.decodedPixelHeight) · 成片 \(edited.decodedPixelWidth)×\(edited.decodedPixelHeight)"
+                ),
+                PhotoDiagnosticItem(
+                    label: "方向",
+                    value: "原图 EXIF \(original.exifOrientation) · 成片 EXIF \(edited.exifOrientation)"
+                ),
+                PhotoDiagnosticItem(
+                    label: "色彩空间",
+                    value: "原图 \(original.colorModel)/\(original.colorProfile) · 成片 \(edited.colorModel)/\(edited.colorProfile)"
+                ),
+                PhotoDiagnosticItem(
+                    label: "真实差异",
+                    value: String(
+                        format: "RGB MAE %.2f%% · 亮度 %.2f%% · 颜色 %.2f%% · 变化像素 %.1f%%",
+                        difference.normalizedMeanAbsoluteRGBDifference * 100,
+                        difference.meanAbsoluteLuminanceDifference * 100,
+                        difference.meanAbsoluteColorDifference * 100,
+                        difference.changedPixelRatio * 100
+                    )
+                ),
+                PhotoDiagnosticItem(
+                    label: "平均亮度",
+                    value: String(
+                        format: "原图 %.1f%% · 成片 %.1f%% · 改变 %+.1f%%",
+                        difference.originalAverageLuminance * 100,
+                        difference.editedAverageLuminance * 100,
+                        (difference.editedAverageLuminance - difference.originalAverageLuminance) * 100
+                    )
+                ),
+                PhotoDiagnosticItem(
+                    label: "平均 RGB",
+                    value: "原图 \(difference.originalMeanRGB.rgbText) · 成片 \(difference.editedMeanRGB.rgbText)"
+                ),
+                PhotoDiagnosticItem(
+                    label: "亮度直方图",
+                    value: "原图 \(difference.originalLuminanceHistogram.histogramText)\n成片 \(difference.editedLuminanceHistogram.histogramText)"
+                ),
+                PhotoDiagnosticItem(
+                    label: "执行模块",
+                    value: diagnostics.executedModules.joined(separator: " → ")
+                ),
+                PhotoDiagnosticItem(
+                    label: "降级原因",
+                    value: diagnostics.fallbackReason ?? "无"
+                )
+            ] + stageItems
+        )
+    }
+}
+
+private extension Array where Element == Float {
+    var rgbText: String {
+        guard count >= 3 else { return "不可用" }
+        return String(format: "%.0f/%.0f/%.0f", self[0] * 255, self[1] * 255, self[2] * 255)
+    }
+
+    var histogramText: String {
+        let symbols = Array(" ▁▂▃▄▅▆▇█")
+        map { value in
+            let level = min(8, max(0, Int((value * 64).rounded())))
+            return String(symbols[level])
+        }
+        .joined()
     }
 }
 

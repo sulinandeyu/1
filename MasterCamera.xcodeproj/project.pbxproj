@@ -40,6 +40,7 @@
 		B00000000000000000000001 /* SkySegmentationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000101 /* SkySegmentationService.swift */; };
 		B00000000000000000000002 /* SkyAdjustmentProcessor.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000102 /* SkyAdjustmentProcessor.swift */; };
 		B00000000000000000000003 /* DETRResnet50SemanticSegmentationF16P6.mlpackage in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000103 /* DETRResnet50SemanticSegmentationF16P6.mlpackage */; };
+		C00000000000000000000001 /* ImageProcessingDiagnostics.swift in Sources */ = {isa = PBXBuildFile; fileRef = C00000000000000000000101 /* ImageProcessingDiagnostics.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -78,6 +79,7 @@
 		B00000000000000000000101 /* SkySegmentationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkySegmentationService.swift; sourceTree = "<group>"; };
 		B00000000000000000000102 /* SkyAdjustmentProcessor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkyAdjustmentProcessor.swift; sourceTree = "<group>"; };
 		B00000000000000000000103 /* DETRResnet50SemanticSegmentationF16P6.mlpackage */ = {isa = PBXFileReference; lastKnownFileType = folder.mlpackage; path = DETRResnet50SemanticSegmentationF16P6.mlpackage; sourceTree = "<group>"; };
+		C00000000000000000000101 /* ImageProcessingDiagnostics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageProcessingDiagnostics.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -232,6 +234,7 @@
 			children = (
 				A00000000000000000000036 /* QualityCheckResult.swift */,
 				A00000000000000000000037 /* QualityCheckService.swift */,
+				C00000000000000000000101 /* ImageProcessingDiagnostics.swift */,
 			);
 			path = QualityControl;
 			sourceTree = "<group>";
@@ -359,6 +362,7 @@
 				B00000000000000000000001 /* SkySegmentationService.swift in Sources */,
 				B00000000000000000000002 /* SkyAdjustmentProcessor.swift in Sources */,
 				B00000000000000000000003 /* DETRResnet50SemanticSegmentationF16P6.mlpackage in Sources */,
+				C00000000000000000000001 /* ImageProcessingDiagnostics.swift in Sources */,
 				A0000000000000000000000C /* PhotoLibraryManager.swift in Sources */,
 				A0000000000000000000000D /* Logger.swift in Sources */,
 			);

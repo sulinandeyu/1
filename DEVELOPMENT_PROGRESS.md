@@ -213,3 +213,13 @@ Phase 14 TestFlight 发布链路和首轮内部真机验证均已完成。build 
 - 相册保存改为直接写入 Original 与 AI Edited 的原始 Data，避免先解码成 `UIImage` 再次压缩；原图字节与元数据可保留。
 - 增加分析、决策、渲染、质检/回退和总耗时日志，并记录实际执行模块、输出尺寸、JPEG 大小和降级原因；诊断页可查看场景曲线与摄影调色参数。
 - 新增 `docs/PHOTO_QUALITY_VALIDATION.md`，定义七类真实 iPhone 样片和逐项验收标准。仓库当前没有真实照片，不能把编译成功表述为摄影效果已完成真机验证。
+# 2026-10-21 — MasterCamera V2 摄影级自动成片引擎专项升级（开发中）
+
+- 确认比较页分别读取 `originalImageData` 与 `editedImageData`，未发现 UI 将两者错误复用。
+- 定位横向旋转根因：捕获连接此前没有使用设备方向设置 `videoRotationAngle`；现已接入 `AVCaptureDevice.RotationCoordinator`，并在按下快门时写入当前 horizon-level capture angle。
+- 新增 `ImageProcessingDiagnosticsService`：记录原图/成片 SHA-256 短标识、编码/解码尺寸、EXIF Orientation、色彩模型/ICC、RGB/亮度/色度 MAE、变化像素比例、平均亮度、平均 RGB 和 16 档亮度直方图。
+- 新增 5 倍差异可视化，以及 Original → 曝光动态范围 → 曲线白平衡 → 摄影调色 → 局部材质 → Final Edited 的逐阶段像素预览。
+- 新增真实样片导入复测入口；导入文件走与真机拍照相同的分析、决策、渲染、质检和诊断流程。
+- 新增独立 `workspace` 场景与室内/桌面专属 Tone Curve，强化可恢复高光、有效阴影、黑位、局部材质对比、克制的白平衡和细节处理。
+- 图像引擎新增真实作用于像素的 black point 与大半径局部对比模块，模块清单会写入诊断日志。
+- 4 个用户附件是对比界面截图而非原始照片；首轮观察与限制记录于 `docs/V2_REAL_SAMPLE_FINDINGS.md`。真机原始 JPEG/HEIC 复测尚待新构建。

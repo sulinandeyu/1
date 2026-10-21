@@ -415,19 +415,50 @@ final class PhotographyDecisionEngine {
                 )
             )
         case .indoor:
-            recipe.highlightAmount = min(recipe.highlightAmount, 0.82)
-            recipe.shadowAmount = max(recipe.shadowAmount, 0.12)
-            recipe.temperatureShift += 80
-            recipe.tintShift += 2
+            recipe.exposureEV += analysis.averageLuminance < 0.36 ? 0.08 : 0
+            recipe.highlightAmount = min(
+                recipe.highlightAmount,
+                analysis.highlightRatio > 0.1 ? 0.52 : 0.66
+            )
+            recipe.shadowAmount = max(recipe.shadowAmount, 0.26)
+            recipe.contrast = max(recipe.contrast, 1.035)
+            recipe.blackPoint = max(recipe.blackPoint, 0.008)
+            recipe.localContrastAmount = max(recipe.localContrastAmount, 0.24)
+            recipe.saturation = min(recipe.saturation, 0.995)
+            recipe.vibrance = max(recipe.vibrance, 0.075)
             recipe.noiseReductionAmount = max(recipe.noiseReductionAmount, 0.018)
-            recipe.toneCurveAmount = max(recipe.toneCurveAmount, 0.34)
-            recipe.toneCurveStyle = .portrait
-            recipe.colorGradeIntensity = max(recipe.colorGradeIntensity, 0.26)
-            recipe.highlightWarmAmount = max(recipe.highlightWarmAmount, 0.28)
+            recipe.sharpeningAmount = max(recipe.sharpeningAmount, 0.13)
+            recipe.toneCurveAmount = max(recipe.toneCurveAmount, 0.64)
+            recipe.toneCurveStyle = .interior
+            recipe.colorGradeIntensity = max(recipe.colorGradeIntensity, 0.18)
+            recipe.highlightWarmAmount = max(recipe.highlightWarmAmount, 0.16)
             actions.append(
                 PhotographyAction(
-                    title: "平衡室内色温和明暗",
-                    reason: "室内场景轻微修正混合光偏色，并温和打开暗部，不制造假 HDR。"
+                    title: "建立专业室内摄影层次",
+                    reason: "压制窗户和屏幕高光、恢复家具与地面有效阴影，并以局部对比增强织物和柜体材质；白平衡只按实测色偏修正。"
+                )
+            )
+        case .workspace:
+            recipe.exposureEV += analysis.averageLuminance < 0.34 ? 0.06 : 0
+            recipe.highlightAmount = min(
+                recipe.highlightAmount,
+                analysis.highlightRatio > 0.08 ? 0.5 : 0.62
+            )
+            recipe.shadowAmount = min(max(recipe.shadowAmount, 0.18), 0.3)
+            recipe.contrast = max(recipe.contrast, 1.045)
+            recipe.blackPoint = max(recipe.blackPoint, 0.014)
+            recipe.localContrastAmount = max(recipe.localContrastAmount, 0.34)
+            recipe.saturation = min(recipe.saturation, 0.99)
+            recipe.vibrance = max(recipe.vibrance, 0.085)
+            recipe.toneCurveAmount = max(recipe.toneCurveAmount, 0.7)
+            recipe.toneCurveStyle = .workspace
+            recipe.noiseReductionAmount = max(recipe.noiseReductionAmount, 0.012)
+            recipe.sharpeningAmount = min(max(recipe.sharpeningAmount, 0.18), 0.24)
+            recipe.vignetteIntensity = max(recipe.vignetteIntensity, 0.04)
+            actions.append(
+                PhotographyAction(
+                    title: "整理桌面高光与黑位",
+                    reason: "控制显示器高光，适度打开线缆和键盘暗部，同时保留黑色键盘深度，并增强键帽、桌面和玻璃材质。"
                 )
             )
         case .lowLight:
@@ -482,6 +513,8 @@ final class PhotographyDecisionEngine {
             return "保护太阳高光和暖色渐变，避免过度 HDR。"
         case .indoor:
             return "校正室内混合光色温，让暗部和主体看起来自然。"
+        case .workspace:
+            return "控制屏幕高光并保留黑色器材深度，让键帽、桌面与玻璃材质更清晰。"
         case .lowLight:
             return "提亮暗部，同时控制噪点和不自然的亮度。"
         case .brightOutdoor:
@@ -505,6 +538,7 @@ final class PhotographyDecisionEngine {
         case .architecture: return .architecturalClarity
         case .sunset: return .warmSunset
         case .indoor: return .balancedIndoor
+        case .workspace: return .workspaceClarity
         case .general: return .neutral
         }
     }

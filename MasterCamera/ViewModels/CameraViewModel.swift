@@ -58,6 +58,27 @@ final class CameraViewModel: ObservableObject {
         }
     }
 
+    func processImportedPhotoData(_ data: Data) {
+        guard !processingState.isProcessing else { return }
+        guard !data.isEmpty else {
+            errorMessage = "导入的样片为空。"
+            return
+        }
+
+        AppLogger.imageEngine.info("导入真实样片复测：\(data.count) bytes")
+        processCapturedPhoto(
+            CapturedPhoto(
+                originalImageData: data,
+                editedImageData: nil,
+                capturedAt: Date()
+            )
+        )
+    }
+
+    func reportImportFailure(_ message: String) {
+        errorMessage = message
+    }
+
     func focusAndExpose(at point: CGPoint) {
         cameraManager.focusAndExpose(at: point)
     }

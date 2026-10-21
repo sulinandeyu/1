@@ -8,6 +8,7 @@ struct PhotoPreviewView: View {
     let onRetake: () -> Void
 
     @State private var selectedVersion: PhotoVersion = .edited
+    @State private var selectedStageID: String?
     @State private var isPressingOriginal = false
     @State private var showsDebugSummary = false
 
@@ -91,6 +92,9 @@ struct PhotoPreviewView: View {
                 .pickerStyle(.segmented)
                 .padding(.top, 16)
                 .accessibilityLabel("照片版本")
+                .onChange(of: selectedVersion) { _, _ in
+                    selectedStageID = nil
+                }
 
                 Text(compareHint)
                     .font(.caption)
@@ -114,16 +118,36 @@ struct PhotoPreviewView: View {
             return photo.originalImage
         }
 
+        if
+            let selectedStageID,
+            let preview = photo.processingStagePreviews.first(where: { $0.id == selectedStageID })
+        {
+            return UIImage(data: preview.imageData)
+        }
+
         switch selectedVersion {
         case .original:
             return photo.originalImage
         case .edited:
             return photo.editedImage
+        case .difference:
+            return photo.differenceImage
         }
     }
 
     private var compareHint: String {
-        selectedVersion == .edited ? "长按照片可临时查看原图" : "已保留未经处理的原图"
+        if let selectedStageID {
+            return "正在查看处理阶段：\(selectedStageID)；长按仍可查看原图"
+        }
+
+        switch selectedVersion {
+        case .edited:
+            return "长按照片可临时查看原图"
+        case .original:
+            return "已保留未经处理的原图"
+        case .difference:
+            return "差异图已放大 5 倍；越亮代表像素变化越明显"
+        }
     }
 
     @ViewBuilder
@@ -148,6 +172,10 @@ struct PhotoPreviewView: View {
         } else {
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 12) {
+                    if !photo.processingStagePreviews.isEmpty {
+                        stagePreviewStrip
+                    }
+
                     ForEach(diagnostics.sections) { section in
                         diagnosticSection(section)
                     }
@@ -156,6 +184,47 @@ struct PhotoPreviewView: View {
             }
             .frame(maxHeight: 280)
             .background(.black.opacity(0.58), in: RoundedRectangle(cornerRadius: 8))
+        }
+    }
+
+    private var stagePreviewStrip: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("逐阶段像素预览")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.white)
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    ForEach(photo.processingStagePreviews) { preview in
+                        Button {
+                            selectedVersion = .edited
+                            selectedStageID = selectedStageID == preview.id ? nil : preview.id
+                        } label: {
+                            VStack(alignment: .leading, spacing: 5) {
+                                if let image = UIImage(data: preview.imageData) {
+                                    Image(uiImage: image)
+                                        .resizable()
+                                        .scaledToFill()
+                                        .frame(width: 82, height: 62)
+                                        .clipped()
+                                }
+
+                                Text(preview.name)
+                                    .font(.system(size: 9, weight: .medium))
+                                    .lineLimit(1)
+                            }
+                            .foregroundStyle(.white)
+                            .padding(5)
+                            .background(
+                                selectedStageID == preview.id
+                                    ? Color.blue.opacity(0.7)
+                                    : Color.white.opacity(0.1),
+                                in: RoundedRectangle(cornerRadius: 7)
+                            )
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -222,6 +291,7 @@ private extension SaveState {
 private enum PhotoVersion: String, CaseIterable, Identifiable {
     case original
     case edited
+    case difference
 
     var id: String {
         rawValue
@@ -233,6 +303,8 @@ private enum PhotoVersion: String, CaseIterable, Identifiable {
             return "原图"
         case .edited:
             return "AI 成片"
+        case .difference:
+            return "差异"
         }
     }
 }

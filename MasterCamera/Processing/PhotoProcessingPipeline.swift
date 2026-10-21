@@ -6,19 +6,22 @@ final class PhotoProcessingPipeline {
     private let decisionEngine: PhotographyDecisionEngine
     private let renderer: CoreImageRenderer
     private let qualityService: QualityCheckService
+    private let diagnosticsService: ImageProcessingDiagnosticsService
 
     init(
         analyzer: PhotoAnalyzer = PhotoAnalyzer(),
         problemDetector: PhotoProblemDetector = PhotoProblemDetector(),
         decisionEngine: PhotographyDecisionEngine = PhotographyDecisionEngine(),
         renderer: CoreImageRenderer = CoreImageRenderer(),
-        qualityService: QualityCheckService = QualityCheckService()
+        qualityService: QualityCheckService = QualityCheckService(),
+        diagnosticsService: ImageProcessingDiagnosticsService = ImageProcessingDiagnosticsService()
     ) {
         self.analyzer = analyzer
         self.problemDetector = problemDetector
         self.decisionEngine = decisionEngine
         self.renderer = renderer
         self.qualityService = qualityService
+        self.diagnosticsService = diagnosticsService
     }
 
     func process(_ photo: CapturedPhoto) throws -> CapturedPhoto {
@@ -59,13 +62,76 @@ final class PhotoProcessingPipeline {
         let finalEdit = chooseFinalEdit(
             originalData: photo.originalImageData,
             initialEditedData: initialEditedData,
-            initialQualityCheck: initialQualityCheck
+            initialQualityCheck: initialQualityCheck,
+            initialRecipe: decision.recipe,
+            analysis: analysis
         )
         let qualityDuration = ProcessInfo.processInfo.systemUptime - qualityStart
         let totalDuration = ProcessInfo.processInfo.systemUptime - totalStart
         AppLogger.imageEngine.info(
             "处理完成：渲染=\(Self.milliseconds(renderDuration))ms，质检/回退=\(Self.milliseconds(qualityDuration))ms，总计=\(Self.milliseconds(totalDuration))ms，状态=\(finalEdit.qualityCheck.status.rawValue)，安全回退=\(finalEdit.qualityCheck.fallbackApplied)"
         )
+
+        let stageRecords = [
+            ProcessingStageRecord(
+                name: "照片理解",
+                durationMilliseconds: Self.milliseconds(analysisDuration),
+                executed: true,
+                detail: "\(analysis.semanticScene.rawValue) · \(analysis.semanticLabels.count) 个语义标签"
+            ),
+            ProcessingStageRecord(
+                name: "问题诊断与配方",
+                durationMilliseconds: Self.milliseconds(decisionDuration),
+                executed: true,
+                detail: "\(problemReport.problems.count) 个问题 · \(decision.sceneStrategy.rawValue)"
+            ),
+            ProcessingStageRecord(
+                name: "完整分辨率渲染",
+                durationMilliseconds: Self.milliseconds(renderDuration),
+                executed: true,
+                detail: "Core Image · extended linear sRGB → sRGB"
+            ),
+            ProcessingStageRecord(
+                name: "质量检查与回退",
+                durationMilliseconds: Self.milliseconds(qualityDuration),
+                executed: true,
+                detail: finalEdit.qualityCheck.summaryText
+            ),
+            ProcessingStageRecord(
+                name: "总耗时",
+                durationMilliseconds: Self.milliseconds(totalDuration),
+                executed: true,
+                detail: "分析到最终成片"
+            )
+        ]
+        let diagnosticsResult: ImageDiagnosticsResult?
+        do {
+            diagnosticsResult = try diagnosticsService.inspect(
+                originalData: photo.originalImageData,
+                editedData: finalEdit.data,
+                executedModules: renderer.executedModuleNames(
+                    for: finalEdit.recipe,
+                    analysis: finalEdit.analysis
+                ),
+                stages: stageRecords,
+                fallbackReason: finalEdit.fallbackReason
+            )
+        } catch {
+            diagnosticsResult = nil
+            AppLogger.imageEngine.error("成片差异诊断失败：\(error.localizedDescription)")
+        }
+
+        let stagePreviews: [ProcessingStagePreview]
+        do {
+            stagePreviews = try renderer.renderStagePreviews(
+                from: photo.originalImageData,
+                recipe: finalEdit.recipe,
+                analysis: finalEdit.analysis
+            )
+        } catch {
+            stagePreviews = []
+            AppLogger.imageEngine.error("处理阶段预览生成失败：\(error.localizedDescription)")
+        }
 
         // 7. 返回可预览的原片与成片；用户确认后由 PhotoLibraryManager 保存。
         return CapturedPhoto(
@@ -76,17 +142,28 @@ final class PhotoProcessingPipeline {
             analysis: analysis,
             problemReport: problemReport,
             decision: decision,
-            qualityCheck: finalEdit.qualityCheck
+            qualityCheck: finalEdit.qualityCheck,
+            processingDiagnostics: diagnosticsResult?.diagnostics,
+            differenceImageData: diagnosticsResult?.differenceImageData,
+            processingStagePreviews: stagePreviews
         )
     }
 
     private func chooseFinalEdit(
         originalData: Data,
         initialEditedData: Data,
-        initialQualityCheck: QualityCheckResult
-    ) -> (data: Data, qualityCheck: QualityCheckResult) {
+        initialQualityCheck: QualityCheckResult,
+        initialRecipe: AutomaticEditingRecipe,
+        analysis: PhotoAnalysis
+    ) -> (
+        data: Data,
+        qualityCheck: QualityCheckResult,
+        recipe: AutomaticEditingRecipe,
+        analysis: PhotoAnalysis?,
+        fallbackReason: String?
+    ) {
         guard initialQualityCheck.status == .failed else {
-            return (initialEditedData, initialQualityCheck)
+            return (initialEditedData, initialQualityCheck, initialRecipe, analysis, nil)
         }
 
         AppLogger.imageEngine.warning(
@@ -105,14 +182,32 @@ final class PhotoProcessingPipeline {
 
             if fallbackQualityCheck.status.isBetter(than: initialQualityCheck.status) {
                 AppLogger.imageEngine.warning("安全回退结果更可靠，采用克制版成片")
-                return (fallbackData, fallbackQualityCheck)
+                return (
+                    fallbackData,
+                    fallbackQualityCheck,
+                    .safeFallback,
+                    nil,
+                    initialQualityCheck.issues.map(\.rawValue).joined(separator: ",")
+                )
             }
 
             AppLogger.imageEngine.warning("安全回退未改善质检等级，保留初版成片")
-            return (initialEditedData, initialQualityCheck)
+            return (
+                initialEditedData,
+                initialQualityCheck,
+                initialRecipe,
+                analysis,
+                "安全回退没有改善质量等级"
+            )
         } catch {
             AppLogger.imageEngine.error("安全回退处理失败，保留初版成片：\(error.localizedDescription)")
-            return (initialEditedData, initialQualityCheck)
+            return (
+                initialEditedData,
+                initialQualityCheck,
+                initialRecipe,
+                analysis,
+                "安全回退渲染失败：\(error.localizedDescription)"
+            )
         }
     }
 

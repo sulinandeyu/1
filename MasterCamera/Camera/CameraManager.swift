@@ -15,6 +15,7 @@ final class CameraManager: NSObject, ObservableObject {
     private let photoOutput = AVCapturePhotoOutput()
     private lazy var photoCaptureService = PhotoCaptureService(photoOutput: photoOutput)
     private var videoInput: AVCaptureDeviceInput?
+    private var rotationCoordinator: AVCaptureDevice.RotationCoordinator?
     private var isConfigured = false
 
     func prepare() {
@@ -95,7 +96,12 @@ final class CameraManager: NSObject, ObservableObject {
         sessionQueue.async { [weak self] in
             guard let self else { return }
 
-            self.photoCaptureService.capturePhoto { [weak self] result in
+            let rotationAngle = self.rotationCoordinator?
+                .videoRotationAngleForHorizonLevelCapture ?? 90
+
+            self.photoCaptureService.capturePhoto(
+                videoRotationAngle: rotationAngle
+            ) { [weak self] result in
                 Task { @MainActor in
                     self?.state = .ready
                 }
@@ -223,6 +229,10 @@ final class CameraManager: NSObject, ObservableObject {
 
         session.addInput(input)
         videoInput = input
+        rotationCoordinator = AVCaptureDevice.RotationCoordinator(
+            device: input.device,
+            previewLayer: nil
+        )
 
         if !session.outputs.contains(photoOutput) {
             guard session.canAddOutput(photoOutput) else {

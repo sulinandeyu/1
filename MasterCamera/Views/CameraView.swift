@@ -1,7 +1,9 @@
+import PhotosUI
 import SwiftUI
 
 struct CameraView: View {
     @StateObject private var viewModel = CameraViewModel()
+    @State private var selectedSample: PhotosPickerItem?
 
     var body: some View {
         ZStack {
@@ -39,6 +41,21 @@ struct CameraView: View {
                 onRetake: viewModel.dismissPreview
             )
         }
+        .onChange(of: selectedSample) { _, newValue in
+            guard let newValue else { return }
+            Task {
+                defer { selectedSample = nil }
+                do {
+                    guard let data = try await newValue.loadTransferable(type: Data.self) else {
+                        viewModel.reportImportFailure("无法读取所选样片。")
+                        return
+                    }
+                    viewModel.processImportedPhotoData(data)
+                } catch {
+                    viewModel.reportImportFailure("导入样片失败：\(error.localizedDescription)")
+                }
+            }
+        }
     }
 
     private var topBar: some View {
@@ -62,7 +79,19 @@ struct CameraView: View {
             zoomControl
 
             HStack {
-                Spacer()
+                PhotosPicker(selection: $selectedSample, matching: .images) {
+                    VStack(spacing: 4) {
+                        Image(systemName: "photo.badge.plus")
+                            .font(.system(size: 20, weight: .semibold))
+                        Text("样片复测")
+                            .font(.caption2.weight(.medium))
+                    }
+                    .frame(width: 78, height: 58)
+                    .foregroundStyle(.white)
+                    .background(.black.opacity(0.45), in: RoundedRectangle(cornerRadius: 12))
+                }
+                .disabled(viewModel.processingState.isProcessing)
+                .accessibilityLabel("导入真实样片复测")
 
                 Button(action: viewModel.capturePhoto) {
                     ZStack {
@@ -78,8 +107,11 @@ struct CameraView: View {
                 .accessibilityLabel("拍照")
                 .disabled(viewModel.state != .ready || viewModel.processingState.isProcessing)
 
-                Spacer()
+                Color.clear
+                    .frame(width: 78, height: 58)
+                    .accessibilityHidden(true)
             }
+            .frame(maxWidth: .infinity)
         }
         .padding(.bottom, 22)
     }

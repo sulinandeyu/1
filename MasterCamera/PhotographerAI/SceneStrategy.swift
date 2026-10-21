@@ -9,6 +9,7 @@ enum SceneStrategy: String, Equatable, Sendable {
     case architecture
     case sunset
     case indoor
+    case workspace
     case lowLight
     case brightOutdoor
     case flatScene
@@ -33,6 +34,8 @@ enum SceneStrategy: String, Equatable, Sendable {
             return "日落/日出"
         case .indoor:
             return "室内"
+        case .workspace:
+            return "电脑桌/工作区"
         case .lowLight:
             return "弱光"
         case .brightOutdoor:
@@ -71,6 +74,8 @@ enum SceneStrategy: String, Equatable, Sendable {
             return .sunset
         case .indoor:
             return .indoor
+        case .workspace:
+            return .workspace
         case .general:
             break
         }

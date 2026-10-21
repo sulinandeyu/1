@@ -27,18 +27,22 @@ final class CoreImageRenderer {
         return UIImage(cgImage: cgImage)
     }
 
-    func renderAutomaticEdit(
+    func renderStagePreviews(
         from data: Data,
-        recipe: AutomaticEditingRecipe = .naturalEnhancement,
-        analysis: PhotoAnalysis? = nil
-    ) throws -> Data {
-        guard let inputImage = CIImage(data: data, options: [.applyOrientationProperty: true]) else {
+        recipe: AutomaticEditingRecipe,
+        analysis: PhotoAnalysis?
+    ) throws -> [ProcessingStagePreview] {
+        guard let inputImage = CIImage(
+            data: data,
+            options: [.applyOrientationProperty: true]
+        ) else {
             throw ImageRenderingError.invalidImageData
         }
 
         let exposed = applyExposure(to: inputImage, recipe: recipe)
         let recovered = applyHighlightShadow(to: exposed, recipe: recipe)
-        let curved = applyToneCurve(to: recovered, recipe: recipe)
+        let blackPointAdjusted = applyBlackPoint(to: recovered, recipe: recipe)
+        let curved = applyToneCurve(to: blackPointAdjusted, recipe: recipe)
         let whiteBalanced = applyWhiteBalance(to: curved, recipe: recipe)
         let colored = applyColorControls(to: whiteBalanced, recipe: recipe)
         let vibrant = applyVibrance(to: colored, recipe: recipe)
@@ -53,18 +57,72 @@ final class CoreImageRenderer {
             analysis: analysis,
             recipe: recipe
         )
-        let denoised = applyNoiseReduction(to: skyAdjusted, recipe: recipe)
+        let locallyContrasted = applyLocalContrast(to: skyAdjusted, recipe: recipe)
+        let denoised = applyNoiseReduction(to: locallyContrasted, recipe: recipe)
         let sharpened = applySharpening(to: denoised, recipe: recipe)
         let textureProtected = skinTextureProtectionProcessor.protectTexture(
             processedImage: sharpened,
-            sourceImage: skyAdjusted,
+            sourceImage: locallyContrasted,
             analysis: analysis,
             amount: recipe.skinTextureProtection
         )
         let vignetted = applyVignette(to: textureProtected, recipe: recipe)
         let finished = applyFilmGrain(to: vignetted, recipe: recipe)
 
-        let modules = executedModules(for: recipe, analysis: analysis)
+        let images = [
+            ("Original", inputImage),
+            ("曝光与动态范围", blackPointAdjusted),
+            ("曲线与白平衡", whiteBalanced),
+            ("摄影调色", graded),
+            ("局部与材质", locallyContrasted),
+            ("Final Edited", finished)
+        ]
+        return images.compactMap { name, image in
+            guard let imageData = makeStagePreviewData(from: image) else { return nil }
+            return ProcessingStagePreview(name: name, imageData: imageData)
+        }
+    }
+
+    func renderAutomaticEdit(
+        from data: Data,
+        recipe: AutomaticEditingRecipe = .naturalEnhancement,
+        analysis: PhotoAnalysis? = nil
+    ) throws -> Data {
+        guard let inputImage = CIImage(data: data, options: [.applyOrientationProperty: true]) else {
+            throw ImageRenderingError.invalidImageData
+        }
+
+        let exposed = applyExposure(to: inputImage, recipe: recipe)
+        let recovered = applyHighlightShadow(to: exposed, recipe: recipe)
+        let blackPointAdjusted = applyBlackPoint(to: recovered, recipe: recipe)
+        let curved = applyToneCurve(to: blackPointAdjusted, recipe: recipe)
+        let whiteBalanced = applyWhiteBalance(to: curved, recipe: recipe)
+        let colored = applyColorControls(to: whiteBalanced, recipe: recipe)
+        let vibrant = applyVibrance(to: colored, recipe: recipe)
+        let graded = applyColorGrading(to: vibrant, recipe: recipe)
+        let locallyAdjusted = localAdjustmentProcessor.applyLocalizedRelighting(
+            to: graded,
+            analysis: analysis,
+            recipe: recipe
+        )
+        let skyAdjusted = skyAdjustmentProcessor.applySkyTreatment(
+            to: locallyAdjusted,
+            analysis: analysis,
+            recipe: recipe
+        )
+        let locallyContrasted = applyLocalContrast(to: skyAdjusted, recipe: recipe)
+        let denoised = applyNoiseReduction(to: locallyContrasted, recipe: recipe)
+        let sharpened = applySharpening(to: denoised, recipe: recipe)
+        let textureProtected = skinTextureProtectionProcessor.protectTexture(
+            processedImage: sharpened,
+            sourceImage: locallyContrasted,
+            analysis: analysis,
+            amount: recipe.skinTextureProtection
+        )
+        let vignetted = applyVignette(to: textureProtected, recipe: recipe)
+        let finished = applyFilmGrain(to: vignetted, recipe: recipe)
+
+        let modules = executedModuleNames(for: recipe, analysis: analysis)
         AppLogger.imageEngine.info(
             "执行像素模块：\(modules.joined(separator: " → "))；输出范围 \(Int(finished.extent.width))×\(Int(finished.extent.height))"
         )
@@ -126,11 +184,34 @@ final class CoreImageRenderer {
         return output as Data
     }
 
-    private func executedModules(
+    private func makeStagePreviewData(from image: CIImage) -> Data? {
+        let maximumLongEdge: CGFloat = 720
+        let translated = image.transformed(
+            by: CGAffineTransform(
+                translationX: -image.extent.minX,
+                y: -image.extent.minY
+            )
+        )
+        let scale = min(
+            1,
+            maximumLongEdge / max(translated.extent.width, translated.extent.height)
+        )
+        let preview = translated.transformed(
+            by: CGAffineTransform(scaleX: scale, y: scale)
+        )
+        return context.jpegRepresentation(
+            of: preview,
+            colorSpace: outputColorSpace,
+            options: [:]
+        )
+    }
+
+    func executedModuleNames(
         for recipe: AutomaticEditingRecipe,
         analysis: PhotoAnalysis?
     ) -> [String] {
         var modules = ["方向/色彩空间", "曝光", "高光阴影"]
+        if recipe.blackPoint > 0.001 { modules.append("黑位") }
         if recipe.toneCurveAmount > 0.001 { modules.append("\(recipe.toneCurveStyle.rawValue)曲线") }
         if abs(recipe.temperatureShift) > 0.5 || abs(recipe.tintShift) > 0.01 { modules.append("白平衡") }
         modules.append("色彩控制")
@@ -141,6 +222,7 @@ final class CoreImageRenderer {
            recipe.skyExposureEV < -0.001 || recipe.skyHighlightAmount < 0.999 {
             modules.append("天空保护")
         }
+        if recipe.localContrastAmount > 0.001 { modules.append("局部对比/材质") }
         if recipe.noiseReductionAmount > 0.001 { modules.append("降噪") }
         if recipe.sharpeningAmount > 0.001 { modules.append("亮度锐化") }
         if recipe.skinTextureProtection > 0.001 { modules.append("肤质保护") }
@@ -224,6 +306,18 @@ final class CoreImageRenderer {
                 CGPoint(x: 0.5, y: 0.525), CGPoint(x: 0.75, y: 0.765),
                 CGPoint(x: 1, y: 0.955)
             ]
+        case .interior:
+            targetPoints = [
+                CGPoint(x: 0, y: 0.01), CGPoint(x: 0.25, y: 0.285),
+                CGPoint(x: 0.5, y: 0.535), CGPoint(x: 0.75, y: 0.775),
+                CGPoint(x: 1, y: 0.955)
+            ]
+        case .workspace:
+            targetPoints = [
+                CGPoint(x: 0, y: 0.004), CGPoint(x: 0.25, y: 0.235),
+                CGPoint(x: 0.5, y: 0.52), CGPoint(x: 0.75, y: 0.79),
+                CGPoint(x: 1, y: 0.965)
+            ]
         }
 
         let identityPoints = [
@@ -246,6 +340,28 @@ final class CoreImageRenderer {
         filter.point3 = points[3]
         filter.point4 = points[4]
         return filter.outputImage ?? image
+    }
+
+    private func applyBlackPoint(to image: CIImage, recipe: AutomaticEditingRecipe) -> CIImage {
+        let blackPoint = CGFloat(recipe.blackPoint)
+        guard blackPoint > 0.001, blackPoint < 0.99 else { return image }
+        let slope = 1 / (1 - blackPoint)
+        let offset = -blackPoint * slope
+        let coefficients = CIVector(x: offset, y: slope, z: 0, w: 0)
+        return image.applyingFilter("CIColorPolynomial", parameters: [
+            "inputRedCoefficients": coefficients,
+            "inputGreenCoefficients": coefficients,
+            "inputBlueCoefficients": coefficients
+        ])
+    }
+
+    private func applyLocalContrast(to image: CIImage, recipe: AutomaticEditingRecipe) -> CIImage {
+        guard recipe.localContrastAmount > 0.001 else { return image }
+        let filter = CIFilter.unsharpMask()
+        filter.inputImage = image
+        filter.radius = Float(min(max(image.extent.width, image.extent.height) * 0.0025, 10))
+        filter.intensity = recipe.localContrastAmount
+        return (filter.outputImage ?? image).cropped(to: image.extent)
     }
 
     private func applyColorGrading(to image: CIImage, recipe: AutomaticEditingRecipe) -> CIImage {

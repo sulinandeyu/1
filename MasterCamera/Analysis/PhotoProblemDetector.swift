@@ -155,7 +155,8 @@ final class PhotoProblemDetector {
 
         let canDiagnoseNeutralColor = analysis.semanticScene == .portrait ||
             analysis.semanticScene == .backlitPortrait ||
-            analysis.semanticScene == .indoor
+            analysis.semanticScene == .indoor ||
+            analysis.semanticScene == .workspace
         guard canDiagnoseNeutralColor else { return }
 
         switch analysis.colorCast {
