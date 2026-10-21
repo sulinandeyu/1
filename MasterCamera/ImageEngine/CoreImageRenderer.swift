@@ -72,7 +72,7 @@ final class CoreImageRenderer {
         guard let renderedJPEG = context.jpegRepresentation(
             of: finished,
             colorSpace: outputColorSpace,
-            options: [.lossyCompressionQuality: 0.95]
+            options: [:]
         ) else {
             throw ImageRenderingError.renderFailed
         }
