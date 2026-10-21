@@ -75,6 +75,7 @@ Phase 14 TestFlight 发布链路和首轮内部真机验证均已完成。build 
 - `TestFlight Release #3`：Apple Distribution 编译与签名通过；Archive 因自定义 `Info.plist` 缺少 `CFBundleIdentifier` 失败，已补齐标准 Bundle 元数据。
 - `iOS Build #11`：通过；补齐标准 Bundle 元数据后模拟器 Debug 编译正常。
 - `TestFlight Release #4`：通过；真实 Apple Distribution 归档、IPA 导出与 TestFlight 上传全部成功。
+- `iOS Build #13`：通过；真实 1×、4:3 无裁切取景和 0.1× 步进倍率滑杆已完成 iOS Simulator Debug 编译。
 - 本地 Xcode 编译：当前 Windows 主机没有 `xcodebuild`；云端真实归档已通过，仍需在 iPhone 上完成真机验证。
 
 ## 重要技术决策
