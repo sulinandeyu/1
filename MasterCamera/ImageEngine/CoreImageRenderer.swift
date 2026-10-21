@@ -43,6 +43,66 @@ final class CoreImageRenderer {
             throw ImageRenderingError.invalidImageData
         }
 
+        let exposed = applyExposure(to: inputImage, recipe: recipe)
+        let recovered = applyHighlightShadow(to: exposed, recipe: recipe)
+        let blackPointAdjusted = applyBlackPoint(to: recovered, recipe: recipe)
+        let baseCurved = applyToneCurve(to: blackPointAdjusted, recipe: recipe)
+        let curved = cinematicToneMappingEngine.apply(to: baseCurved, recipe: recipe)
+        let whiteBalanced = applyWhiteBalance(to: curved, recipe: recipe)
+        let colored = applyColorControls(to: whiteBalanced, recipe: recipe)
+        let vibrant = applyVibrance(to: colored, recipe: recipe)
+        let graded = cinematicColorGradingEngine.apply(to: vibrant, recipe: recipe)
+        let locallyAdjusted = localAdjustmentProcessor.applyLocalizedRelighting(
+            to: graded,
+            analysis: analysis,
+            recipe: recipe
+        )
+        let skyAdjusted = skyAdjustmentProcessor.applySkyTreatment(
+            to: locallyAdjusted,
+            analysis: analysis,
+            recipe: recipe
+        )
+        let spatiallySeparated = cinematicSpatialDepthProcessor.apply(
+            to: skyAdjusted,
+            analysis: analysis,
+            recipe: recipe
+        )
+        let locallyContrasted = applyLocalContrast(to: spatiallySeparated, recipe: recipe)
+        let denoised = applyNoiseReduction(to: locallyContrasted, recipe: recipe)
+        let sharpened = applySharpening(to: denoised, recipe: recipe)
+        let textureProtected = skinTextureProtectionProcessor.protectTexture(
+            processedImage: sharpened,
+            sourceImage: locallyContrasted,
+            analysis: analysis,
+            amount: recipe.skinTextureProtection
+        )
+        let finished = cinematicLensCharacterProcessor.apply(
+            to: textureProtected,
+            recipe: recipe
+        )
+        let images = [
+            ("Original", inputImage),
+            ("曝光与动态范围", blackPointAdjusted),
+            ("七段电影影调", curved),
+            ("三段电影调色", graded),
+            ("局部空间与材质", locallyContrasted),
+            ("Final Edited", finished)
+        ]
+        return images.compactMap { name, image in
+            guard let imageData = makeStagePreviewData(from: image) else { return nil }
+            return ProcessingStagePreview(name: name, imageData: imageData)
+        }
+    }
+
+    func renderAutomaticEdit(
+        from data: Data,
+        recipe: AutomaticEditingRecipe = .naturalEnhancement,
+        analysis: PhotoAnalysis? = nil
+    ) throws -> Data {
+        guard let inputImage = CIImage(data: data, options: [.applyOrientationProperty: true]) else {
+            throw ImageRenderingError.invalidImageData
+        }
+
         let exposureStart = ProcessInfo.processInfo.systemUptime
         let exposed = applyExposure(to: inputImage, recipe: recipe)
         let recovered = applyHighlightShadow(to: exposed, recipe: recipe)
@@ -92,80 +152,18 @@ final class CoreImageRenderer {
         )
         let detailDuration = ProcessInfo.processInfo.systemUptime - detailStart
 
-        let images = [
-            ("Original", inputImage),
-            ("曝光与动态范围", blackPointAdjusted),
-            ("七段电影影调", curved),
-            ("三段电影调色", graded),
-            ("局部空间与材质", locallyContrasted),
-            ("Final Edited", finished)
-        ]
-        return images.compactMap { name, image in
-            guard let imageData = makeStagePreviewData(from: image) else { return nil }
-            return ProcessingStagePreview(name: name, imageData: imageData)
-        }
-    }
-
-    func renderAutomaticEdit(
-        from data: Data,
-        recipe: AutomaticEditingRecipe = .naturalEnhancement,
-        analysis: PhotoAnalysis? = nil
-    ) throws -> Data {
-        guard let inputImage = CIImage(data: data, options: [.applyOrientationProperty: true]) else {
-            throw ImageRenderingError.invalidImageData
-        }
-
-        let exposed = applyExposure(to: inputImage, recipe: recipe)
-        let recovered = applyHighlightShadow(to: exposed, recipe: recipe)
-        let blackPointAdjusted = applyBlackPoint(to: recovered, recipe: recipe)
-        let baseCurved = applyToneCurve(to: blackPointAdjusted, recipe: recipe)
-        let curved = cinematicToneMappingEngine.apply(to: baseCurved, recipe: recipe)
-        let whiteBalanced = applyWhiteBalance(to: curved, recipe: recipe)
-        let colored = applyColorControls(to: whiteBalanced, recipe: recipe)
-        let vibrant = applyVibrance(to: colored, recipe: recipe)
-        let graded = cinematicColorGradingEngine.apply(to: vibrant, recipe: recipe)
-        let locallyAdjusted = localAdjustmentProcessor.applyLocalizedRelighting(
-            to: graded,
-            analysis: analysis,
-            recipe: recipe
-        )
-        let skyAdjusted = skyAdjustmentProcessor.applySkyTreatment(
-            to: locallyAdjusted,
-            analysis: analysis,
-            recipe: recipe
-        )
-        let spatiallySeparated = cinematicSpatialDepthProcessor.apply(
-            to: skyAdjusted,
-            analysis: analysis,
-            recipe: recipe
-        )
-        let locallyContrasted = applyLocalContrast(to: spatiallySeparated, recipe: recipe)
-        let denoised = applyNoiseReduction(to: locallyContrasted, recipe: recipe)
-        let sharpened = applySharpening(to: denoised, recipe: recipe)
-        let textureProtected = skinTextureProtectionProcessor.protectTexture(
-            processedImage: sharpened,
-            sourceImage: locallyContrasted,
-            analysis: analysis,
-            amount: recipe.skinTextureProtection
-        )
-        let finished = cinematicLensCharacterProcessor.apply(
-            to: textureProtected,
-            recipe: recipe
-        )
-
         let modules = executedModuleNames(for: recipe, analysis: analysis)
         AppLogger.imageEngine.info(
             "执行像素模块：\(modules.joined(separator: " → "))；输出范围 \(Int(finished.extent.width))×\(Int(finished.extent.height))"
         )
-        AppLogger.imageEngine.info(
-            String(
-                format: "V3 阶段耗时：影调 %.1fms，色彩 %.1fms，空间 %.1fms，细节/镜头 %.1fms",
-                exposureDuration * 1_000,
-                colorDuration * 1_000,
-                spatialDuration * 1_000,
-                detailDuration * 1_000
-            )
+        let timingSummary = String(
+            format: "影调 %.1fms，色彩 %.1fms，空间 %.1fms，细节/镜头 %.1fms",
+            exposureDuration * 1_000,
+            colorDuration * 1_000,
+            spatialDuration * 1_000,
+            detailDuration * 1_000
         )
+        AppLogger.imageEngine.info("V3 阶段耗时：\(timingSummary, privacy: .public)")
 
         guard let renderedJPEG = context.jpegRepresentation(
             of: finished,
