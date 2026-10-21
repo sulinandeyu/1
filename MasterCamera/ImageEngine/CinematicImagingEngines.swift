@@ -55,7 +55,7 @@ final class CinematicToneMappingEngine {
         case .bright:
             return [0.012, 0.09, 0.25, 0.535, 0.765, 0.925, 0.992]
         case .lowKey:
-            return [0.003, 0.05, 0.19, 0.475, 0.715, 0.895, 0.972]
+            return [0.008, 0.075, 0.215, 0.5, 0.73, 0.9, 0.98]
         }
     }
 
@@ -113,21 +113,21 @@ final class CinematicColorGradingEngine {
 
         var output = image
         if recipe.shadowCoolAmount > 0.001 {
-            let amount = CGFloat(intensity * recipe.shadowCoolAmount)
+            let amount = CGFloat(intensity * recipe.shadowCoolAmount * 0.72)
             let cool = output.applyingFilter("CIColorMatrix", parameters: [
-                "inputBiasVector": CIVector(x: -0.014 * amount, y: 0.004 * amount, z: 0.025 * amount, w: 0)
+                    "inputBiasVector": CIVector(x: -0.009 * amount, y: 0.002 * amount, z: 0.014 * amount, w: 0)
             ])
             output = blend(cool, over: output, mask: shadowMask)
         }
         if recipe.midtoneWarmAmount > 0.001 {
-            let amount = CGFloat(intensity * recipe.midtoneWarmAmount)
+            let amount = CGFloat(intensity * recipe.midtoneWarmAmount * 0.76)
             let warm = output.applyingFilter("CIColorMatrix", parameters: [
                 "inputBiasVector": CIVector(x: 0.018 * amount, y: 0.004 * amount, z: -0.013 * amount, w: 0)
             ])
             output = blend(warm, over: output, mask: midtoneMask)
         }
         if recipe.highlightWarmAmount > 0.001 {
-            let amount = CGFloat(intensity * recipe.highlightWarmAmount)
+            let amount = CGFloat(intensity * recipe.highlightWarmAmount * 0.78)
             let warm = output.applyingFilter("CIColorMatrix", parameters: [
                 "inputBiasVector": CIVector(x: 0.022 * amount, y: 0.007 * amount, z: -0.015 * amount, w: 0)
             ])
@@ -219,19 +219,24 @@ final class CinematicLensCharacterProcessor {
             return image
         }
 
-        let highlights = image
-            .applyingFilter("CIColorControls", parameters: [
-                kCIInputBrightnessKey: -0.46,
-                kCIInputContrastKey: 2.8,
-                kCIInputSaturationKey: 0.72
-            ])
-            .clampedToExtent()
+        let highlightMask = makeSmoothHighlightMask(
+            from: image,
+            threshold: recipe.highlightGlowThreshold
+        )
+        let black = CIImage(
+            color: CIColor(red: 0, green: 0, blue: 0, alpha: 1)
+        ).cropped(to: image.extent)
+        let isolatedHighlights = image.applyingFilter("CIBlendWithMask", parameters: [
+            kCIInputBackgroundImageKey: black,
+            kCIInputMaskImageKey: highlightMask
+        ]).cropped(to: image.extent)
         var output = image
 
         if recipe.bloomIntensity > 0.001 {
-            let radius = min(max(image.extent.width, image.extent.height) * 0.004, 22)
-            let bloom = highlights
+            let radius = min(max(image.extent.width, image.extent.height) * 0.0018, 9)
+            let bloom = isolatedHighlights
                 .applyingFilter("CIGaussianBlur", parameters: [kCIInputRadiusKey: radius])
+                .cropped(to: image.extent)
                 .applyingFilter("CIColorMatrix", parameters: [
                     "inputRVector": CIVector(x: CGFloat(recipe.bloomIntensity), y: 0, z: 0, w: 0),
                     "inputGVector": CIVector(x: 0, y: CGFloat(recipe.bloomIntensity), z: 0, w: 0),
@@ -243,10 +248,11 @@ final class CinematicLensCharacterProcessor {
         }
 
         if recipe.halationIntensity > 0.001 {
-            let radius = min(max(image.extent.width, image.extent.height) * 0.0022, 12)
+            let radius = min(max(image.extent.width, image.extent.height) * 0.001, 5)
             let amount = CGFloat(recipe.halationIntensity)
-            let halation = highlights
+            let halation = isolatedHighlights
                 .applyingFilter("CIGaussianBlur", parameters: [kCIInputRadiusKey: radius])
+                .cropped(to: image.extent)
                 .applyingFilter("CIColorMatrix", parameters: [
                     "inputRVector": CIVector(x: 1.0 * amount, y: 0, z: 0, w: 0),
                     "inputGVector": CIVector(x: 0, y: 0.32 * amount, z: 0, w: 0),
@@ -257,6 +263,31 @@ final class CinematicLensCharacterProcessor {
             ]).cropped(to: image.extent)
         }
         return output
+    }
+
+    private func makeSmoothHighlightMask(
+        from image: CIImage,
+        threshold: Float
+    ) -> CIImage {
+        let grayscale = image.applyingFilter("CIColorControls", parameters: [
+            kCIInputSaturationKey: 0.0
+        ])
+        let transitionWidth: CGFloat = 0.08
+        let scale = 1 / transitionWidth
+        let bias = -CGFloat(threshold) * scale
+        return grayscale
+            .applyingFilter("CIColorMatrix", parameters: [
+                "inputRVector": CIVector(x: scale, y: 0, z: 0, w: 0),
+                "inputGVector": CIVector(x: 0, y: scale, z: 0, w: 0),
+                "inputBVector": CIVector(x: 0, y: 0, z: scale, w: 0),
+                "inputBiasVector": CIVector(x: bias, y: bias, z: bias, w: 0)
+            ])
+            .applyingFilter("CIColorClamp", parameters: [
+                "inputMinComponents": CIVector(x: 0, y: 0, z: 0, w: 0),
+                "inputMaxComponents": CIVector(x: 1, y: 1, z: 1, w: 1)
+            ])
+            .applyingFilter("CIGammaAdjust", parameters: ["inputPower": 0.82])
+            .cropped(to: image.extent)
     }
 
     private func applyVignette(to image: CIImage, recipe: AutomaticEditingRecipe) -> CIImage {

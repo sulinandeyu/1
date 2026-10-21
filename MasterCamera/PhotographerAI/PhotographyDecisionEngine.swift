@@ -222,8 +222,9 @@ final class PhotographyDecisionEngine {
     ) {
         if problems.contains(.clippedHighlights) {
             recipe.highlightAmount = min(recipe.highlightAmount, 0.58)
-            recipe.bloomIntensity = min(recipe.bloomIntensity, 0.035)
-            recipe.halationIntensity = min(recipe.halationIntensity, 0.012)
+            recipe.bloomIntensity = min(recipe.bloomIntensity, 0.008)
+            recipe.halationIntensity = min(recipe.halationIntensity, 0.003)
+            recipe.highlightGlowThreshold = max(recipe.highlightGlowThreshold, 0.95)
         }
 
         if problems.contains(.oversaturated) {
@@ -232,8 +233,8 @@ final class PhotographyDecisionEngine {
         }
 
         if problems.contains(.noiseRisk) {
-            recipe.sharpeningAmount = min(recipe.sharpeningAmount, 0.16)
-            recipe.localContrastAmount = min(recipe.localContrastAmount, 0.28)
+            recipe.sharpeningAmount = min(recipe.sharpeningAmount, 0.1)
+            recipe.localContrastAmount = min(recipe.localContrastAmount, 0.12)
             recipe.grainAmount = min(recipe.grainAmount, 0.014)
         }
     }
@@ -254,8 +255,10 @@ final class PhotographyDecisionEngine {
                 && analysis.exposureProfile == .balanced
                 && analysis.contrastProfile == .balanced
             intensity = isAlreadyBalanced ? .natural : .standard
-        case .night, .street, .sunset:
-            intensity = analysis.contrastRange > 0.42 ? .dramatic : .standard
+        case .night, .street:
+            intensity = .standard
+        case .sunset:
+            intensity = analysis.contrastRange > 0.48 ? .dramatic : .standard
         case .highContrast:
             intensity = problems.contains(.clippedHighlights) ? .standard : .dramatic
         default:
@@ -275,7 +278,7 @@ final class PhotographyDecisionEngine {
             recipe.midtoneWarmAmount = max(recipe.midtoneWarmAmount, 0.16)
             recipe.highlightWarmAmount = max(recipe.highlightWarmAmount, 0.2)
             recipe.colorContrast = max(recipe.colorContrast, 0.1)
-            recipe.bloomIntensity = max(recipe.bloomIntensity, 0.012)
+            recipe.bloomIntensity = max(recipe.bloomIntensity, 0.004)
             recipe.backgroundSeparation = analysis.containsFaces ? 0.055 : 0.025
         case .standard:
             recipe.shadowRollOff = max(recipe.shadowRollOff, 0.38)
@@ -289,8 +292,8 @@ final class PhotographyDecisionEngine {
             recipe.midtoneWarmAmount = max(recipe.midtoneWarmAmount, 0.24)
             recipe.highlightWarmAmount = max(recipe.highlightWarmAmount, 0.34)
             recipe.colorContrast = max(recipe.colorContrast, 0.22)
-            recipe.bloomIntensity = max(recipe.bloomIntensity, 0.035)
-            recipe.halationIntensity = max(recipe.halationIntensity, 0.012)
+            recipe.bloomIntensity = max(recipe.bloomIntensity, 0.008)
+            recipe.halationIntensity = max(recipe.halationIntensity, 0.003)
             recipe.grainAmount = max(recipe.grainAmount, 0.012)
             recipe.backgroundSeparation = 0.085
         case .dramatic:
@@ -305,8 +308,8 @@ final class PhotographyDecisionEngine {
             recipe.midtoneWarmAmount = max(recipe.midtoneWarmAmount, 0.28)
             recipe.highlightWarmAmount = max(recipe.highlightWarmAmount, 0.48)
             recipe.colorContrast = max(recipe.colorContrast, 0.32)
-            recipe.bloomIntensity = max(recipe.bloomIntensity, 0.05)
-            recipe.halationIntensity = max(recipe.halationIntensity, 0.02)
+            recipe.bloomIntensity = max(recipe.bloomIntensity, 0.012)
+            recipe.halationIntensity = max(recipe.halationIntensity, 0.005)
             recipe.grainAmount = max(recipe.grainAmount, 0.02)
             recipe.backgroundSeparation = 0.11
         }
@@ -314,14 +317,36 @@ final class PhotographyDecisionEngine {
         switch strategy {
         case .night, .street, .lowLight:
             recipe.cinematicToneStyle = .lowKey
-            recipe.bloomIntensity = max(recipe.bloomIntensity, 0.055)
-            recipe.vignetteIntensity = max(recipe.vignetteIntensity, 0.055)
+            recipe.shadowRollOff = min(recipe.shadowRollOff, 0.3)
+            recipe.lowerMidtoneLift = max(recipe.lowerMidtoneLift, 0.018)
+            recipe.midtoneBias = max(recipe.midtoneBias, 0)
+            recipe.highlightRollOff = min(recipe.highlightRollOff, 0.44)
+            recipe.whitePoint = max(recipe.whitePoint, 0.98)
+            recipe.shadowCoolAmount = min(recipe.shadowCoolAmount, 0.2)
+            recipe.colorGradeIntensity = min(recipe.colorGradeIntensity, 0.38)
+            recipe.highlightGlowThreshold = 0.94
+            recipe.bloomIntensity = analysis.highlightRatio > 0.012
+                ? min(max(recipe.bloomIntensity, 0.008), 0.012)
+                : 0
+            recipe.halationIntensity = analysis.highlightRatio > 0.012
+                ? min(recipe.halationIntensity, 0.004)
+                : 0
+            recipe.vignetteIntensity = min(recipe.vignetteIntensity, 0.035)
         case .portrait, .food, .outdoor, .brightOutdoor:
             recipe.cinematicToneStyle = .bright
             recipe.halationIntensity = min(recipe.halationIntensity, 0.012)
         case .indoor, .workspace, .architecture:
             recipe.cinematicToneStyle = .natural
-            recipe.localContrastAmount = max(recipe.localContrastAmount, 0.25)
+            recipe.shadowRollOff = min(recipe.shadowRollOff, 0.3)
+            recipe.upperMidtoneSeparation = min(recipe.upperMidtoneSeparation, 0.02)
+            recipe.highlightRollOff = min(recipe.highlightRollOff, 0.4)
+            recipe.whitePoint = max(recipe.whitePoint, 0.982)
+            recipe.highlightGlowThreshold = 0.96
+            recipe.bloomIntensity = min(recipe.bloomIntensity, 0.004)
+            recipe.halationIntensity = 0
+            recipe.shadowCoolAmount = min(recipe.shadowCoolAmount, 0.08)
+            recipe.colorGradeIntensity = min(recipe.colorGradeIntensity, 0.3)
+            recipe.localContrastAmount = min(recipe.localContrastAmount, 0.16)
         case .landscape, .sunset, .backlitPortrait, .flatScene, .highContrast, .general:
             recipe.cinematicToneStyle = .natural
         }
@@ -454,22 +479,28 @@ final class PhotographyDecisionEngine {
                 )
             )
         case .night:
-            recipe.highlightAmount = min(recipe.highlightAmount, 0.54)
-            recipe.shadowAmount = min(max(recipe.shadowAmount, 0.08), 0.18)
-            recipe.contrast = max(recipe.contrast, 1.035)
+            recipe.highlightAmount = min(recipe.highlightAmount, 0.6)
+            recipe.shadowAmount = min(
+                max(recipe.shadowAmount, analysis.shadowRatio > 0.55 ? 0.2 : 0.14),
+                0.28
+            )
+            recipe.contrast = min(max(recipe.contrast, 1.01), 1.025)
+            recipe.blackPoint = 0
             recipe.saturation = min(recipe.saturation, 0.995)
-            recipe.vibrance = max(recipe.vibrance, 0.1)
+            recipe.vibrance = min(max(recipe.vibrance, 0.06), 0.1)
             recipe.noiseReductionAmount = max(recipe.noiseReductionAmount, 0.045)
-            recipe.sharpeningAmount = min(max(recipe.sharpeningAmount, 0.1), 0.16)
-            recipe.temperatureShift -= 80
-            recipe.tintShift += 2
-            recipe.toneCurveAmount = max(recipe.toneCurveAmount, 0.58)
+            recipe.sharpeningAmount = min(max(recipe.sharpeningAmount, 0.055), 0.1)
+            recipe.temperatureShift -= 35
+            recipe.tintShift += 1
+            recipe.toneCurveAmount = min(max(recipe.toneCurveAmount, 0.36), 0.46)
             recipe.toneCurveStyle = .cinematic
-            recipe.colorGradeIntensity = max(recipe.colorGradeIntensity, 0.56)
-            recipe.shadowCoolAmount = max(recipe.shadowCoolAmount, 0.55)
-            recipe.highlightWarmAmount = max(recipe.highlightWarmAmount, 0.38)
-            recipe.grainAmount = max(recipe.grainAmount, 0.045)
-            recipe.vignetteIntensity = 0.1
+            recipe.colorGradeIntensity = min(max(recipe.colorGradeIntensity, 0.28), 0.38)
+            recipe.shadowCoolAmount = min(max(recipe.shadowCoolAmount, 0.12), 0.2)
+            recipe.midtoneWarmAmount = min(recipe.midtoneWarmAmount, 0.16)
+            recipe.highlightWarmAmount = min(max(recipe.highlightWarmAmount, 0.18), 0.28)
+            recipe.localContrastAmount = min(recipe.localContrastAmount, 0.08)
+            recipe.grainAmount = min(max(recipe.grainAmount, 0.01), 0.018)
+            recipe.vignetteIntensity = min(recipe.vignetteIntensity, 0.025)
             actions.append(
                 PhotographyAction(
                     title: "控制灯光高光与噪点",
@@ -479,16 +510,16 @@ final class PhotographyDecisionEngine {
         case .street:
             recipe.highlightAmount = min(recipe.highlightAmount, 0.58)
             recipe.shadowAmount = min(max(recipe.shadowAmount, 0.1), 0.22)
-            recipe.contrast = max(recipe.contrast, 1.045)
+            recipe.contrast = min(max(recipe.contrast, 1.015), 1.03)
             recipe.saturation = min(recipe.saturation, 0.99)
             recipe.vibrance = max(recipe.vibrance, 0.09)
             recipe.toneCurveAmount = max(recipe.toneCurveAmount, 0.6)
             recipe.toneCurveStyle = .cinematic
             recipe.colorGradeIntensity = max(recipe.colorGradeIntensity, 0.48)
-            recipe.shadowCoolAmount = max(recipe.shadowCoolAmount, 0.42)
+            recipe.shadowCoolAmount = min(max(recipe.shadowCoolAmount, 0.14), 0.22)
             recipe.midtoneWarmAmount = max(recipe.midtoneWarmAmount, 0.2)
             recipe.highlightWarmAmount = max(recipe.highlightWarmAmount, 0.36)
-            recipe.localContrastAmount = max(recipe.localContrastAmount, 0.24)
+            recipe.localContrastAmount = min(max(recipe.localContrastAmount, 0.08), 0.14)
             actions.append(
                 PhotographyAction(
                     title: "建立街头冷暖与光影秩序",
@@ -568,17 +599,18 @@ final class PhotographyDecisionEngine {
                 analysis.highlightRatio > 0.1 ? 0.52 : 0.66
             )
             recipe.shadowAmount = max(recipe.shadowAmount, 0.26)
-            recipe.contrast = max(recipe.contrast, 1.035)
-            recipe.blackPoint = max(recipe.blackPoint, 0.008)
-            recipe.localContrastAmount = max(recipe.localContrastAmount, 0.24)
+            recipe.contrast = min(max(recipe.contrast, 1.01), 1.025)
+            recipe.blackPoint = min(recipe.blackPoint, 0.004)
+            recipe.localContrastAmount = min(max(recipe.localContrastAmount, 0.06), 0.12)
             recipe.saturation = min(recipe.saturation, 0.995)
             recipe.vibrance = max(recipe.vibrance, 0.075)
             recipe.noiseReductionAmount = max(recipe.noiseReductionAmount, 0.018)
-            recipe.sharpeningAmount = max(recipe.sharpeningAmount, 0.13)
-            recipe.toneCurveAmount = max(recipe.toneCurveAmount, 0.64)
+            recipe.sharpeningAmount = min(max(recipe.sharpeningAmount, 0.055), 0.1)
+            recipe.toneCurveAmount = min(max(recipe.toneCurveAmount, 0.38), 0.5)
             recipe.toneCurveStyle = .interior
-            recipe.colorGradeIntensity = max(recipe.colorGradeIntensity, 0.18)
-            recipe.highlightWarmAmount = max(recipe.highlightWarmAmount, 0.16)
+            recipe.colorGradeIntensity = min(max(recipe.colorGradeIntensity, 0.12), 0.22)
+            recipe.shadowCoolAmount = min(recipe.shadowCoolAmount, 0.04)
+            recipe.highlightWarmAmount = min(max(recipe.highlightWarmAmount, 0.08), 0.16)
             actions.append(
                 PhotographyAction(
                     title: "建立专业室内摄影层次",
@@ -594,13 +626,13 @@ final class PhotographyDecisionEngine {
             recipe.shadowAmount = min(max(recipe.shadowAmount, 0.18), 0.3)
             recipe.contrast = max(recipe.contrast, 1.045)
             recipe.blackPoint = max(recipe.blackPoint, 0.014)
-            recipe.localContrastAmount = max(recipe.localContrastAmount, 0.34)
+            recipe.localContrastAmount = min(max(recipe.localContrastAmount, 0.08), 0.15)
             recipe.saturation = min(recipe.saturation, 0.99)
             recipe.vibrance = max(recipe.vibrance, 0.085)
-            recipe.toneCurveAmount = max(recipe.toneCurveAmount, 0.7)
+            recipe.toneCurveAmount = min(max(recipe.toneCurveAmount, 0.42), 0.54)
             recipe.toneCurveStyle = .workspace
             recipe.noiseReductionAmount = max(recipe.noiseReductionAmount, 0.012)
-            recipe.sharpeningAmount = min(max(recipe.sharpeningAmount, 0.18), 0.24)
+            recipe.sharpeningAmount = min(max(recipe.sharpeningAmount, 0.07), 0.12)
             recipe.vignetteIntensity = max(recipe.vignetteIntensity, 0.04)
             actions.append(
                 PhotographyAction(

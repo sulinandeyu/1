@@ -157,9 +157,10 @@ struct PhotoDiagnosticSection: Identifiable, Equatable, Sendable {
                 PhotoDiagnosticItem(
                     label: "镜头质感",
                     value: String(
-                        format: "Bloom %.3f · Halation %.3f · 颗粒 %.3f · 暗角 %.3f · 空间层次 %.3f",
+                        format: "Bloom %.3f · Halation %.3f · 阈值 %.2f · 颗粒 %.3f · 暗角 %.3f · 空间层次 %.3f",
                         decision.recipe.bloomIntensity,
                         decision.recipe.halationIntensity,
+                        decision.recipe.highlightGlowThreshold,
                         decision.recipe.grainAmount,
                         decision.recipe.vignetteIntensity,
                         decision.recipe.backgroundSeparation

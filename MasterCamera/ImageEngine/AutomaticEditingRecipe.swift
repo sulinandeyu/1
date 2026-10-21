@@ -69,6 +69,7 @@ struct AutomaticEditingRecipe: Equatable, Sendable {
     var grainAmount: Float
     var bloomIntensity: Float
     var halationIntensity: Float
+    var highlightGlowThreshold: Float
     var backgroundSeparation: Float
 
     static let naturalEnhancement = AutomaticEditingRecipe(
@@ -110,6 +111,7 @@ struct AutomaticEditingRecipe: Equatable, Sendable {
         grainAmount: 0.0,
         bloomIntensity: 0.0,
         halationIntensity: 0.0,
+        highlightGlowThreshold: 0.92,
         backgroundSeparation: 0.0
     )
 
@@ -152,6 +154,7 @@ struct AutomaticEditingRecipe: Equatable, Sendable {
         grainAmount: 0.0,
         bloomIntensity: 0.0,
         halationIntensity: 0.0,
+        highlightGlowThreshold: 0.95,
         backgroundSeparation: 0.0
     )
 
@@ -171,7 +174,7 @@ struct AutomaticEditingRecipe: Equatable, Sendable {
             upperMidtoneSeparation: upperMidtoneSeparation.clamped(to: -0.06...0.1),
             highlightRollOff: highlightRollOff.clamped(to: 0.0...1.0),
             whitePoint: whitePoint.clamped(to: 0.88...1.0),
-            localContrastAmount: localContrastAmount.clamped(to: 0.0...0.45),
+            localContrastAmount: localContrastAmount.clamped(to: 0.0...0.28),
             saturation: saturation.clamped(to: 0.96...1.08),
             vibrance: vibrance.clamped(to: 0.0...0.32),
             temperatureShift: temperatureShift.clamped(to: -600.0...600.0),
@@ -184,7 +187,7 @@ struct AutomaticEditingRecipe: Equatable, Sendable {
             colorGradeIntensity: colorGradeIntensity.clamped(to: 0.0...1.0),
             colorContrast: colorContrast.clamped(to: 0.0...0.5),
             noiseReductionAmount: noiseReductionAmount.clamped(to: 0.0...0.06),
-            sharpeningAmount: sharpeningAmount.clamped(to: 0.0...0.34),
+            sharpeningAmount: sharpeningAmount.clamped(to: 0.0...0.22),
             skinTextureProtection: skinTextureProtection.clamped(to: 0.0...0.8),
             vignetteIntensity: vignetteIntensity.clamped(to: 0.0...0.35),
             subjectExposureEV: subjectExposureEV.clamped(to: 0.0...0.3),
@@ -193,8 +196,9 @@ struct AutomaticEditingRecipe: Equatable, Sendable {
             skyHighlightAmount: skyHighlightAmount.clamped(to: 0.4...1.0),
             skySaturation: skySaturation.clamped(to: 0.96...1.08),
             grainAmount: grainAmount.clamped(to: 0.0...0.12),
-            bloomIntensity: bloomIntensity.clamped(to: 0.0...0.18),
-            halationIntensity: halationIntensity.clamped(to: 0.0...0.1),
+            bloomIntensity: bloomIntensity.clamped(to: 0.0...0.025),
+            halationIntensity: halationIntensity.clamped(to: 0.0...0.012),
+            highlightGlowThreshold: highlightGlowThreshold.clamped(to: 0.84...0.98),
             backgroundSeparation: backgroundSeparation.clamped(to: 0.0...0.18)
         )
     }

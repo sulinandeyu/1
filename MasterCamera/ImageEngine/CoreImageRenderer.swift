@@ -21,10 +21,14 @@ final class CoreImageRenderer {
     private let cinematicLensCharacterProcessor = CinematicLensCharacterProcessor()
 
     func renderOriginalPreview(from data: Data) -> UIImage? {
-        guard
-            let image = CIImage(data: data, options: [.applyOrientationProperty: true]),
-            let cgImage = context.createCGImage(image, from: image.extent)
-        else {
+        guard let decodedImage = CIImage(
+            data: data,
+            options: [.applyOrientationProperty: true]
+        ) else {
+            return nil
+        }
+        let image = canonicalImage(decodedImage)
+        guard let cgImage = context.createCGImage(image, from: image.extent) else {
             return nil
         }
 
@@ -36,22 +40,32 @@ final class CoreImageRenderer {
         recipe: AutomaticEditingRecipe,
         analysis: PhotoAnalysis?
     ) throws -> [ProcessingStagePreview] {
-        guard let inputImage = CIImage(
+        guard let decodedImage = CIImage(
             data: data,
             options: [.applyOrientationProperty: true]
         ) else {
             throw ImageRenderingError.invalidImageData
         }
+        let inputImage = canonicalImage(decodedImage)
+        let canvas = inputImage.extent
 
         let exposed = applyExposure(to: inputImage, recipe: recipe)
         let recovered = applyHighlightShadow(to: exposed, recipe: recipe)
         let blackPointAdjusted = applyBlackPoint(to: recovered, recipe: recipe)
         let baseCurved = applyToneCurve(to: blackPointAdjusted, recipe: recipe)
-        let curved = cinematicToneMappingEngine.apply(to: baseCurved, recipe: recipe)
+        let curved = try checkedCanvas(
+            cinematicToneMappingEngine.apply(to: baseCurved, recipe: recipe),
+            canvas: canvas,
+            stage: "七段电影影调"
+        )
         let whiteBalanced = applyWhiteBalance(to: curved, recipe: recipe)
         let colored = applyColorControls(to: whiteBalanced, recipe: recipe)
         let vibrant = applyVibrance(to: colored, recipe: recipe)
-        let graded = cinematicColorGradingEngine.apply(to: vibrant, recipe: recipe)
+        let graded = try checkedCanvas(
+            cinematicColorGradingEngine.apply(to: vibrant, recipe: recipe),
+            canvas: canvas,
+            stage: "三段电影调色"
+        )
         let locallyAdjusted = localAdjustmentProcessor.applyLocalizedRelighting(
             to: graded,
             analysis: analysis,
@@ -67,7 +81,11 @@ final class CoreImageRenderer {
             analysis: analysis,
             recipe: recipe
         )
-        let locallyContrasted = applyLocalContrast(to: spatiallySeparated, recipe: recipe)
+        let locallyContrasted = try checkedCanvas(
+            applyLocalContrast(to: spatiallySeparated, recipe: recipe),
+            canvas: canvas,
+            stage: "局部空间与材质"
+        )
         let denoised = applyNoiseReduction(to: locallyContrasted, recipe: recipe)
         let sharpened = applySharpening(to: denoised, recipe: recipe)
         let textureProtected = skinTextureProtectionProcessor.protectTexture(
@@ -76,9 +94,13 @@ final class CoreImageRenderer {
             analysis: analysis,
             amount: recipe.skinTextureProtection
         )
-        let finished = cinematicLensCharacterProcessor.apply(
-            to: textureProtected,
-            recipe: recipe
+        let finished = try checkedCanvas(
+            cinematicLensCharacterProcessor.apply(
+                to: textureProtected,
+                recipe: recipe
+            ),
+            canvas: canvas,
+            stage: "镜头特征"
         )
         let images = [
             ("Original", inputImage),
@@ -99,23 +121,33 @@ final class CoreImageRenderer {
         recipe: AutomaticEditingRecipe = .naturalEnhancement,
         analysis: PhotoAnalysis? = nil
     ) throws -> Data {
-        guard let inputImage = CIImage(data: data, options: [.applyOrientationProperty: true]) else {
+        guard let decodedImage = CIImage(data: data, options: [.applyOrientationProperty: true]) else {
             throw ImageRenderingError.invalidImageData
         }
+        let inputImage = canonicalImage(decodedImage)
+        let canvas = inputImage.extent
 
         let exposureStart = ProcessInfo.processInfo.systemUptime
         let exposed = applyExposure(to: inputImage, recipe: recipe)
         let recovered = applyHighlightShadow(to: exposed, recipe: recipe)
         let blackPointAdjusted = applyBlackPoint(to: recovered, recipe: recipe)
         let baseCurved = applyToneCurve(to: blackPointAdjusted, recipe: recipe)
-        let curved = cinematicToneMappingEngine.apply(to: baseCurved, recipe: recipe)
+        let curved = try checkedCanvas(
+            cinematicToneMappingEngine.apply(to: baseCurved, recipe: recipe),
+            canvas: canvas,
+            stage: "七段电影影调"
+        )
         let exposureDuration = ProcessInfo.processInfo.systemUptime - exposureStart
 
         let colorStart = ProcessInfo.processInfo.systemUptime
         let whiteBalanced = applyWhiteBalance(to: curved, recipe: recipe)
         let colored = applyColorControls(to: whiteBalanced, recipe: recipe)
         let vibrant = applyVibrance(to: colored, recipe: recipe)
-        let graded = cinematicColorGradingEngine.apply(to: vibrant, recipe: recipe)
+        let graded = try checkedCanvas(
+            cinematicColorGradingEngine.apply(to: vibrant, recipe: recipe),
+            canvas: canvas,
+            stage: "三段电影调色"
+        )
         let colorDuration = ProcessInfo.processInfo.systemUptime - colorStart
 
         let spatialStart = ProcessInfo.processInfo.systemUptime
@@ -134,7 +166,11 @@ final class CoreImageRenderer {
             analysis: analysis,
             recipe: recipe
         )
-        let locallyContrasted = applyLocalContrast(to: spatiallySeparated, recipe: recipe)
+        let locallyContrasted = try checkedCanvas(
+            applyLocalContrast(to: spatiallySeparated, recipe: recipe),
+            canvas: canvas,
+            stage: "局部空间与材质"
+        )
         let spatialDuration = ProcessInfo.processInfo.systemUptime - spatialStart
 
         let detailStart = ProcessInfo.processInfo.systemUptime
@@ -146,9 +182,13 @@ final class CoreImageRenderer {
             analysis: analysis,
             amount: recipe.skinTextureProtection
         )
-        let finished = cinematicLensCharacterProcessor.apply(
-            to: textureProtected,
-            recipe: recipe
+        let finished = try checkedCanvas(
+            cinematicLensCharacterProcessor.apply(
+                to: textureProtected,
+                recipe: recipe
+            ),
+            canvas: canvas,
+            stage: "镜头特征"
         )
         let detailDuration = ProcessInfo.processInfo.systemUptime - detailStart
 
@@ -172,6 +212,7 @@ final class CoreImageRenderer {
         ) else {
             throw ImageRenderingError.renderFailed
         }
+        try validateEncodedGeometry(renderedJPEG, expectedCanvas: canvas)
         let jpegData = metadataPreservingJPEG(
             renderedData: renderedJPEG,
             originalData: data
@@ -182,6 +223,64 @@ final class CoreImageRenderer {
         )
 
         return jpegData
+    }
+
+    private func canonicalImage(_ image: CIImage) -> CIImage {
+        let sourceExtent = image.extent.integral
+        let translated = image.transformed(
+            by: CGAffineTransform(
+                translationX: -sourceExtent.minX,
+                y: -sourceExtent.minY
+            )
+        )
+        return translated.cropped(
+            to: CGRect(origin: .zero, size: sourceExtent.size)
+        )
+    }
+
+    private func checkedCanvas(
+        _ image: CIImage,
+        canvas: CGRect,
+        stage: String
+    ) throws -> CIImage {
+        let extent = image.extent
+        guard
+            !extent.isNull,
+            !extent.isEmpty,
+            extent.minX <= canvas.minX,
+            extent.minY <= canvas.minY,
+            extent.maxX >= canvas.maxX,
+            extent.maxY >= canvas.maxY
+        else {
+            AppLogger.imageEngine.error(
+                "画布检查失败：\(stage, privacy: .public)，输出=\(String(describing: extent), privacy: .public)，预期=\(String(describing: canvas), privacy: .public)"
+            )
+            throw ImageRenderingError.canvasMismatch(stage)
+        }
+        return image.cropped(to: canvas)
+    }
+
+    private func validateEncodedGeometry(
+        _ data: Data,
+        expectedCanvas: CGRect
+    ) throws {
+        guard
+            let source = CGImageSourceCreateWithData(data as CFData, nil),
+            let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil)
+                as? [CFString: Any],
+            let width = properties[kCGImagePropertyPixelWidth] as? Int,
+            let height = properties[kCGImagePropertyPixelHeight] as? Int
+        else {
+            throw ImageRenderingError.renderFailed
+        }
+        let expectedWidth = Int(expectedCanvas.width.rounded())
+        let expectedHeight = Int(expectedCanvas.height.rounded())
+        guard width == expectedWidth, height == expectedHeight else {
+            AppLogger.imageEngine.error(
+                "JPEG 尺寸异常：\(width)×\(height)，预期 \(expectedWidth)×\(expectedHeight)"
+            )
+            throw ImageRenderingError.canvasMismatch("JPEG 编码")
+        }
     }
 
     private func metadataPreservingJPEG(
@@ -404,8 +503,8 @@ final class CoreImageRenderer {
         guard recipe.localContrastAmount > 0.001 else { return image }
         let filter = CIFilter.unsharpMask()
         filter.inputImage = image
-        filter.radius = Float(min(max(image.extent.width, image.extent.height) * 0.0025, 10))
-        filter.intensity = recipe.localContrastAmount
+        filter.radius = Float(min(max(image.extent.width, image.extent.height) * 0.0009, 3.5))
+        filter.intensity = recipe.localContrastAmount * 0.62
         return (filter.outputImage ?? image).cropped(to: image.extent)
     }
 
@@ -473,7 +572,7 @@ final class CoreImageRenderer {
         let filter = CIFilter.noiseReduction()
         filter.inputImage = image
         filter.noiseLevel = recipe.noiseReductionAmount
-        filter.sharpness = 0.42
+        filter.sharpness = 0.18
         return filter.outputImage ?? image
     }
 
@@ -521,6 +620,7 @@ final class CoreImageRenderer {
 enum ImageRenderingError: LocalizedError {
     case invalidImageData
     case renderFailed
+    case canvasMismatch(String)
 
     var errorDescription: String? {
         switch self {
@@ -528,6 +628,8 @@ enum ImageRenderingError: LocalizedError {
             return "无法加载拍摄的图片数据。"
         case .renderFailed:
             return "无法渲染 AI 成片。"
+        case .canvasMismatch(let stage):
+            return "\(stage) 的图像画布与原图不一致，已阻止保存异常成片。"
         }
     }
 }

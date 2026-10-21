@@ -51,7 +51,7 @@ enum QualityStatus: String, Equatable, Sendable {
     }
 }
 
-enum QualityIssue: String, Equatable, Sendable {
+enum QualityIssue: String, Equatable, Hashable, Sendable {
     case tooDark
     case tooBright
     case tooFlat
@@ -60,6 +60,10 @@ enum QualityIssue: String, Equatable, Sendable {
     case crushedShadows
     case oversaturated
     case possibleRenderFallback
+    case canvasMismatch
+    case abnormalBlackCoverage
+    case excessiveHighlightSpread
+    case abnormalColorCast
 
     var title: String {
         switch self {
@@ -79,6 +83,14 @@ enum QualityIssue: String, Equatable, Sendable {
             return "色彩过饱和"
         case .possibleRenderFallback:
             return "成片未变化"
+        case .canvasMismatch:
+            return "输出画布异常"
+        case .abnormalBlackCoverage:
+            return "出现异常大面积死黑"
+        case .excessiveHighlightSpread:
+            return "高光扩散范围异常"
+        case .abnormalColorCast:
+            return "出现明显异常偏色"
         }
     }
 }
