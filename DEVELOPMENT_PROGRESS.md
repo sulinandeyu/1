@@ -237,7 +237,7 @@ Phase 14 TestFlight 发布链路和首轮内部真机验证均已完成。build 
 - GitHub Actions `iOS Build #30` 已通过；Swift/Core Image 工程可在 iOS Simulator 目标完整编译。
 - 技术说明见 `docs/CINEMATIC_ENGINE_V3.md`；真实原始样片及真机画质、耗时、内存仍待新构建验证。
 
-# 2026-10-22 — Cinematic Imaging Engine V4（校准开发中）
+# 2026-10-22 — Cinematic Imaging Engine V4（代码完成，待原始样片与真机验收）
 
 - 基于夜间室内、夜景道路和普通客厅的六张真机对比截图开展缺陷修复；截图仅用于定位问题，不作为原始摄影样片做像素标定。
 - 输入照片应用方向后统一到零原点完整画布；主要处理阶段必须覆盖原始画布，最终 JPEG 必须与解码后原图尺寸一致，否则阻止保存异常成片。
@@ -245,3 +245,4 @@ Phase 14 TestFlight 发布链路和首轮内部真机验证均已完成。build 
 - Bloom 改为高阈值软蒙版隔离真实高光，缩小半径并严格限制强度；Halation 独立控制且室内默认关闭。
 - 室内与工作区降低 Tone Curve、局部对比和锐化叠加，限制青色阴影偏移，保留墙面和织物的自然材质。
 - 保存前质量门禁新增画布尺寸、异常黑块、高光扩散和新增青色偏移检查；严重问题触发安全配方回退。
+- GitHub Actions `iOS Build #32` 已通过；六张附件为 App 界面截图，未冒充原始照片完成像素级画质验收。
