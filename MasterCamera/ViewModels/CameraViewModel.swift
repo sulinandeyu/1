@@ -10,6 +10,8 @@ final class CameraViewModel: ObservableObject {
     @Published var errorMessage: String?
     @Published private(set) var saveState: SaveState = .idle
     @Published private(set) var processingState: ProcessingState = .idle
+    @Published private(set) var zoomFactor: CGFloat = 1.0
+    @Published private(set) var maximumZoomFactor: CGFloat = 1.0
 
     let cameraManager = CameraManager()
 
@@ -17,6 +19,14 @@ final class CameraViewModel: ObservableObject {
         cameraManager.$state
             .receive(on: DispatchQueue.main)
             .assign(to: &$state)
+
+        cameraManager.$zoomFactor
+            .receive(on: DispatchQueue.main)
+            .assign(to: &$zoomFactor)
+
+        cameraManager.$maximumZoomFactor
+            .receive(on: DispatchQueue.main)
+            .assign(to: &$maximumZoomFactor)
     }
 
     func onAppear() {
@@ -50,6 +60,11 @@ final class CameraViewModel: ObservableObject {
 
     func focusAndExpose(at point: CGPoint) {
         cameraManager.focusAndExpose(at: point)
+    }
+
+    func setZoomFactor(_ factor: CGFloat) {
+        guard state == .ready, !processingState.isProcessing else { return }
+        cameraManager.setZoomFactor(factor)
     }
 
     func dismissPreview() {

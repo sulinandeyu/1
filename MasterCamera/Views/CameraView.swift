@@ -9,7 +9,8 @@ struct CameraView: View {
                 session: viewModel.cameraManager.session,
                 onTapToFocus: viewModel.focusAndExpose
             )
-            .ignoresSafeArea()
+            .aspectRatio(3.0 / 4.0, contentMode: .fit)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
 
             VStack {
                 topBar
@@ -57,26 +58,55 @@ struct CameraView: View {
     }
 
     private var bottomBar: some View {
-        HStack {
-            Spacer()
+        VStack(spacing: 18) {
+            zoomControl
 
-            Button(action: viewModel.capturePhoto) {
-                ZStack {
-                    Circle()
-                        .stroke(.white, lineWidth: 4)
-                        .frame(width: 78, height: 78)
+            HStack {
+                Spacer()
 
-                    Circle()
-                        .fill(.white)
-                        .frame(width: 62, height: 62)
+                Button(action: viewModel.capturePhoto) {
+                    ZStack {
+                        Circle()
+                            .stroke(.white, lineWidth: 4)
+                            .frame(width: 78, height: 78)
+
+                        Circle()
+                            .fill(.white)
+                            .frame(width: 62, height: 62)
+                    }
                 }
-            }
-            .accessibilityLabel("拍照")
-            .disabled(viewModel.state != .ready || viewModel.processingState.isProcessing)
+                .accessibilityLabel("拍照")
+                .disabled(viewModel.state != .ready || viewModel.processingState.isProcessing)
 
-            Spacer()
+                Spacer()
+            }
         }
         .padding(.bottom, 22)
+    }
+
+    private var zoomControl: some View {
+        VStack(spacing: 8) {
+            Text(String(format: "%.1f×", viewModel.zoomFactor))
+                .font(.system(.headline, design: .rounded, weight: .semibold))
+                .monospacedDigit()
+                .foregroundStyle(.white)
+
+            Slider(
+                value: Binding(
+                    get: { Double(viewModel.zoomFactor) },
+                    set: { viewModel.setZoomFactor(CGFloat($0)) }
+                ),
+                in: 1.0...Double(max(viewModel.maximumZoomFactor, 1.0)),
+                step: 0.1
+            )
+            .tint(.yellow)
+            .disabled(viewModel.maximumZoomFactor <= 1.0 || viewModel.state != .ready)
+            .accessibilityLabel("相机倍率")
+            .accessibilityValue(String(format: "%.1f 倍", viewModel.zoomFactor))
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(.black.opacity(0.45), in: RoundedRectangle(cornerRadius: 14))
     }
 
     private func processingOverlay(_ state: ProcessingState) -> some View {

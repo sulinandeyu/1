@@ -8,6 +8,8 @@ final class CameraManager: NSObject, ObservableObject {
 
     @Published private(set) var state: CameraState = .idle
     @Published private(set) var currentPosition: AVCaptureDevice.Position = .back
+    @Published private(set) var zoomFactor: CGFloat = 1.0
+    @Published private(set) var maximumZoomFactor: CGFloat = 1.0
 
     private let sessionQueue = DispatchQueue(label: "com.mastercamera.session")
     private let photoOutput = AVCapturePhotoOutput()
@@ -58,6 +60,31 @@ final class CameraManager: NSObject, ObservableObject {
     func switchCamera() {
         let nextPosition: AVCaptureDevice.Position = currentPosition == .back ? .front : .back
         configureSession(position: nextPosition)
+    }
+
+    func setZoomFactor(_ requestedFactor: CGFloat) {
+        sessionQueue.async { [weak self] in
+            guard
+                let self,
+                let device = self.videoInput?.device
+            else { return }
+
+            let maximum = min(device.activeFormat.videoMaxZoomFactor, 5.0)
+            let factor = requestedFactor.clamped(to: 1.0...maximum)
+
+            do {
+                try device.lockForConfiguration()
+                device.videoZoomFactor = factor
+                device.unlockForConfiguration()
+
+                Task { @MainActor in
+                    self.zoomFactor = factor
+                    self.maximumZoomFactor = maximum
+                }
+            } catch {
+                AppLogger.camera.error("相机倍率设置失败：\(error.localizedDescription)")
+            }
+        }
     }
 
     func capturePhoto(completion: @escaping (Result<CapturedPhoto, Error>) -> Void) {
@@ -133,6 +160,7 @@ final class CameraManager: NSObject, ObservableObject {
                 let input = try self.makeInput(position: position)
 
                 try self.updateSessionConfiguration(with: input)
+                try self.resetZoom(for: input.device)
                 self.isConfigured = true
 
                 if !self.session.isRunning {
@@ -141,6 +169,8 @@ final class CameraManager: NSObject, ObservableObject {
 
                 Task { @MainActor in
                     self.currentPosition = position
+                    self.zoomFactor = 1.0
+                    self.maximumZoomFactor = min(input.device.activeFormat.videoMaxZoomFactor, 5.0)
                     self.state = .ready
                 }
             } catch {
@@ -196,6 +226,12 @@ final class CameraManager: NSObject, ObservableObject {
             photoOutput.isHighResolutionCaptureEnabled = true
         }
     }
+
+    private func resetZoom(for device: AVCaptureDevice) throws {
+        try device.lockForConfiguration()
+        defer { device.unlockForConfiguration() }
+        device.videoZoomFactor = 1.0
+    }
 }
 
 enum CameraError: LocalizedError {
@@ -212,6 +248,12 @@ enum CameraError: LocalizedError {
         case .cannotAddOutput:
             return "无法将照片输出添加到拍摄会话。"
         }
+    }
+}
+
+private extension CGFloat {
+    func clamped(to range: ClosedRange<CGFloat>) -> CGFloat {
+        min(max(self, range.lowerBound), range.upperBound)
     }
 }
 

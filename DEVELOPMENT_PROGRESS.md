@@ -1,14 +1,23 @@
 # MasterCamera 开发进度
 
-更新时间：2026-10-20
+更新时间：2026-10-21
 
 ## 当前阶段
 
 MasterCamera 已完成 Phase 1–13 的 MVP 主链路原型，包括相机拍摄、本地照片分析、摄影决策、Core Image 自动成片、人脸局部补光、质量检查、安全回退、预览对比、相册保存状态和诊断面板。
 
-Phase 14 TestFlight 发布链路已完成。Apple Distribution 证书、App Store Provisioning Profile、App Store Connect API Key 和 7 个 GitHub Secrets 已完成配置；`TestFlight Release #4` 已成功完成真实签名归档、IPA 导出并上传到 App Store Connect。当前等待 Apple Processing，随后进入内部 TestFlight 真机验证。Phase 15 高级光照尚未开始。
+Phase 14 TestFlight 发布链路和首轮内部真机验证均已完成。build `1.0 (4)` 已通过 TestFlight 安装；相机权限、拍照、前后摄像头切换和基础成片链路正常。真机发现默认取景倍率观感约为 1.5×、缺少倍率控制，以及自动成片偏向统一提亮、场景差异不足。当前开始修复相机倍率，随后进入场景自适应成片模块。
 
 ## 本轮完成
+
+### 第一轮真机验证与相机倍率控制
+
+- TestFlight build `1.0 (4)` 已在真实 iPhone 安装并启动。
+- 拍照链路正常，前后摄像头切换正常。
+- 相机配置时显式重置硬件 `videoZoomFactor` 为 `1.0`，切换摄像头后同样回到 1×。
+- 取景区域由全屏裁切改为与照片一致的 4:3；避免 `resizeAspectFill` 在细长屏幕上裁掉画面两侧，造成硬件 1× 看起来接近 1.5×。
+- 相机页底部新增 0.1× 步进的倍率滑杆，范围为 1× 到设备能力上限（产品侧最高限制为 5×）。
+- 当前倍率和设备可用上限由 `CameraManager` 发布并同步至 `CameraViewModel`，避免 UI 显示值与真实硬件倍率脱节。
 
 ### TestFlight 真实签名接入
 
@@ -79,7 +88,10 @@ Phase 14 TestFlight 发布链路已完成。Apple Distribution 证书、App Stor
 
 ## 已知问题
 
-- TestFlight build `1.0 (4)` 已上传，尚待 Apple Processing 完成并在 App Store Connect 中处理可能出现的出口合规提示。
+- TestFlight build `1.0 (4)` 已完成内部真机验证；倍率修复需要发布新 build 再次真机确认。
+- 当前场景判断只使用全局曝光、对比度、色偏和人脸矩形；缺少天空、植物、建筑、食物、夜景等语义识别，无法形成足够明显的场景差异。
+- 默认配方固定包含正向曝光，容易让用户感知为“只增加曝光”；需要改为真正的中性基线，并按场景生成不同的色调、局部光照、降噪和滤镜方案。
+- 人像目前只有人脸区域补光和保守色彩控制，尚无皮肤区域保护、背景分离或自然肤色映射。
 - 照片 EXIF 方向、Vision 人脸框和 Core Image mask 坐标尚未通过真机验证。
 - `ProcessingConfiguration` 尚未接入分析、决策和质量检查模块，阈值仍为硬编码。
 - 原图保存通过 `UIImage` 写入相册，尚不能保证原始 JPEG 字节和完整元数据不变。
@@ -88,8 +100,8 @@ Phase 14 TestFlight 发布链路已完成。Apple Distribution 证书、App Stor
 
 ## 下一步计划
 
-1. 等待 TestFlight build `1.0 (4)` 完成 Apple Processing，并处理出口合规提示。
-2. 将 build `1.0 (4)` 加入内部 TestFlight 测试组并邀请测试账号。
-3. 在真实 iPhone 上验证相机权限、拍摄方向、人脸补光位置、图像处理和相册保存。
-4. 将 `ProcessingConfiguration` 注入分析、决策和质量检查模块。
-5. 增加处理管线和决策规则的自动化测试。
+1. 编译并发布包含真实 1× 和可调倍率控制的新 TestFlight build，在同一台 iPhone 复测取景与成片视角。
+2. 将自动成片的固定曝光基线改为中性基线，先消除“所有照片统一提亮”的问题。
+3. 扩展本地场景分析，优先实现人像、风景、夜景/弱光三类可靠策略，并为每类建立独立配方和诊断信息。
+4. 为场景策略增加固定样张回归测试，比较曝光、动态范围、噪点、肤色和饱和度，避免只凭主观滤镜效果发布。
+5. 再扩展天空、植物、建筑、食物等场景；大师作品只用于抽象色调、层次和光影原则，不直接复制具体作品风格。
