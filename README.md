@@ -33,6 +33,8 @@ MasterCamera 是一款 AI 自动摄影师相机 App 原型。
 
 阶段开发需求见：[docs/DEVELOPMENT_REQUIREMENTS.md](docs/DEVELOPMENT_REQUIREMENTS.md)
 
+摄影决策系统见：[docs/PHOTOGRAPHER_DECISION_SYSTEM.md](docs/PHOTOGRAPHER_DECISION_SYSTEM.md)
+
 整体开发进度见：[docs/PROJECT_STATUS.md](docs/PROJECT_STATUS.md)
 
 编译指南见：[docs/BUILD_ON_MAC.md](docs/BUILD_ON_MAC.md)

@@ -2,6 +2,13 @@ import Foundation
 
 enum SceneStrategy: String, Equatable, Sendable {
     case portrait
+    case backlitPortrait
+    case landscape
+    case night
+    case food
+    case architecture
+    case sunset
+    case indoor
     case lowLight
     case brightOutdoor
     case flatScene
@@ -12,6 +19,20 @@ enum SceneStrategy: String, Equatable, Sendable {
         switch self {
         case .portrait:
             return "人像"
+        case .backlitPortrait:
+            return "逆光人像"
+        case .landscape:
+            return "风景"
+        case .night:
+            return "夜景"
+        case .food:
+            return "美食"
+        case .architecture:
+            return "建筑"
+        case .sunset:
+            return "日落/日出"
+        case .indoor:
+            return "室内"
         case .lowLight:
             return "弱光"
         case .brightOutdoor:
@@ -26,8 +47,25 @@ enum SceneStrategy: String, Equatable, Sendable {
     }
 
     static func choose(for analysis: PhotoAnalysis) -> SceneStrategy {
-        if analysis.containsFaces {
+        switch analysis.semanticScene {
+        case .portrait:
             return .portrait
+        case .backlitPortrait:
+            return .backlitPortrait
+        case .landscape:
+            return .landscape
+        case .night:
+            return .night
+        case .food:
+            return .food
+        case .architecture:
+            return .architecture
+        case .sunset:
+            return .sunset
+        case .indoor:
+            return .indoor
+        case .general:
+            break
         }
 
         if analysis.exposureProfile == .underexposed {

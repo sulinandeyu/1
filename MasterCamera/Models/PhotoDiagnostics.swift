@@ -38,10 +38,14 @@ struct PhotoDiagnosticSection: Identifiable, Equatable, Sendable {
             items: [
                 PhotoDiagnosticItem(label: "曝光", value: analysis.exposureProfile.title),
                 PhotoDiagnosticItem(label: "亮度", value: analysis.averageLuminance.percentText),
+                PhotoDiagnosticItem(label: "暗部占比", value: analysis.shadowRatio.percentText),
+                PhotoDiagnosticItem(label: "高光占比", value: analysis.highlightRatio.percentText),
                 PhotoDiagnosticItem(label: "层次", value: analysis.contrastProfile.title),
                 PhotoDiagnosticItem(label: "对比范围", value: analysis.contrastRange.percentText),
+                PhotoDiagnosticItem(label: "平均饱和度", value: analysis.averageSaturation.percentText),
                 PhotoDiagnosticItem(label: "色彩倾向", value: analysis.colorCast.title),
-                PhotoDiagnosticItem(label: "人脸", value: analysis.faceCount.faceCountText)
+                PhotoDiagnosticItem(label: "人脸", value: analysis.faceCount.faceCountText),
+                PhotoDiagnosticItem(label: "语义标签", value: analysis.semanticLabels.labelSummary)
             ]
         )
     }
@@ -59,7 +63,37 @@ struct PhotoDiagnosticSection: Identifiable, Equatable, Sendable {
             title: "AI 摄影决策",
             items: [
                 PhotoDiagnosticItem(label: "场景", value: decision.sceneStrategy.title),
-                PhotoDiagnosticItem(label: "意图", value: decision.intent)
+                PhotoDiagnosticItem(label: "审美目标", value: decision.aestheticTarget.title),
+                PhotoDiagnosticItem(label: "意图", value: decision.intent),
+                PhotoDiagnosticItem(
+                    label: "明暗参数",
+                    value: String(
+                        format: "曝光 %+.2f EV · 高光 %.2f · 阴影 %.2f",
+                        decision.recipe.exposureEV,
+                        decision.recipe.highlightAmount,
+                        decision.recipe.shadowAmount
+                    )
+                ),
+                PhotoDiagnosticItem(
+                    label: "色彩参数",
+                    value: String(
+                        format: "色温 %+.0fK · 色调 %+.1f · 饱和 %.2f · 自然饱和 %.2f",
+                        decision.recipe.temperatureShift,
+                        decision.recipe.tintShift,
+                        decision.recipe.saturation,
+                        decision.recipe.vibrance
+                    )
+                ),
+                PhotoDiagnosticItem(
+                    label: "细节参数",
+                    value: String(
+                        format: "曲线 %.2f · 降噪 %.3f · 锐化 %.2f · 人脸补光 %+.2f EV",
+                        decision.recipe.toneCurveAmount,
+                        decision.recipe.noiseReductionAmount,
+                        decision.recipe.sharpeningAmount,
+                        decision.recipe.faceExposureEV
+                    )
+                )
             ] + actionItems
         )
     }
@@ -104,6 +138,15 @@ private extension Float {
 private extension Int {
     var faceCountText: String {
         self == 0 ? "未检测到" : "\(self) 张"
+    }
+}
+
+private extension Array where Element == SceneLabel {
+    var labelSummary: String {
+        guard !isEmpty else { return "未识别" }
+        return prefix(4)
+            .map { "\($0.identifier) \(Int(($0.confidence * 100).rounded()))%" }
+            .joined(separator: "、")
     }
 }
 

@@ -7,6 +7,7 @@ final class QualityCheckService {
         originalData: Data,
         editedData: Data
     ) throws -> QualityCheckResult {
+        let originalAnalysis = try analyzer.analyzeImageQuality(data: originalData)
         let editedAnalysis = try analyzer.analyzeImageQuality(data: editedData)
         var issues: [QualityIssue] = []
 
@@ -24,6 +25,21 @@ final class QualityCheckService {
 
         if editedAnalysis.contrastRange > 0.9 {
             issues.append(.tooHarsh)
+        }
+
+        if editedAnalysis.highlightRatio > 0.2,
+           editedAnalysis.highlightRatio > originalAnalysis.highlightRatio + 0.05 {
+            issues.append(.clippedHighlights)
+        }
+
+        if editedAnalysis.shadowRatio > 0.62,
+           editedAnalysis.shadowRatio > originalAnalysis.shadowRatio + 0.08 {
+            issues.append(.crushedShadows)
+        }
+
+        if editedAnalysis.averageSaturation > 0.62,
+           editedAnalysis.averageSaturation > originalAnalysis.averageSaturation + 0.1 {
+            issues.append(.oversaturated)
         }
 
         if editedData == originalData {

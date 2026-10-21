@@ -6,6 +6,7 @@ import Vision
 final class PhotoAnalyzer {
     private let context = CIContext()
     private let colorSpace = CGColorSpace(name: CGColorSpace.sRGB)!
+    private let sampleLongEdge = 128
 
     func analyze(data: Data) throws -> PhotoAnalysis {
         try analyze(data: data, includeFaceDetection: true)
@@ -20,88 +21,102 @@ final class PhotoAnalyzer {
             throw PhotoAnalysisError.invalidImageData
         }
 
-        let average = try averageRGBA(for: image)
-        let minMax = try luminanceMinMax(for: image)
+        let statistics = try pixelStatistics(for: image)
         let faceRegions = includeFaceDetection ? detectFaceRegions(in: data) : []
+        let semanticLabels = includeFaceDetection ? classifyScene(in: data) : []
 
         return PhotoAnalysis(
-            averageLuminance: luminance(red: average.red, green: average.green, blue: average.blue),
-            contrastRange: max(0, minMax.max - minMax.min),
-            redAverage: average.red,
-            greenAverage: average.green,
-            blueAverage: average.blue,
+            averageLuminance: statistics.averageLuminance,
+            contrastRange: statistics.contrastRange,
+            redAverage: statistics.redAverage,
+            greenAverage: statistics.greenAverage,
+            blueAverage: statistics.blueAverage,
+            shadowRatio: statistics.shadowRatio,
+            highlightRatio: statistics.highlightRatio,
+            averageSaturation: statistics.averageSaturation,
             faceCount: faceRegions.count,
-            faceRegions: faceRegions
+            faceRegions: faceRegions,
+            semanticLabels: semanticLabels
         )
     }
 
-    private func averageRGBA(for image: CIImage) throws -> RGBAValues {
-        guard
-            let filter = CIFilter(name: "CIAreaAverage")
-        else {
+    private func pixelStatistics(for image: CIImage) throws -> PixelStatistics {
+        guard image.extent.width > 0, image.extent.height > 0 else {
             throw PhotoAnalysisError.analysisFailed
         }
 
-        filter.setValue(image, forKey: kCIInputImageKey)
-        filter.setValue(CIVector(cgRect: image.extent), forKey: kCIInputExtentKey)
+        let scale = CGFloat(sampleLongEdge) / max(image.extent.width, image.extent.height)
+        let translated = image.transformed(
+            by: CGAffineTransform(
+                translationX: -image.extent.minX,
+                y: -image.extent.minY
+            )
+        )
+        let sampledImage = translated.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
+        let width = max(1, Int(sampledImage.extent.width.rounded(.down)))
+        let height = max(1, Int(sampledImage.extent.height.rounded(.down)))
+        let bounds = CGRect(x: 0, y: 0, width: width, height: height)
+        var pixels = [UInt8](repeating: 0, count: width * height * 4)
 
-        guard let outputImage = filter.outputImage else {
-            throw PhotoAnalysisError.analysisFailed
-        }
-
-        var pixels = [UInt8](repeating: 0, count: 4)
         context.render(
-            outputImage,
+            sampledImage,
             toBitmap: &pixels,
-            rowBytes: 4,
-            bounds: CGRect(x: 0, y: 0, width: 1, height: 1),
+            rowBytes: width * 4,
+            bounds: bounds,
             format: .RGBA8,
             colorSpace: colorSpace
         )
 
-        return RGBAValues(
-            red: Float(pixels[0]) / 255.0,
-            green: Float(pixels[1]) / 255.0,
-            blue: Float(pixels[2]) / 255.0
-        )
-    }
+        var luminances: [Float] = []
+        luminances.reserveCapacity(width * height)
+        var redTotal: Float = 0
+        var greenTotal: Float = 0
+        var blueTotal: Float = 0
+        var saturationTotal: Float = 0
+        var shadowCount = 0
+        var highlightCount = 0
 
-    private func luminanceMinMax(for image: CIImage) throws -> (min: Float, max: Float) {
-        guard
-            let filter = CIFilter(name: "CIAreaMinMax")
-        else {
+        for index in stride(from: 0, to: pixels.count, by: 4) {
+            let red = Float(pixels[index]) / 255.0
+            let green = Float(pixels[index + 1]) / 255.0
+            let blue = Float(pixels[index + 2]) / 255.0
+            let pixelLuminance = luminance(red: red, green: green, blue: blue)
+            let maximumChannel = max(red, green, blue)
+            let minimumChannel = min(red, green, blue)
+
+            redTotal += red
+            greenTotal += green
+            blueTotal += blue
+            saturationTotal += maximumChannel > 0 ? (maximumChannel - minimumChannel) / maximumChannel : 0
+            luminances.append(pixelLuminance)
+
+            if pixelLuminance < 0.18 {
+                shadowCount += 1
+            }
+            if pixelLuminance > 0.85 {
+                highlightCount += 1
+            }
+        }
+
+        guard !luminances.isEmpty else {
             throw PhotoAnalysisError.analysisFailed
         }
 
-        filter.setValue(image, forKey: kCIInputImageKey)
-        filter.setValue(CIVector(cgRect: image.extent), forKey: kCIInputExtentKey)
+        luminances.sort()
+        let count = Float(luminances.count)
+        let lowPercentile = luminances[Int(Float(luminances.count - 1) * 0.05)]
+        let highPercentile = luminances[Int(Float(luminances.count - 1) * 0.95)]
 
-        guard let outputImage = filter.outputImage else {
-            throw PhotoAnalysisError.analysisFailed
-        }
-
-        var pixels = [UInt8](repeating: 0, count: 8)
-        context.render(
-            outputImage,
-            toBitmap: &pixels,
-            rowBytes: 8,
-            bounds: CGRect(x: 0, y: 0, width: 2, height: 1),
-            format: .RGBA8,
-            colorSpace: colorSpace
+        return PixelStatistics(
+            averageLuminance: luminances.reduce(0, +) / count,
+            contrastRange: max(0, highPercentile - lowPercentile),
+            redAverage: redTotal / count,
+            greenAverage: greenTotal / count,
+            blueAverage: blueTotal / count,
+            shadowRatio: Float(shadowCount) / count,
+            highlightRatio: Float(highlightCount) / count,
+            averageSaturation: saturationTotal / count
         )
-
-        let minimum = luminance(
-            red: Float(pixels[0]) / 255.0,
-            green: Float(pixels[1]) / 255.0,
-            blue: Float(pixels[2]) / 255.0
-        )
-        let maximum = luminance(
-            red: Float(pixels[4]) / 255.0,
-            green: Float(pixels[5]) / 255.0,
-            blue: Float(pixels[6]) / 255.0
-        )
-
-        return (minimum, maximum)
     }
 
     private func detectFaceRegions(in data: Data) -> [NormalizedPhotoRegion] {
@@ -124,15 +139,36 @@ final class PhotoAnalyzer {
         }
     }
 
+    private func classifyScene(in data: Data) -> [SceneLabel] {
+        let request = VNClassifyImageRequest()
+        let handler = VNImageRequestHandler(data: data, options: [:])
+
+        do {
+            try handler.perform([request])
+            return (request.results ?? [])
+                .filter { $0.confidence >= 0.12 }
+                .prefix(8)
+                .map { SceneLabel(identifier: $0.identifier, confidence: $0.confidence) }
+        } catch {
+            AppLogger.imageEngine.error("场景语义识别失败：\(error.localizedDescription)")
+            return []
+        }
+    }
+
     private func luminance(red: Float, green: Float, blue: Float) -> Float {
         (0.2126 * red) + (0.7152 * green) + (0.0722 * blue)
     }
 }
 
-private struct RGBAValues {
-    let red: Float
-    let green: Float
-    let blue: Float
+private struct PixelStatistics {
+    let averageLuminance: Float
+    let contrastRange: Float
+    let redAverage: Float
+    let greenAverage: Float
+    let blueAverage: Float
+    let shadowRatio: Float
+    let highlightRatio: Float
+    let averageSaturation: Float
 }
 
 enum PhotoAnalysisError: LocalizedError {

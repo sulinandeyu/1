@@ -34,15 +34,18 @@ final class CoreImageRenderer {
             analysis: analysis,
             recipe: recipe
         )
-        let exposed = applyExposure(to: locallyAdjusted, recipe: recipe)
+        let whiteBalanced = applyWhiteBalance(to: locallyAdjusted, recipe: recipe)
+        let exposed = applyExposure(to: whiteBalanced, recipe: recipe)
         let recovered = applyHighlightShadow(to: exposed, recipe: recipe)
-        let colored = applyColorControls(to: recovered, recipe: recipe)
+        let curved = applyToneCurve(to: recovered, recipe: recipe)
+        let colored = applyColorControls(to: curved, recipe: recipe)
         let vibrant = applyVibrance(to: colored, recipe: recipe)
         let denoised = applyNoiseReduction(to: vibrant, recipe: recipe)
         let sharpened = applySharpening(to: denoised, recipe: recipe)
+        let finished = applyVignette(to: sharpened, recipe: recipe)
 
         guard let jpegData = context.jpegRepresentation(
-            of: sharpened,
+            of: finished,
             colorSpace: outputColorSpace,
             options: [:]
         ) else {
@@ -50,6 +53,21 @@ final class CoreImageRenderer {
         }
 
         return jpegData
+    }
+
+    private func applyWhiteBalance(to image: CIImage, recipe: AutomaticEditingRecipe) -> CIImage {
+        guard abs(recipe.temperatureShift) > 0.5 || abs(recipe.tintShift) > 0.01 else {
+            return image
+        }
+
+        let filter = CIFilter.temperatureAndTint()
+        filter.inputImage = image
+        filter.neutral = CIVector(x: 6500, y: 0)
+        filter.targetNeutral = CIVector(
+            x: CGFloat(6500 + recipe.temperatureShift),
+            y: CGFloat(recipe.tintShift)
+        )
+        return filter.outputImage ?? image
     }
 
     private func applyExposure(to image: CIImage, recipe: AutomaticEditingRecipe) -> CIImage {
@@ -76,6 +94,20 @@ final class CoreImageRenderer {
         return filter.outputImage ?? image
     }
 
+    private func applyToneCurve(to image: CIImage, recipe: AutomaticEditingRecipe) -> CIImage {
+        let amount = CGFloat(recipe.toneCurveAmount)
+        guard amount > 0.001 else { return image }
+
+        let filter = CIFilter.toneCurve()
+        filter.inputImage = image
+        filter.point0 = CGPoint(x: 0.0, y: 0.012 * amount)
+        filter.point1 = CGPoint(x: 0.25, y: 0.25 - (0.014 * amount))
+        filter.point2 = CGPoint(x: 0.5, y: 0.5)
+        filter.point3 = CGPoint(x: 0.75, y: 0.75 + (0.02 * amount))
+        filter.point4 = CGPoint(x: 1.0, y: 1.0 - (0.014 * amount))
+        return filter.outputImage ?? image
+    }
+
     private func applyVibrance(to image: CIImage, recipe: AutomaticEditingRecipe) -> CIImage {
         let filter = CIFilter.vibrance()
         filter.inputImage = image
@@ -84,6 +116,7 @@ final class CoreImageRenderer {
     }
 
     private func applyNoiseReduction(to image: CIImage, recipe: AutomaticEditingRecipe) -> CIImage {
+        guard recipe.noiseReductionAmount > 0.001 else { return image }
         let filter = CIFilter.noiseReduction()
         filter.inputImage = image
         filter.noiseLevel = recipe.noiseReductionAmount
@@ -92,9 +125,19 @@ final class CoreImageRenderer {
     }
 
     private func applySharpening(to image: CIImage, recipe: AutomaticEditingRecipe) -> CIImage {
+        guard recipe.sharpeningAmount > 0.001 else { return image }
         let filter = CIFilter.sharpenLuminance()
         filter.inputImage = image
         filter.sharpness = recipe.sharpeningAmount
+        return filter.outputImage ?? image
+    }
+
+    private func applyVignette(to image: CIImage, recipe: AutomaticEditingRecipe) -> CIImage {
+        guard recipe.vignetteIntensity > 0.001 else { return image }
+        let filter = CIFilter.vignette()
+        filter.inputImage = image
+        filter.intensity = recipe.vignetteIntensity
+        filter.radius = Float(min(image.extent.width, image.extent.height) * 0.72)
         return filter.outputImage ?? image
     }
 }

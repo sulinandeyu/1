@@ -6,8 +6,12 @@ struct PhotoAnalysis: Equatable, Sendable {
     let redAverage: Float
     let greenAverage: Float
     let blueAverage: Float
+    let shadowRatio: Float
+    let highlightRatio: Float
+    let averageSaturation: Float
     let faceCount: Int
     let faceRegions: [NormalizedPhotoRegion]
+    let semanticLabels: [SceneLabel]
 
     var exposureProfile: ExposureProfile {
         if averageLuminance < 0.32 {
@@ -56,15 +60,73 @@ struct PhotoAnalysis: Equatable, Sendable {
         faceCount > 0
     }
 
+    var semanticScene: SemanticScene {
+        if containsFaces {
+            if highlightRatio > 0.12 && shadowRatio > 0.22 {
+                return .backlitPortrait
+            }
+            return .portrait
+        }
+
+        let identifiers = semanticLabels.map { $0.identifier.lowercased() }
+
+        if identifiers.containsKeyword(["sunset", "sunrise", "dusk", "twilight"]) {
+            return .sunset
+        }
+
+        if averageLuminance < 0.27 || shadowRatio > 0.55 || identifiers.containsKeyword(["night", "nighttime"] ) {
+            return .night
+        }
+
+        if identifiers.containsKeyword(["food", "dish", "meal", "cuisine", "dessert", "fruit", "vegetable"] ) {
+            return .food
+        }
+
+        if identifiers.containsKeyword(["building", "architecture", "skyscraper", "bridge", "church", "house"] ) {
+            return .architecture
+        }
+
+        if identifiers.containsKeyword(["landscape", "scenery", "mountain", "beach", "seashore", "lake", "forest", "valley", "sky"] ) {
+            return .landscape
+        }
+
+        if identifiers.containsKeyword(["indoor", "interior", "room"] ) {
+            return .indoor
+        }
+
+        return .general
+    }
+
     static let fallback = PhotoAnalysis(
         averageLuminance: 0.5,
         contrastRange: 0.5,
         redAverage: 0.5,
         greenAverage: 0.5,
         blueAverage: 0.5,
+        shadowRatio: 0.0,
+        highlightRatio: 0.0,
+        averageSaturation: 0.0,
         faceCount: 0,
-        faceRegions: []
+        faceRegions: [],
+        semanticLabels: []
     )
+}
+
+struct SceneLabel: Equatable, Sendable {
+    let identifier: String
+    let confidence: Float
+}
+
+enum SemanticScene: String, Equatable, Sendable {
+    case portrait
+    case backlitPortrait
+    case landscape
+    case night
+    case food
+    case architecture
+    case sunset
+    case indoor
+    case general
 }
 
 struct NormalizedPhotoRegion: Equatable, Sendable {
@@ -103,5 +165,13 @@ enum ColorCast: String, Equatable, Sendable {
     case neutral
     case warm
     case green
+}
+
+private extension Array where Element == String {
+    func containsKeyword(_ keywords: [String]) -> Bool {
+        contains { identifier in
+            keywords.contains { identifier.contains($0) }
+        }
+    }
 }
 

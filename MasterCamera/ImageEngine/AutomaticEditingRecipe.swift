@@ -8,33 +8,45 @@ struct AutomaticEditingRecipe: Equatable, Sendable {
     var contrast: Float
     var saturation: Float
     var vibrance: Float
+    var temperatureShift: Float
+    var tintShift: Float
+    var toneCurveAmount: Float
     var noiseReductionAmount: Float
     var sharpeningAmount: Float
+    var vignetteIntensity: Float
     var faceExposureEV: Float
 
     static let naturalEnhancement = AutomaticEditingRecipe(
-        exposureEV: 0.08,
-        highlightAmount: 0.72,
-        shadowAmount: 0.34,
+        exposureEV: 0.0,
+        highlightAmount: 1.0,
+        shadowAmount: 0.0,
         brightness: 0.0,
-        contrast: 1.045,
-        saturation: 1.035,
-        vibrance: 0.18,
-        noiseReductionAmount: 0.018,
-        sharpeningAmount: 0.24,
+        contrast: 1.0,
+        saturation: 1.0,
+        vibrance: 0.0,
+        temperatureShift: 0.0,
+        tintShift: 0.0,
+        toneCurveAmount: 0.0,
+        noiseReductionAmount: 0.0,
+        sharpeningAmount: 0.0,
+        vignetteIntensity: 0.0,
         faceExposureEV: 0.0
     )
 
     static let safeFallback = AutomaticEditingRecipe(
-        exposureEV: 0.04,
-        highlightAmount: 0.74,
-        shadowAmount: 0.28,
+        exposureEV: 0.0,
+        highlightAmount: 0.92,
+        shadowAmount: 0.08,
         brightness: 0.0,
-        contrast: 1.02,
-        saturation: 1.01,
-        vibrance: 0.08,
-        noiseReductionAmount: 0.012,
-        sharpeningAmount: 0.14,
+        contrast: 1.01,
+        saturation: 1.0,
+        vibrance: 0.03,
+        temperatureShift: 0.0,
+        tintShift: 0.0,
+        toneCurveAmount: 0.08,
+        noiseReductionAmount: 0.006,
+        sharpeningAmount: 0.08,
+        vignetteIntensity: 0.0,
         faceExposureEV: 0.0
     )
 
@@ -46,9 +58,13 @@ struct AutomaticEditingRecipe: Equatable, Sendable {
             brightness: brightness.clamped(to: -0.06...0.06),
             contrast: contrast.clamped(to: 0.96...1.14),
             saturation: saturation.clamped(to: 0.96...1.08),
-            vibrance: vibrance.clamped(to: 0.05...0.32),
+            vibrance: vibrance.clamped(to: 0.0...0.32),
+            temperatureShift: temperatureShift.clamped(to: -600.0...600.0),
+            tintShift: tintShift.clamped(to: -15.0...15.0),
+            toneCurveAmount: toneCurveAmount.clamped(to: 0.0...1.0),
             noiseReductionAmount: noiseReductionAmount.clamped(to: 0.0...0.06),
-            sharpeningAmount: sharpeningAmount.clamped(to: 0.08...0.34),
+            sharpeningAmount: sharpeningAmount.clamped(to: 0.0...0.34),
+            vignetteIntensity: vignetteIntensity.clamped(to: 0.0...0.35),
             faceExposureEV: faceExposureEV.clamped(to: 0.0...0.28)
         )
     }

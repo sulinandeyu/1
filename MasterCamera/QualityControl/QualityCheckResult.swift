@@ -56,6 +56,9 @@ enum QualityIssue: String, Equatable, Sendable {
     case tooBright
     case tooFlat
     case tooHarsh
+    case clippedHighlights
+    case crushedShadows
+    case oversaturated
     case possibleRenderFallback
 
     var title: String {
@@ -68,6 +71,12 @@ enum QualityIssue: String, Equatable, Sendable {
             return "层次偏平"
         case .tooHarsh:
             return "对比过强"
+        case .clippedHighlights:
+            return "新增高光溢出"
+        case .crushedShadows:
+            return "新增暗部死黑"
+        case .oversaturated:
+            return "色彩过饱和"
         case .possibleRenderFallback:
             return "成片未变化"
         }
