@@ -168,7 +168,6 @@ final class CameraManager: NSObject, ObservableObject {
                 let input = try self.makeInput(position: position)
 
                 try self.updateSessionConfiguration(with: input)
-                self.configureSemanticSegmentationMattes()
                 try self.resetZoom(for: input.device)
                 self.isConfigured = true
 
@@ -242,10 +241,6 @@ final class CameraManager: NSObject, ObservableObject {
         device.videoZoomFactor = 1.0
     }
 
-    private func configureSemanticSegmentationMattes() {
-        let supportsSkinMatte = photoOutput.availableSemanticSegmentationMatteTypes.contains(.skin)
-        photoOutput.enabledSemanticSegmentationMatteTypes = supportsSkinMatte ? [.skin] : []
-    }
 }
 
 enum CameraError: LocalizedError {
