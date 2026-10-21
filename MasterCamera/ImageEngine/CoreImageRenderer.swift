@@ -16,6 +16,7 @@ final class CoreImageRenderer {
     private let skyAdjustmentProcessor = SkyAdjustmentProcessor()
     private let skinTextureProtectionProcessor = SkinTextureProtectionProcessor()
     private let cinematicToneMappingEngine = CinematicToneMappingEngine()
+    private let professionalHSLProcessor = ProfessionalHSLProcessor()
     private let cinematicColorGradingEngine = CinematicColorGradingEngine()
     private let cinematicSpatialDepthProcessor = CinematicSpatialDepthProcessor()
     private let cinematicLensCharacterProcessor = CinematicLensCharacterProcessor()
@@ -40,77 +41,8 @@ final class CoreImageRenderer {
         recipe: AutomaticEditingRecipe,
         analysis: PhotoAnalysis?
     ) throws -> [ProcessingStagePreview] {
-        guard let decodedImage = CIImage(
-            data: data,
-            options: [.applyOrientationProperty: true]
-        ) else {
-            throw ImageRenderingError.invalidImageData
-        }
-        let inputImage = canonicalImage(decodedImage)
-        let canvas = inputImage.extent
-
-        let exposed = applyExposure(to: inputImage, recipe: recipe)
-        let recovered = applyHighlightShadow(to: exposed, recipe: recipe)
-        let blackPointAdjusted = applyBlackPoint(to: recovered, recipe: recipe)
-        let baseCurved = applyToneCurve(to: blackPointAdjusted, recipe: recipe)
-        let curved = try checkedCanvas(
-            cinematicToneMappingEngine.apply(to: baseCurved, recipe: recipe),
-            canvas: canvas,
-            stage: "七段电影影调"
-        )
-        let whiteBalanced = applyWhiteBalance(to: curved, recipe: recipe)
-        let colored = applyColorControls(to: whiteBalanced, recipe: recipe)
-        let vibrant = applyVibrance(to: colored, recipe: recipe)
-        let graded = try checkedCanvas(
-            cinematicColorGradingEngine.apply(to: vibrant, recipe: recipe),
-            canvas: canvas,
-            stage: "三段电影调色"
-        )
-        let locallyAdjusted = localAdjustmentProcessor.applyLocalizedRelighting(
-            to: graded,
-            analysis: analysis,
-            recipe: recipe
-        )
-        let skyAdjusted = skyAdjustmentProcessor.applySkyTreatment(
-            to: locallyAdjusted,
-            analysis: analysis,
-            recipe: recipe
-        )
-        let spatiallySeparated = cinematicSpatialDepthProcessor.apply(
-            to: skyAdjusted,
-            analysis: analysis,
-            recipe: recipe
-        )
-        let locallyContrasted = try checkedCanvas(
-            applyLocalContrast(to: spatiallySeparated, recipe: recipe),
-            canvas: canvas,
-            stage: "局部空间与材质"
-        )
-        let denoised = applyNoiseReduction(to: locallyContrasted, recipe: recipe)
-        let sharpened = applySharpening(to: denoised, recipe: recipe)
-        let textureProtected = skinTextureProtectionProcessor.protectTexture(
-            processedImage: sharpened,
-            sourceImage: locallyContrasted,
-            analysis: analysis,
-            amount: recipe.skinTextureProtection
-        )
-        let finished = try checkedCanvas(
-            cinematicLensCharacterProcessor.apply(
-                to: textureProtected,
-                recipe: recipe
-            ),
-            canvas: canvas,
-            stage: "镜头特征"
-        )
-        let images = [
-            ("Original", inputImage),
-            ("曝光与动态范围", blackPointAdjusted),
-            ("七段电影影调", curved),
-            ("三段电影调色", graded),
-            ("局部空间与材质", locallyContrasted),
-            ("Final Edited", finished)
-        ]
-        return images.compactMap { name, image in
+        let result = try processImage(data: data, recipe: recipe, analysis: analysis)
+        return result.stages.compactMap { name, image in
             guard let imageData = makeStagePreviewData(from: image) else { return nil }
             return ProcessingStagePreview(name: name, imageData: imageData)
         }
@@ -121,76 +53,9 @@ final class CoreImageRenderer {
         recipe: AutomaticEditingRecipe = .naturalEnhancement,
         analysis: PhotoAnalysis? = nil
     ) throws -> Data {
-        guard let decodedImage = CIImage(data: data, options: [.applyOrientationProperty: true]) else {
-            throw ImageRenderingError.invalidImageData
-        }
-        let inputImage = canonicalImage(decodedImage)
-        let canvas = inputImage.extent
-
-        let exposureStart = ProcessInfo.processInfo.systemUptime
-        let exposed = applyExposure(to: inputImage, recipe: recipe)
-        let recovered = applyHighlightShadow(to: exposed, recipe: recipe)
-        let blackPointAdjusted = applyBlackPoint(to: recovered, recipe: recipe)
-        let baseCurved = applyToneCurve(to: blackPointAdjusted, recipe: recipe)
-        let curved = try checkedCanvas(
-            cinematicToneMappingEngine.apply(to: baseCurved, recipe: recipe),
-            canvas: canvas,
-            stage: "七段电影影调"
-        )
-        let exposureDuration = ProcessInfo.processInfo.systemUptime - exposureStart
-
-        let colorStart = ProcessInfo.processInfo.systemUptime
-        let whiteBalanced = applyWhiteBalance(to: curved, recipe: recipe)
-        let colored = applyColorControls(to: whiteBalanced, recipe: recipe)
-        let vibrant = applyVibrance(to: colored, recipe: recipe)
-        let graded = try checkedCanvas(
-            cinematicColorGradingEngine.apply(to: vibrant, recipe: recipe),
-            canvas: canvas,
-            stage: "三段电影调色"
-        )
-        let colorDuration = ProcessInfo.processInfo.systemUptime - colorStart
-
-        let spatialStart = ProcessInfo.processInfo.systemUptime
-        let locallyAdjusted = localAdjustmentProcessor.applyLocalizedRelighting(
-            to: graded,
-            analysis: analysis,
-            recipe: recipe
-        )
-        let skyAdjusted = skyAdjustmentProcessor.applySkyTreatment(
-            to: locallyAdjusted,
-            analysis: analysis,
-            recipe: recipe
-        )
-        let spatiallySeparated = cinematicSpatialDepthProcessor.apply(
-            to: skyAdjusted,
-            analysis: analysis,
-            recipe: recipe
-        )
-        let locallyContrasted = try checkedCanvas(
-            applyLocalContrast(to: spatiallySeparated, recipe: recipe),
-            canvas: canvas,
-            stage: "局部空间与材质"
-        )
-        let spatialDuration = ProcessInfo.processInfo.systemUptime - spatialStart
-
-        let detailStart = ProcessInfo.processInfo.systemUptime
-        let denoised = applyNoiseReduction(to: locallyContrasted, recipe: recipe)
-        let sharpened = applySharpening(to: denoised, recipe: recipe)
-        let textureProtected = skinTextureProtectionProcessor.protectTexture(
-            processedImage: sharpened,
-            sourceImage: locallyContrasted,
-            analysis: analysis,
-            amount: recipe.skinTextureProtection
-        )
-        let finished = try checkedCanvas(
-            cinematicLensCharacterProcessor.apply(
-                to: textureProtected,
-                recipe: recipe
-            ),
-            canvas: canvas,
-            stage: "镜头特征"
-        )
-        let detailDuration = ProcessInfo.processInfo.systemUptime - detailStart
+        let result = try processImage(data: data, recipe: recipe, analysis: analysis)
+        let finished = result.finalImage
+        let canvas = result.canvas
 
         let modules = executedModuleNames(for: recipe, analysis: analysis)
         AppLogger.imageEngine.info(
@@ -198,10 +63,10 @@ final class CoreImageRenderer {
         )
         let timingSummary = String(
             format: "影调 %.1fms，色彩 %.1fms，空间 %.1fms，细节/镜头 %.1fms",
-            exposureDuration * 1_000,
-            colorDuration * 1_000,
-            spatialDuration * 1_000,
-            detailDuration * 1_000
+            result.timings[0] * 1_000,
+            result.timings[1] * 1_000,
+            result.timings[2] * 1_000,
+            result.timings[3] * 1_000
         )
         AppLogger.imageEngine.info("V3 阶段耗时：\(timingSummary, privacy: .public)")
 
@@ -223,6 +88,55 @@ final class CoreImageRenderer {
         )
 
         return jpegData
+    }
+
+    private func processImage(
+        data: Data,
+        recipe: AutomaticEditingRecipe,
+        analysis: PhotoAnalysis?
+    ) throws -> (finalImage: CIImage, canvas: CGRect, stages: [(String, CIImage)], timings: [TimeInterval]) {
+        guard let decoded = CIImage(data: data, options: [.applyOrientationProperty: true]) else {
+            throw ImageRenderingError.invalidImageData
+        }
+        let input = canonicalImage(decoded)
+        let canvas = input.extent
+        var start = ProcessInfo.processInfo.systemUptime
+        let exposed = applyExposure(to: input, recipe: recipe)
+        let recovered = applyHighlightShadow(to: exposed, recipe: recipe)
+        let blackAdjusted = applyBlackPoint(to: recovered, recipe: recipe)
+        let baseCurved = applyToneCurve(to: blackAdjusted, recipe: recipe)
+        let curved = try checkedCanvas(cinematicToneMappingEngine.apply(to: baseCurved, recipe: recipe), canvas: canvas, stage: "七段电影影调")
+        let toneTime = ProcessInfo.processInfo.systemUptime - start
+
+        start = ProcessInfo.processInfo.systemUptime
+        let whiteBalanced = applyWhiteBalance(to: curved, recipe: recipe)
+        let colored = applyColorControls(to: whiteBalanced, recipe: recipe)
+        let vibrant = applyVibrance(to: colored, recipe: recipe)
+        let hslAdjusted = professionalHSLProcessor.apply(to: vibrant, adjustment: recipe.hsl)
+        let graded = try checkedCanvas(cinematicColorGradingEngine.apply(to: hslAdjusted, recipe: recipe), canvas: canvas, stage: "专业色彩分级")
+        let colorTime = ProcessInfo.processInfo.systemUptime - start
+
+        start = ProcessInfo.processInfo.systemUptime
+        let relit = localAdjustmentProcessor.applyLocalizedRelighting(to: graded, analysis: analysis, recipe: recipe)
+        let sky = skyAdjustmentProcessor.applySkyTreatment(to: relit, analysis: analysis, recipe: recipe)
+        let separated = cinematicSpatialDepthProcessor.apply(to: sky, analysis: analysis, recipe: recipe)
+        let local = try checkedCanvas(applyLocalContrast(to: separated, recipe: recipe), canvas: canvas, stage: "局部空间与材质")
+        let spatialTime = ProcessInfo.processInfo.systemUptime - start
+
+        start = ProcessInfo.processInfo.systemUptime
+        let denoised = applyNoiseReduction(to: local, recipe: recipe)
+        let sharpened = applySharpening(to: denoised, recipe: recipe)
+        let protected = skinTextureProtectionProcessor.protectTexture(processedImage: sharpened, sourceImage: local, analysis: analysis, amount: recipe.skinTextureProtection)
+        let finished = try checkedCanvas(cinematicLensCharacterProcessor.apply(to: protected, recipe: recipe), canvas: canvas, stage: "镜头特征")
+        let detailTime = ProcessInfo.processInfo.systemUptime - start
+        return (finished, canvas, [
+            ("Original", input),
+            ("曝光与动态范围", blackAdjusted),
+            ("七段电影影调", curved),
+            ("专业色彩分级", graded),
+            ("局部空间与材质", local),
+            ("Final Edited", finished)
+        ], [toneTime, colorTime, spatialTime, detailTime])
     }
 
     private func canonicalImage(_ image: CIImage) -> CIImage {
@@ -354,6 +268,7 @@ final class CoreImageRenderer {
         if abs(recipe.temperatureShift) > 0.5 || abs(recipe.tintShift) > 0.01 { modules.append("白平衡") }
         modules.append("色彩控制")
         if recipe.vibrance > 0.001 { modules.append("自然饱和度") }
+        if recipe.hsl != .neutral { modules.append("分区 HSL") }
         if recipe.colorGradeIntensity > 0.001 { modules.append("阴影/中间调/高光电影分级") }
         if recipe.subjectExposureEV > 0.001 || recipe.faceExposureEV > 0.001 { modules.append("主体/人脸补光") }
         if analysis?.skyMask != nil,

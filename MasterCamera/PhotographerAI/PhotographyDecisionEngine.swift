@@ -46,6 +46,7 @@ final class PhotographyDecisionEngine {
             actions: &actions
         )
         applyProblemSafetyLimits(problems: problems, recipe: &recipe)
+        reconcileQualitySignals(analysis: analysis, recipe: &recipe, actions: &actions)
 
         if actions.isEmpty {
             actions.append(
@@ -63,6 +64,47 @@ final class PhotographyDecisionEngine {
             actions: actions,
             recipe: recipe.clamped()
         )
+    }
+
+    private func reconcileQualitySignals(
+        analysis: PhotoAnalysis,
+        recipe: inout AutomaticEditingRecipe,
+        actions: inout [PhotographyAction]
+    ) {
+        if analysis.noiseEstimate > 0.12 {
+            recipe.noiseReductionAmount = max(recipe.noiseReductionAmount, min(0.055, analysis.noiseEstimate * 0.22))
+            recipe.sharpeningAmount = min(recipe.sharpeningAmount, 0.09)
+            recipe.localContrastAmount = min(recipe.localContrastAmount, 0.09)
+            recipe.grainAmount = min(recipe.grainAmount, 0.01)
+            actions.append(PhotographyAction(
+                title: "按实测高频残差保护细节",
+                reason: "画面存在噪点风险，因此限制锐化、清晰度和颗粒，避免把噪点强化成伪纹理。"
+            ))
+        } else if analysis.detailScore < 0.12 {
+            recipe.sharpeningAmount = min(max(recipe.sharpeningAmount, 0.06), 0.12)
+        }
+
+        if analysis.mixedLightScore > 0.18 {
+            recipe.colorGradeIntensity = min(recipe.colorGradeIntensity, 0.28)
+            recipe.shadowCoolAmount = min(recipe.shadowCoolAmount, 0.12)
+            recipe.highlightWarmAmount = min(recipe.highlightWarmAmount, 0.2)
+            actions.append(PhotographyAction(
+                title: "约束混合光调色",
+                reason: "画面同时存在明显冷暖区域，减少统一染色并保留现场光源关系。"
+            ))
+        }
+
+        if analysis.whiteRatio > 0.025 || analysis.highlightRatio > 0.12 {
+            recipe.bloomIntensity = min(recipe.bloomIntensity, 0.006)
+            recipe.halationIntensity = min(recipe.halationIntensity, 0.002)
+            recipe.highlightGlowThreshold = max(recipe.highlightGlowThreshold, 0.955)
+        }
+
+        if analysis.blackRatio > 0.38 && analysis.semanticScene == .night {
+            recipe.blackPoint = 0
+            recipe.shadowAmount = max(recipe.shadowAmount, 0.18)
+            recipe.shadowRollOff = max(recipe.shadowRollOff, 0.24)
+        }
     }
 
     private func applyExposureStrategy(
@@ -406,6 +448,9 @@ final class PhotographyDecisionEngine {
     ) {
         switch strategy {
         case .portrait:
+            recipe.hsl.orangeSaturation = 0.025
+            recipe.hsl.orangeLuminance = 0.018
+            recipe.hsl.cyanSaturation = -0.035
             recipe.saturation = min(recipe.saturation, 1.01)
             recipe.vibrance = min(max(recipe.vibrance, 0.06), 0.12)
             recipe.sharpeningAmount = min(max(recipe.sharpeningAmount, 0.1), 0.16)
@@ -434,6 +479,8 @@ final class PhotographyDecisionEngine {
                 )
             )
         case .backlitPortrait:
+            recipe.hsl.orangeSaturation = 0.02
+            recipe.hsl.orangeLuminance = 0.022
             recipe.exposureEV = min(recipe.exposureEV, -0.04)
             recipe.highlightAmount = min(recipe.highlightAmount, 0.5)
             recipe.shadowAmount = min(max(recipe.shadowAmount, 0.12), 0.28)
@@ -461,6 +508,10 @@ final class PhotographyDecisionEngine {
                 )
             )
         case .landscape:
+            recipe.hsl.greenSaturation = 0.035
+            recipe.hsl.greenLuminance = 0.012
+            recipe.hsl.blueSaturation = 0.03
+            recipe.hsl.blueLuminance = -0.012
             recipe.highlightAmount = min(recipe.highlightAmount, 0.72)
             recipe.shadowAmount = max(recipe.shadowAmount, 0.14)
             recipe.contrast += 0.035
@@ -479,6 +530,9 @@ final class PhotographyDecisionEngine {
                 )
             )
         case .night:
+            recipe.hsl.cyanSaturation = -0.08
+            recipe.hsl.blueSaturation = -0.065
+            recipe.hsl.blueLuminance = 0.012
             recipe.highlightAmount = min(recipe.highlightAmount, 0.6)
             recipe.shadowAmount = min(
                 max(recipe.shadowAmount, analysis.shadowRatio > 0.55 ? 0.2 : 0.14),
@@ -508,6 +562,8 @@ final class PhotographyDecisionEngine {
                 )
             )
         case .street:
+            recipe.hsl.cyanSaturation = -0.055
+            recipe.hsl.blueSaturation = -0.04
             recipe.highlightAmount = min(recipe.highlightAmount, 0.58)
             recipe.shadowAmount = min(max(recipe.shadowAmount, 0.1), 0.22)
             recipe.contrast = min(max(recipe.contrast, 1.015), 1.03)
@@ -527,6 +583,8 @@ final class PhotographyDecisionEngine {
                 )
             )
         case .outdoor:
+            recipe.hsl.greenSaturation = 0.018
+            recipe.hsl.blueSaturation = 0.015
             recipe.highlightAmount = min(recipe.highlightAmount, 0.68)
             recipe.shadowAmount = max(recipe.shadowAmount, 0.13)
             recipe.contrast = max(recipe.contrast, 1.025)
@@ -593,6 +651,9 @@ final class PhotographyDecisionEngine {
                 )
             )
         case .indoor:
+            recipe.hsl.cyanSaturation = -0.09
+            recipe.hsl.blueSaturation = -0.07
+            recipe.hsl.orangeSaturation = -0.015
             recipe.exposureEV += analysis.averageLuminance < 0.36 ? 0.08 : 0
             recipe.highlightAmount = min(
                 recipe.highlightAmount,
@@ -618,6 +679,9 @@ final class PhotographyDecisionEngine {
                 )
             )
         case .workspace:
+            recipe.hsl.orangeSaturation = -0.025
+            recipe.hsl.greenSaturation = -0.035
+            recipe.hsl.cyanSaturation = -0.045
             recipe.exposureEV += analysis.averageLuminance < 0.34 ? 0.06 : 0
             recipe.highlightAmount = min(
                 recipe.highlightAmount,

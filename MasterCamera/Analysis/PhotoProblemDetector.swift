@@ -186,12 +186,12 @@ final class PhotoProblemDetector {
             )
         }
 
-        if analysis.semanticScene == .night ||
+        if analysis.noiseEstimate > 0.12 || analysis.semanticScene == .night ||
             (analysis.averageLuminance < 0.3 && analysis.shadowRatio > 0.3) {
             append(
                 .noiseRisk,
-                severity: analysis.shadowRatio > 0.58 ? .strong : .moderate,
-                evidence: "低亮度与暗部占比表明提亮后可能暴露噪点。",
+                severity: analysis.noiseEstimate > 0.2 || analysis.shadowRatio > 0.58 ? .strong : .moderate,
+                evidence: "高频残差估计为 \(analysis.noiseEstimate.percentText)，结合暗部占比判断提亮后的噪点风险。",
                 to: &problems
             )
         }

@@ -59,7 +59,7 @@ final class PhotoProcessingPipeline {
             originalData: photo.originalImageData,
             editedData: initialEditedData
         )
-        let finalEdit = chooseFinalEdit(
+        let finalEdit = try chooseFinalEdit(
             originalData: photo.originalImageData,
             initialEditedData: initialEditedData,
             initialQualityCheck: initialQualityCheck,
@@ -155,7 +155,7 @@ final class PhotoProcessingPipeline {
         initialQualityCheck: QualityCheckResult,
         initialRecipe: AutomaticEditingRecipe,
         analysis: PhotoAnalysis
-    ) -> (
+    ) throws -> (
         data: Data,
         qualityCheck: QualityCheckResult,
         recipe: AutomaticEditingRecipe,
@@ -191,28 +191,33 @@ final class PhotoProcessingPipeline {
                 )
             }
 
-            AppLogger.imageEngine.warning("安全回退未改善质检等级，保留初版成片")
-            return (
-                initialEditedData,
-                initialQualityCheck,
-                initialRecipe,
-                analysis,
-                "安全回退没有改善质量等级"
+            AppLogger.imageEngine.error("初版与安全回退均未通过质量验证，拒绝把异常图片标记为 AI 成片")
+            throw PhotoProcessingError.qualityValidationFailed(
+                initialQualityCheck.issues.map(\.rawValue).joined(separator: ",")
             )
         } catch {
-            AppLogger.imageEngine.error("安全回退处理失败，保留初版成片：\(error.localizedDescription)")
-            return (
-                initialEditedData,
-                initialQualityCheck,
-                initialRecipe,
-                analysis,
-                "安全回退渲染失败：\(error.localizedDescription)"
-            )
+            if let processingError = error as? PhotoProcessingError { throw processingError }
+            AppLogger.imageEngine.error("安全回退处理失败，拒绝输出异常成片：\(error.localizedDescription)")
+            throw PhotoProcessingError.safeFallbackFailed(error.localizedDescription)
         }
     }
 
     private static func milliseconds(_ seconds: TimeInterval) -> Int {
         Int((seconds * 1_000).rounded())
+    }
+}
+
+enum PhotoProcessingError: LocalizedError {
+    case qualityValidationFailed(String)
+    case safeFallbackFailed(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .qualityValidationFailed(let issues):
+            return "AI 成片未通过质量检查（\(issues)），已保留原图且未输出异常成片。"
+        case .safeFallbackFailed(let reason):
+            return "安全处理失败（\(reason)），已保留原图。"
+        }
     }
 }
 

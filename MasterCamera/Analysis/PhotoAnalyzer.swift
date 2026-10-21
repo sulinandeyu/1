@@ -68,6 +68,12 @@ final class PhotoAnalyzer {
             shadowRatio: statistics.shadowRatio,
             highlightRatio: statistics.highlightRatio,
             averageSaturation: statistics.averageSaturation,
+            detailScore: statistics.detailScore,
+            noiseEstimate: statistics.noiseEstimate,
+            blackRatio: statistics.blackRatio,
+            whiteRatio: statistics.whiteRatio,
+            midtoneRatio: statistics.midtoneRatio,
+            mixedLightScore: statistics.mixedLightScore,
             faceCount: faceRegions.count,
             faceRegions: faceRegions,
             faceAverageLuminance: regionalTone.faceAverageLuminance,
@@ -116,6 +122,11 @@ final class PhotoAnalyzer {
         var saturationTotal: Float = 0
         var shadowCount = 0
         var highlightCount = 0
+        var blackCount = 0
+        var whiteCount = 0
+        var midtoneCount = 0
+        var warmCount = 0
+        var coolCount = 0
 
         for index in stride(from: 0, to: pixels.count, by: 4) {
             let red = Float(pixels[index]) / 255.0
@@ -137,6 +148,11 @@ final class PhotoAnalyzer {
             if pixelLuminance > 0.85 {
                 highlightCount += 1
             }
+            if pixelLuminance < 0.04 { blackCount += 1 }
+            if pixelLuminance > 0.96 { whiteCount += 1 }
+            if pixelLuminance >= 0.25 && pixelLuminance <= 0.75 { midtoneCount += 1 }
+            if red - blue > 0.10 { warmCount += 1 }
+            if blue - red > 0.10 { coolCount += 1 }
         }
 
         guard !luminances.isEmpty else {
@@ -147,6 +163,9 @@ final class PhotoAnalyzer {
         let count = Float(luminances.count)
         let lowPercentile = sortedLuminances[Int(Float(sortedLuminances.count - 1) * 0.05)]
         let highPercentile = sortedLuminances[Int(Float(sortedLuminances.count - 1) * 0.95)]
+        let neighborhood = neighborhoodQuality(luminances: luminances, width: width, height: height)
+        let warmRatio = Float(warmCount) / count
+        let coolRatio = Float(coolCount) / count
 
         return PixelStatistics(
             averageLuminance: luminances.reduce(0, +) / count,
@@ -157,9 +176,49 @@ final class PhotoAnalyzer {
             shadowRatio: Float(shadowCount) / count,
             highlightRatio: Float(highlightCount) / count,
             averageSaturation: saturationTotal / count,
+            detailScore: neighborhood.detail,
+            noiseEstimate: neighborhood.noise,
+            blackRatio: Float(blackCount) / count,
+            whiteRatio: Float(whiteCount) / count,
+            midtoneRatio: Float(midtoneCount) / count,
+            mixedLightScore: min(warmRatio, coolRatio) * 2,
             width: width,
             height: height,
             luminances: luminances
+        )
+    }
+
+    private func neighborhoodQuality(
+        luminances: [Float],
+        width: Int,
+        height: Int
+    ) -> (detail: Float, noise: Float) {
+        guard width > 2, height > 2 else { return (0, 0) }
+        var edgeTotal: Float = 0
+        var residualTotal: Float = 0
+        var samples: Float = 0
+        for y in 1..<(height - 1) {
+            for x in 1..<(width - 1) {
+                let index = y * width + x
+                let center = luminances[index]
+                let horizontal = abs(luminances[index + 1] - luminances[index - 1])
+                let vertical = abs(luminances[index + width] - luminances[index - width])
+                let neighborMean = (
+                    luminances[index - 1] + luminances[index + 1] +
+                    luminances[index - width] + luminances[index + width]
+                ) * 0.25
+                edgeTotal += (horizontal + vertical) * 0.5
+                // 仅在非强边缘处估算高频残差，避免把真实轮廓误判为噪点。
+                if horizontal + vertical < 0.12 {
+                    residualTotal += abs(center - neighborMean)
+                }
+                samples += 1
+            }
+        }
+        guard samples > 0 else { return (0, 0) }
+        return (
+            min(1, (edgeTotal / samples) * 6),
+            min(1, (residualTotal / samples) * 12)
         )
     }
 
@@ -336,6 +395,12 @@ private struct PixelStatistics {
     let shadowRatio: Float
     let highlightRatio: Float
     let averageSaturation: Float
+    let detailScore: Float
+    let noiseEstimate: Float
+    let blackRatio: Float
+    let whiteRatio: Float
+    let midtoneRatio: Float
+    let mixedLightScore: Float
     let width: Int
     let height: Int
     let luminances: [Float]

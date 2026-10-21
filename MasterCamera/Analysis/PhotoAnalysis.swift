@@ -9,6 +9,13 @@ struct PhotoAnalysis: Equatable, Sendable {
     let shadowRatio: Float
     let highlightRatio: Float
     let averageSaturation: Float
+    /// 0...1 的可重复图像质量代理指标；来自低分辨率亮度邻域，不伪装成传感器噪声实测值。
+    let detailScore: Float
+    let noiseEstimate: Float
+    let blackRatio: Float
+    let whiteRatio: Float
+    let midtoneRatio: Float
+    let mixedLightScore: Float
     let faceCount: Int
     let faceRegions: [NormalizedPhotoRegion]
     let faceAverageLuminance: Float?
@@ -147,6 +154,12 @@ struct PhotoAnalysis: Equatable, Sendable {
         shadowRatio: 0.0,
         highlightRatio: 0.0,
         averageSaturation: 0.0,
+        detailScore: 0.0,
+        noiseEstimate: 0.0,
+        blackRatio: 0.0,
+        whiteRatio: 0.0,
+        midtoneRatio: 1.0,
+        mixedLightScore: 0.0,
         faceCount: 0,
         faceRegions: [],
         faceAverageLuminance: nil,

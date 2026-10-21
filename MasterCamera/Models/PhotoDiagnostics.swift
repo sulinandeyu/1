@@ -51,6 +51,11 @@ struct PhotoDiagnosticSection: Identifiable, Equatable, Sendable {
                 PhotoDiagnosticItem(label: "层次", value: analysis.contrastProfile.title),
                 PhotoDiagnosticItem(label: "对比范围", value: analysis.contrastRange.percentText),
                 PhotoDiagnosticItem(label: "平均饱和度", value: analysis.averageSaturation.percentText),
+                PhotoDiagnosticItem(label: "细节代理", value: analysis.detailScore.percentText),
+                PhotoDiagnosticItem(label: "噪点代理", value: analysis.noiseEstimate.percentText),
+                PhotoDiagnosticItem(label: "纯黑/纯白", value: "\(analysis.blackRatio.percentText) / \(analysis.whiteRatio.percentText)"),
+                PhotoDiagnosticItem(label: "中间调占比", value: analysis.midtoneRatio.percentText),
+                PhotoDiagnosticItem(label: "混合光风险", value: analysis.mixedLightScore.percentText),
                 PhotoDiagnosticItem(label: "色彩倾向", value: analysis.colorCast.title),
                 PhotoDiagnosticItem(label: "人脸", value: analysis.faceCount.faceCountText),
                 PhotoDiagnosticItem(
@@ -164,6 +169,20 @@ struct PhotoDiagnosticSection: Identifiable, Equatable, Sendable {
                         decision.recipe.grainAmount,
                         decision.recipe.vignetteIntensity,
                         decision.recipe.backgroundSeparation
+                    )
+                ),
+                PhotoDiagnosticItem(
+                    label: "分区 HSL",
+                    value: String(
+                        format: "橙 S%+.2f/L%+.2f · 绿 S%+.2f/L%+.2f · 青 S%+.2f/L%+.2f · 蓝 S%+.2f/L%+.2f",
+                        decision.recipe.hsl.orangeSaturation,
+                        decision.recipe.hsl.orangeLuminance,
+                        decision.recipe.hsl.greenSaturation,
+                        decision.recipe.hsl.greenLuminance,
+                        decision.recipe.hsl.cyanSaturation,
+                        decision.recipe.hsl.cyanLuminance,
+                        decision.recipe.hsl.blueSaturation,
+                        decision.recipe.hsl.blueLuminance
                     )
                 ),
                 PhotoDiagnosticItem(

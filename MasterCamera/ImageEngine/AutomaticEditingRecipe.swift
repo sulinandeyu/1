@@ -30,6 +30,38 @@ enum CinematicToneStyle: String, Equatable, Sendable {
     case lowKey
 }
 
+/// 专业分区调色参数。数值是相对调整量，0 表示不改变该色域。
+struct ProfessionalHSLAdjustment: Equatable, Sendable {
+    var orangeSaturation: Float
+    var orangeLuminance: Float
+    var greenSaturation: Float
+    var greenLuminance: Float
+    var cyanSaturation: Float
+    var cyanLuminance: Float
+    var blueSaturation: Float
+    var blueLuminance: Float
+
+    static let neutral = ProfessionalHSLAdjustment(
+        orangeSaturation: 0, orangeLuminance: 0,
+        greenSaturation: 0, greenLuminance: 0,
+        cyanSaturation: 0, cyanLuminance: 0,
+        blueSaturation: 0, blueLuminance: 0
+    )
+
+    func clamped() -> ProfessionalHSLAdjustment {
+        ProfessionalHSLAdjustment(
+            orangeSaturation: orangeSaturation.clamped(to: -0.18...0.18),
+            orangeLuminance: orangeLuminance.clamped(to: -0.08...0.08),
+            greenSaturation: greenSaturation.clamped(to: -0.2...0.2),
+            greenLuminance: greenLuminance.clamped(to: -0.08...0.08),
+            cyanSaturation: cyanSaturation.clamped(to: -0.2...0.16),
+            cyanLuminance: cyanLuminance.clamped(to: -0.08...0.08),
+            blueSaturation: blueSaturation.clamped(to: -0.2...0.16),
+            blueLuminance: blueLuminance.clamped(to: -0.08...0.08)
+        )
+    }
+}
+
 struct AutomaticEditingRecipe: Equatable, Sendable {
     var exposureEV: Float
     var highlightAmount: Float
@@ -71,6 +103,7 @@ struct AutomaticEditingRecipe: Equatable, Sendable {
     var halationIntensity: Float
     var highlightGlowThreshold: Float
     var backgroundSeparation: Float
+    var hsl: ProfessionalHSLAdjustment
 
     static let naturalEnhancement = AutomaticEditingRecipe(
         exposureEV: 0.0,
@@ -112,7 +145,8 @@ struct AutomaticEditingRecipe: Equatable, Sendable {
         bloomIntensity: 0.0,
         halationIntensity: 0.0,
         highlightGlowThreshold: 0.92,
-        backgroundSeparation: 0.0
+        backgroundSeparation: 0.0,
+        hsl: .neutral
     )
 
     static let safeFallback = AutomaticEditingRecipe(
@@ -155,7 +189,8 @@ struct AutomaticEditingRecipe: Equatable, Sendable {
         bloomIntensity: 0.0,
         halationIntensity: 0.0,
         highlightGlowThreshold: 0.95,
-        backgroundSeparation: 0.0
+        backgroundSeparation: 0.0,
+        hsl: .neutral
     )
 
     func clamped() -> AutomaticEditingRecipe {
@@ -199,10 +234,14 @@ struct AutomaticEditingRecipe: Equatable, Sendable {
             bloomIntensity: bloomIntensity.clamped(to: 0.0...0.025),
             halationIntensity: halationIntensity.clamped(to: 0.0...0.012),
             highlightGlowThreshold: highlightGlowThreshold.clamped(to: 0.84...0.98),
-            backgroundSeparation: backgroundSeparation.clamped(to: 0.0...0.18)
+            backgroundSeparation: backgroundSeparation.clamped(to: 0.0...0.18),
+            hsl: hsl.clamped()
         )
     }
 }
+
+/// V6 的统一专业配方名称；保留旧名称以兼容现有相机与诊断数据。
+typealias ProfessionalEditingRecipe = AutomaticEditingRecipe
 
 private extension Float {
     func clamped(to range: ClosedRange<Float>) -> Float {

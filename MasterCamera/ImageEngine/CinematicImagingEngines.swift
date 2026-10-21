@@ -91,6 +91,97 @@ final class CinematicToneMappingEngine {
     }
 }
 
+/// 以连续色相权重执行真正的分区 HSL 调整，避免用全局饱和度冒充调色。
+final class ProfessionalHSLProcessor {
+    private let dimension = 32
+
+    func apply(to image: CIImage, adjustment: ProfessionalHSLAdjustment) -> CIImage {
+        guard adjustment != .neutral else { return image }
+        var cube = [Float]()
+        cube.reserveCapacity(dimension * dimension * dimension * 4)
+        let denominator = Float(dimension - 1)
+        for blueIndex in 0..<dimension {
+            for greenIndex in 0..<dimension {
+                for redIndex in 0..<dimension {
+                    let rgb = SIMD3<Float>(
+                        Float(redIndex) / denominator,
+                        Float(greenIndex) / denominator,
+                        Float(blueIndex) / denominator
+                    )
+                    var hsv = rgbToHSV(rgb)
+                    let orange = hueWeight(hsv.x, center: 0.075, width: 0.095)
+                    let green = hueWeight(hsv.x, center: 0.33, width: 0.13)
+                    let cyan = hueWeight(hsv.x, center: 0.50, width: 0.10)
+                    let blue = hueWeight(hsv.x, center: 0.64, width: 0.13)
+                    let chromaGuard = min(1, hsv.y * 3.2)
+                    let saturationDelta = (
+                        orange * adjustment.orangeSaturation +
+                        green * adjustment.greenSaturation +
+                        cyan * adjustment.cyanSaturation +
+                        blue * adjustment.blueSaturation
+                    ) * chromaGuard
+                    let luminanceDelta = (
+                        orange * adjustment.orangeLuminance +
+                        green * adjustment.greenLuminance +
+                        cyan * adjustment.cyanLuminance +
+                        blue * adjustment.blueLuminance
+                    ) * chromaGuard
+                    hsv.y = clamp(hsv.y * (1 + saturationDelta))
+                    hsv.z = clamp(hsv.z + luminanceDelta)
+                    let output = hsvToRGB(hsv)
+                    cube.append(contentsOf: [output.x, output.y, output.z, 1])
+                }
+            }
+        }
+        let data = cube.withUnsafeBufferPointer { Data(buffer: $0) }
+        return image.applyingFilter("CIColorCube", parameters: [
+            "inputCubeDimension": dimension,
+            "inputCubeData": data
+        ]).cropped(to: image.extent)
+    }
+
+    private func hueWeight(_ hue: Float, center: Float, width: Float) -> Float {
+        let direct = abs(hue - center)
+        let distance = min(direct, 1 - direct)
+        let normalized = max(0, 1 - distance / width)
+        return normalized * normalized * (3 - 2 * normalized)
+    }
+
+    private func rgbToHSV(_ rgb: SIMD3<Float>) -> SIMD3<Float> {
+        let maximum = max(rgb.x, rgb.y, rgb.z)
+        let minimum = min(rgb.x, rgb.y, rgb.z)
+        let delta = maximum - minimum
+        var hue: Float = 0
+        if delta > 0.0001 {
+            if maximum == rgb.x { hue = ((rgb.y - rgb.z) / delta).truncatingRemainder(dividingBy: 6) }
+            else if maximum == rgb.y { hue = ((rgb.z - rgb.x) / delta) + 2 }
+            else { hue = ((rgb.x - rgb.y) / delta) + 4 }
+            hue /= 6
+            if hue < 0 { hue += 1 }
+        }
+        return SIMD3(hue, maximum > 0 ? delta / maximum : 0, maximum)
+    }
+
+    private func hsvToRGB(_ hsv: SIMD3<Float>) -> SIMD3<Float> {
+        let sector = hsv.x * 6
+        let chroma = hsv.z * hsv.y
+        let x = chroma * (1 - abs(sector.truncatingRemainder(dividingBy: 2) - 1))
+        let m = hsv.z - chroma
+        let value: SIMD3<Float>
+        switch Int(floor(sector)) % 6 {
+        case 0: value = SIMD3(chroma, x, 0)
+        case 1: value = SIMD3(x, chroma, 0)
+        case 2: value = SIMD3(0, chroma, x)
+        case 3: value = SIMD3(0, x, chroma)
+        case 4: value = SIMD3(x, 0, chroma)
+        default: value = SIMD3(chroma, 0, x)
+        }
+        return SIMD3(clamp(value.x + m), clamp(value.y + m), clamp(value.z + m))
+    }
+
+    private func clamp(_ value: Float) -> Float { min(max(value, 0), 1) }
+}
+
 /// Independently grades shadows, midtones and highlights with soft luminance masks.
 final class CinematicColorGradingEngine {
     func apply(to image: CIImage, recipe: AutomaticEditingRecipe) -> CIImage {
