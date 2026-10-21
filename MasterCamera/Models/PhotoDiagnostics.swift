@@ -93,10 +93,11 @@ struct PhotoDiagnosticSection: Identifiable, Equatable, Sendable {
                 PhotoDiagnosticItem(
                     label: "细节参数",
                     value: String(
-                        format: "曲线 %.2f · 降噪 %.3f · 锐化 %.2f · 主体 %+.2f EV · 人脸 %+.2f EV",
+                        format: "曲线 %.2f · 降噪 %.3f · 锐化 %.2f · 肤质保护 %.2f · 主体 %+.2f EV · 人脸 %+.2f EV",
                         decision.recipe.toneCurveAmount,
                         decision.recipe.noiseReductionAmount,
                         decision.recipe.sharpeningAmount,
+                        decision.recipe.skinTextureProtection,
                         decision.recipe.subjectExposureEV,
                         decision.recipe.faceExposureEV
                     )

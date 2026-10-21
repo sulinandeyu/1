@@ -36,6 +36,7 @@
 		A0000000000000000000001C /* PhotoDiagnostics.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000003C /* PhotoDiagnostics.swift */; };
 		A0000000000000000000001D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000003D /* Assets.xcassets */; };
 		A0000000000000000000001E /* PhotoProblemDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000003E /* PhotoProblemDetector.swift */; };
+		A0000000000000000000001F /* SkinTextureProtectionProcessor.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000003F /* SkinTextureProtectionProcessor.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -70,6 +71,7 @@
 		A0000000000000000000003C /* PhotoDiagnostics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoDiagnostics.swift; sourceTree = "<group>"; };
 		A0000000000000000000003D /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		A0000000000000000000003E /* PhotoProblemDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoProblemDetector.swift; sourceTree = "<group>"; };
+		A0000000000000000000003F /* SkinTextureProtectionProcessor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkinTextureProtectionProcessor.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -175,6 +177,7 @@
 				A0000000000000000000002B /* CoreImageRenderer.swift */,
 				A0000000000000000000002E /* AutomaticEditingRecipe.swift */,
 				A00000000000000000000035 /* LocalAdjustmentProcessor.swift */,
+				A0000000000000000000003F /* SkinTextureProtectionProcessor.swift */,
 			);
 			path = ImageEngine;
 			sourceTree = "<group>";
@@ -335,6 +338,7 @@
 				A0000000000000000000001B /* ProcessingConfiguration.swift in Sources */,
 				A0000000000000000000001C /* PhotoDiagnostics.swift in Sources */,
 				A0000000000000000000001E /* PhotoProblemDetector.swift in Sources */,
+				A0000000000000000000001F /* SkinTextureProtectionProcessor.swift in Sources */,
 				A0000000000000000000000C /* PhotoLibraryManager.swift in Sources */,
 				A0000000000000000000000D /* Logger.swift in Sources */,
 			);

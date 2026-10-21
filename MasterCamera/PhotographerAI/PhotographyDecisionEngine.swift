@@ -232,6 +232,7 @@ final class PhotographyDecisionEngine {
             recipe.vibrance = min(max(recipe.vibrance, 0.06), 0.12)
             recipe.sharpeningAmount = min(max(recipe.sharpeningAmount, 0.1), 0.16)
             recipe.noiseReductionAmount = max(recipe.noiseReductionAmount, 0.012)
+            recipe.skinTextureProtection = 0.56
             recipe.toneCurveAmount = max(recipe.toneCurveAmount, 0.16)
             if analysis.averageLuminance < 0.48 || analysis.shadowRatio > 0.28 {
                 recipe.subjectExposureEV = analysis.personMask == nil ? 0.0 : 0.06
@@ -250,6 +251,7 @@ final class PhotographyDecisionEngine {
             recipe.saturation = min(recipe.saturation, 1.01)
             recipe.vibrance = min(max(recipe.vibrance, 0.06), 0.12)
             recipe.sharpeningAmount = min(max(recipe.sharpeningAmount, 0.1), 0.16)
+            recipe.skinTextureProtection = 0.62
             recipe.subjectExposureEV = analysis.personMask == nil ? 0.0 : 0.16
             recipe.faceExposureEV = 0.24
             recipe.toneCurveAmount = max(recipe.toneCurveAmount, 0.22)

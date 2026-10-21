@@ -8,6 +8,7 @@ final class CoreImageRenderer {
     private let context = CIContext()
     private let outputColorSpace = CGColorSpace(name: CGColorSpace.sRGB)!
     private let localAdjustmentProcessor = LocalAdjustmentProcessor()
+    private let skinTextureProtectionProcessor = SkinTextureProtectionProcessor()
 
     func renderOriginalPreview(from data: Data) -> UIImage? {
         guard
@@ -42,7 +43,13 @@ final class CoreImageRenderer {
         let vibrant = applyVibrance(to: colored, recipe: recipe)
         let denoised = applyNoiseReduction(to: vibrant, recipe: recipe)
         let sharpened = applySharpening(to: denoised, recipe: recipe)
-        let finished = applyVignette(to: sharpened, recipe: recipe)
+        let textureProtected = skinTextureProtectionProcessor.protectTexture(
+            processedImage: sharpened,
+            sourceImage: vibrant,
+            analysis: analysis,
+            amount: recipe.skinTextureProtection
+        )
+        let finished = applyVignette(to: textureProtected, recipe: recipe)
 
         guard let jpegData = context.jpegRepresentation(
             of: finished,

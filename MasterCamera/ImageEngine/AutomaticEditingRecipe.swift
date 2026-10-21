@@ -13,6 +13,7 @@ struct AutomaticEditingRecipe: Equatable, Sendable {
     var toneCurveAmount: Float
     var noiseReductionAmount: Float
     var sharpeningAmount: Float
+    var skinTextureProtection: Float
     var vignetteIntensity: Float
     var subjectExposureEV: Float
     var faceExposureEV: Float
@@ -30,6 +31,7 @@ struct AutomaticEditingRecipe: Equatable, Sendable {
         toneCurveAmount: 0.0,
         noiseReductionAmount: 0.0,
         sharpeningAmount: 0.0,
+        skinTextureProtection: 0.0,
         vignetteIntensity: 0.0,
         subjectExposureEV: 0.0,
         faceExposureEV: 0.0
@@ -48,6 +50,7 @@ struct AutomaticEditingRecipe: Equatable, Sendable {
         toneCurveAmount: 0.08,
         noiseReductionAmount: 0.006,
         sharpeningAmount: 0.08,
+        skinTextureProtection: 0.0,
         vignetteIntensity: 0.0,
         subjectExposureEV: 0.0,
         faceExposureEV: 0.0
@@ -67,6 +70,7 @@ struct AutomaticEditingRecipe: Equatable, Sendable {
             toneCurveAmount: toneCurveAmount.clamped(to: 0.0...1.0),
             noiseReductionAmount: noiseReductionAmount.clamped(to: 0.0...0.06),
             sharpeningAmount: sharpeningAmount.clamped(to: 0.0...0.34),
+            skinTextureProtection: skinTextureProtection.clamped(to: 0.0...0.8),
             vignetteIntensity: vignetteIntensity.clamped(to: 0.0...0.35),
             subjectExposureEV: subjectExposureEV.clamped(to: 0.0...0.22),
             faceExposureEV: faceExposureEV.clamped(to: 0.0...0.28)
