@@ -15,6 +15,10 @@ final class CoreImageRenderer {
     private let localAdjustmentProcessor = LocalAdjustmentProcessor()
     private let skyAdjustmentProcessor = SkyAdjustmentProcessor()
     private let skinTextureProtectionProcessor = SkinTextureProtectionProcessor()
+    private let cinematicToneMappingEngine = CinematicToneMappingEngine()
+    private let cinematicColorGradingEngine = CinematicColorGradingEngine()
+    private let cinematicSpatialDepthProcessor = CinematicSpatialDepthProcessor()
+    private let cinematicLensCharacterProcessor = CinematicLensCharacterProcessor()
 
     func renderOriginalPreview(from data: Data) -> UIImage? {
         guard
@@ -39,14 +43,22 @@ final class CoreImageRenderer {
             throw ImageRenderingError.invalidImageData
         }
 
+        let exposureStart = ProcessInfo.processInfo.systemUptime
         let exposed = applyExposure(to: inputImage, recipe: recipe)
         let recovered = applyHighlightShadow(to: exposed, recipe: recipe)
         let blackPointAdjusted = applyBlackPoint(to: recovered, recipe: recipe)
-        let curved = applyToneCurve(to: blackPointAdjusted, recipe: recipe)
+        let baseCurved = applyToneCurve(to: blackPointAdjusted, recipe: recipe)
+        let curved = cinematicToneMappingEngine.apply(to: baseCurved, recipe: recipe)
+        let exposureDuration = ProcessInfo.processInfo.systemUptime - exposureStart
+
+        let colorStart = ProcessInfo.processInfo.systemUptime
         let whiteBalanced = applyWhiteBalance(to: curved, recipe: recipe)
         let colored = applyColorControls(to: whiteBalanced, recipe: recipe)
         let vibrant = applyVibrance(to: colored, recipe: recipe)
-        let graded = applyColorGrading(to: vibrant, recipe: recipe)
+        let graded = cinematicColorGradingEngine.apply(to: vibrant, recipe: recipe)
+        let colorDuration = ProcessInfo.processInfo.systemUptime - colorStart
+
+        let spatialStart = ProcessInfo.processInfo.systemUptime
         let locallyAdjusted = localAdjustmentProcessor.applyLocalizedRelighting(
             to: graded,
             analysis: analysis,
@@ -57,7 +69,15 @@ final class CoreImageRenderer {
             analysis: analysis,
             recipe: recipe
         )
-        let locallyContrasted = applyLocalContrast(to: skyAdjusted, recipe: recipe)
+        let spatiallySeparated = cinematicSpatialDepthProcessor.apply(
+            to: skyAdjusted,
+            analysis: analysis,
+            recipe: recipe
+        )
+        let locallyContrasted = applyLocalContrast(to: spatiallySeparated, recipe: recipe)
+        let spatialDuration = ProcessInfo.processInfo.systemUptime - spatialStart
+
+        let detailStart = ProcessInfo.processInfo.systemUptime
         let denoised = applyNoiseReduction(to: locallyContrasted, recipe: recipe)
         let sharpened = applySharpening(to: denoised, recipe: recipe)
         let textureProtected = skinTextureProtectionProcessor.protectTexture(
@@ -66,15 +86,18 @@ final class CoreImageRenderer {
             analysis: analysis,
             amount: recipe.skinTextureProtection
         )
-        let vignetted = applyVignette(to: textureProtected, recipe: recipe)
-        let finished = applyFilmGrain(to: vignetted, recipe: recipe)
+        let finished = cinematicLensCharacterProcessor.apply(
+            to: textureProtected,
+            recipe: recipe
+        )
+        let detailDuration = ProcessInfo.processInfo.systemUptime - detailStart
 
         let images = [
             ("Original", inputImage),
             ("曝光与动态范围", blackPointAdjusted),
-            ("曲线与白平衡", whiteBalanced),
-            ("摄影调色", graded),
-            ("局部与材质", locallyContrasted),
+            ("七段电影影调", curved),
+            ("三段电影调色", graded),
+            ("局部空间与材质", locallyContrasted),
             ("Final Edited", finished)
         ]
         return images.compactMap { name, image in
@@ -95,11 +118,12 @@ final class CoreImageRenderer {
         let exposed = applyExposure(to: inputImage, recipe: recipe)
         let recovered = applyHighlightShadow(to: exposed, recipe: recipe)
         let blackPointAdjusted = applyBlackPoint(to: recovered, recipe: recipe)
-        let curved = applyToneCurve(to: blackPointAdjusted, recipe: recipe)
+        let baseCurved = applyToneCurve(to: blackPointAdjusted, recipe: recipe)
+        let curved = cinematicToneMappingEngine.apply(to: baseCurved, recipe: recipe)
         let whiteBalanced = applyWhiteBalance(to: curved, recipe: recipe)
         let colored = applyColorControls(to: whiteBalanced, recipe: recipe)
         let vibrant = applyVibrance(to: colored, recipe: recipe)
-        let graded = applyColorGrading(to: vibrant, recipe: recipe)
+        let graded = cinematicColorGradingEngine.apply(to: vibrant, recipe: recipe)
         let locallyAdjusted = localAdjustmentProcessor.applyLocalizedRelighting(
             to: graded,
             analysis: analysis,
@@ -110,7 +134,12 @@ final class CoreImageRenderer {
             analysis: analysis,
             recipe: recipe
         )
-        let locallyContrasted = applyLocalContrast(to: skyAdjusted, recipe: recipe)
+        let spatiallySeparated = cinematicSpatialDepthProcessor.apply(
+            to: skyAdjusted,
+            analysis: analysis,
+            recipe: recipe
+        )
+        let locallyContrasted = applyLocalContrast(to: spatiallySeparated, recipe: recipe)
         let denoised = applyNoiseReduction(to: locallyContrasted, recipe: recipe)
         let sharpened = applySharpening(to: denoised, recipe: recipe)
         let textureProtected = skinTextureProtectionProcessor.protectTexture(
@@ -119,12 +148,23 @@ final class CoreImageRenderer {
             analysis: analysis,
             amount: recipe.skinTextureProtection
         )
-        let vignetted = applyVignette(to: textureProtected, recipe: recipe)
-        let finished = applyFilmGrain(to: vignetted, recipe: recipe)
+        let finished = cinematicLensCharacterProcessor.apply(
+            to: textureProtected,
+            recipe: recipe
+        )
 
         let modules = executedModuleNames(for: recipe, analysis: analysis)
         AppLogger.imageEngine.info(
             "执行像素模块：\(modules.joined(separator: " → "))；输出范围 \(Int(finished.extent.width))×\(Int(finished.extent.height))"
+        )
+        AppLogger.imageEngine.info(
+            String(
+                format: "V3 阶段耗时：影调 %.1fms，色彩 %.1fms，空间 %.1fms，细节/镜头 %.1fms",
+                exposureDuration * 1_000,
+                colorDuration * 1_000,
+                spatialDuration * 1_000,
+                detailDuration * 1_000
+            )
         )
 
         guard let renderedJPEG = context.jpegRepresentation(
@@ -213,14 +253,19 @@ final class CoreImageRenderer {
         var modules = ["方向/色彩空间", "曝光", "高光阴影"]
         if recipe.blackPoint > 0.001 { modules.append("黑位") }
         if recipe.toneCurveAmount > 0.001 { modules.append("\(recipe.toneCurveStyle.rawValue)曲线") }
+        modules.append("七段电影影调/\(recipe.cinematicIntensity.title)")
         if abs(recipe.temperatureShift) > 0.5 || abs(recipe.tintShift) > 0.01 { modules.append("白平衡") }
         modules.append("色彩控制")
         if recipe.vibrance > 0.001 { modules.append("自然饱和度") }
-        if recipe.colorGradeIntensity > 0.001 { modules.append("分区色彩分级") }
+        if recipe.colorGradeIntensity > 0.001 { modules.append("阴影/中间调/高光电影分级") }
         if recipe.subjectExposureEV > 0.001 || recipe.faceExposureEV > 0.001 { modules.append("主体/人脸补光") }
         if analysis?.skyMask != nil,
            recipe.skyExposureEV < -0.001 || recipe.skyHighlightAmount < 0.999 {
             modules.append("天空保护")
+        }
+        if recipe.backgroundSeparation > 0.001,
+           analysis?.personMask != nil || analysis?.salientSubjectMask != nil {
+            modules.append("主体/背景空间层次")
         }
         if recipe.localContrastAmount > 0.001 { modules.append("局部对比/材质") }
         if recipe.noiseReductionAmount > 0.001 { modules.append("降噪") }
@@ -228,6 +273,8 @@ final class CoreImageRenderer {
         if recipe.skinTextureProtection > 0.001 { modules.append("肤质保护") }
         if recipe.vignetteIntensity > 0.001 { modules.append("暗角") }
         if recipe.grainAmount > 0.001 { modules.append("胶片颗粒") }
+        if recipe.bloomIntensity > 0.001 { modules.append("高光 Bloom") }
+        if recipe.halationIntensity > 0.001 { modules.append("暖色 Halation") }
         return modules
     }
 

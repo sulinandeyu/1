@@ -225,3 +225,13 @@ Phase 14 TestFlight 发布链路和首轮内部真机验证均已完成。build 
 - 4 个用户附件是对比界面截图而非原始照片；首轮观察与限制记录于 `docs/V2_REAL_SAMPLE_FINDINGS.md`。真机原始 JPEG/HEIC 复测尚待新构建。
 - macOS / Xcode 的 iOS Simulator Debug 构建已在 GitHub Actions `iOS Build #26` 通过；当前提交未自动触发 TestFlight 发布。
 - TestFlight Release #9 已成功完成，使用 App 构建号 9，发布提交为 `374436b`；等待 App Store Connect 完成后续处理后即可在 TestFlight 更新。
+# 2026-10-21 — Cinematic Imaging Engine V3（代码开发中）
+
+- 默认成片目标升级为 CINEMATIC AUTO；新增 Natural、Standard、Dramatic 三档内部自动强度，不增加用户手动负担。
+- 新增七锚点电影影调引擎，独立控制黑位、阴影卷降、低中调、中调、高中调、高光卷降和白位，并按 natural / bright / low-key 自动选型。
+- 新增阴影、中间调和高光软蒙版电影色彩分级以及克制的 color contrast，替代只有冷阴影/暖高光的两段式实现。
+- 新增基于可靠 Vision 人物/显著主体蒙版的空间层次处理；没有有效蒙版时自动跳过，不伪造景深。
+- 新增独立镜头质感模块：高光选择性 Bloom、轻微暖色 Halation、亮度感知单色颗粒和条件暗角。
+- 场景策略扩展城市街头和户外自然光；室内、工作区、人像、逆光、夜景、建筑、风景及高对比继续采用独立参数。
+- V3 参数和执行模块已进入成片信息面板与逐阶段像素预览；最终仍走同一条全分辨率渲染和保存链。
+- 技术说明见 `docs/CINEMATIC_ENGINE_V3.md`；真实原始样片及真机画质、耗时、内存仍待新构建验证。

@@ -99,6 +99,18 @@ struct PhotoAnalysis: Equatable, Sendable {
             return .night
         }
 
+        if identifiers.containsKeyword([
+            "street", "city", "downtown", "road", "traffic", "alley", "urban"
+        ]) {
+            return .street
+        }
+
+        if identifiers.containsKeyword([
+            "outdoor", "park", "garden", "field", "daylight", "courtyard"
+        ]) {
+            return .outdoor
+        }
+
         if identifiers.containsKeyword(["food", "dish", "meal", "cuisine", "dessert", "fruit", "vegetable"] ) {
             return .food
         }
@@ -168,6 +180,8 @@ enum SemanticScene: String, Equatable, Sendable {
     case backlitPortrait
     case landscape
     case night
+    case street
+    case outdoor
     case food
     case architecture
     case sunset

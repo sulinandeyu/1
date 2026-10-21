@@ -38,6 +38,13 @@ final class PhotographyDecisionEngine {
             recipe: &recipe,
             actions: &actions
         )
+        applyCinematicStrategy(
+            analysis: analysis,
+            strategy: strategy,
+            problems: problems,
+            recipe: &recipe,
+            actions: &actions
+        )
         applyProblemSafetyLimits(problems: problems, recipe: &recipe)
 
         if actions.isEmpty {
@@ -215,6 +222,8 @@ final class PhotographyDecisionEngine {
     ) {
         if problems.contains(.clippedHighlights) {
             recipe.highlightAmount = min(recipe.highlightAmount, 0.58)
+            recipe.bloomIntensity = min(recipe.bloomIntensity, 0.035)
+            recipe.halationIntensity = min(recipe.halationIntensity, 0.012)
         }
 
         if problems.contains(.oversaturated) {
@@ -224,7 +233,110 @@ final class PhotographyDecisionEngine {
 
         if problems.contains(.noiseRisk) {
             recipe.sharpeningAmount = min(recipe.sharpeningAmount, 0.16)
+            recipe.localContrastAmount = min(recipe.localContrastAmount, 0.28)
+            recipe.grainAmount = min(recipe.grainAmount, 0.014)
         }
+    }
+
+    private func applyCinematicStrategy(
+        analysis: PhotoAnalysis,
+        strategy: SceneStrategy,
+        problems: PhotoProblemReport,
+        recipe: inout AutomaticEditingRecipe,
+        actions: inout [PhotographyAction]
+    ) {
+        let intensity: CinematicIntensity
+        switch strategy {
+        case .portrait, .backlitPortrait, .food:
+            intensity = .natural
+        case .general:
+            let isAlreadyBalanced = problems.isEmpty
+                && analysis.exposureProfile == .balanced
+                && analysis.contrastProfile == .balanced
+            intensity = isAlreadyBalanced ? .natural : .standard
+        case .night, .street, .sunset:
+            intensity = analysis.contrastRange > 0.42 ? .dramatic : .standard
+        case .highContrast:
+            intensity = problems.contains(.clippedHighlights) ? .standard : .dramatic
+        default:
+            intensity = .standard
+        }
+        recipe.cinematicIntensity = intensity
+
+        switch intensity {
+        case .natural:
+            recipe.shadowRollOff = max(recipe.shadowRollOff, 0.2)
+            recipe.lowerMidtoneLift = max(recipe.lowerMidtoneLift, 0.008)
+            recipe.upperMidtoneSeparation = max(recipe.upperMidtoneSeparation, 0.012)
+            recipe.highlightRollOff = max(recipe.highlightRollOff, 0.2)
+            recipe.whitePoint = min(recipe.whitePoint, 0.988)
+            recipe.colorGradeIntensity = max(recipe.colorGradeIntensity, 0.24)
+            recipe.shadowCoolAmount = max(recipe.shadowCoolAmount, 0.12)
+            recipe.midtoneWarmAmount = max(recipe.midtoneWarmAmount, 0.16)
+            recipe.highlightWarmAmount = max(recipe.highlightWarmAmount, 0.2)
+            recipe.colorContrast = max(recipe.colorContrast, 0.1)
+            recipe.bloomIntensity = max(recipe.bloomIntensity, 0.012)
+            recipe.backgroundSeparation = analysis.containsFaces ? 0.055 : 0.025
+        case .standard:
+            recipe.shadowRollOff = max(recipe.shadowRollOff, 0.38)
+            recipe.lowerMidtoneLift = max(recipe.lowerMidtoneLift, 0.012)
+            recipe.midtoneBias = max(recipe.midtoneBias, 0.004)
+            recipe.upperMidtoneSeparation = max(recipe.upperMidtoneSeparation, 0.025)
+            recipe.highlightRollOff = max(recipe.highlightRollOff, 0.42)
+            recipe.whitePoint = min(recipe.whitePoint, 0.976)
+            recipe.colorGradeIntensity = max(recipe.colorGradeIntensity, 0.4)
+            recipe.shadowCoolAmount = max(recipe.shadowCoolAmount, 0.28)
+            recipe.midtoneWarmAmount = max(recipe.midtoneWarmAmount, 0.24)
+            recipe.highlightWarmAmount = max(recipe.highlightWarmAmount, 0.34)
+            recipe.colorContrast = max(recipe.colorContrast, 0.22)
+            recipe.bloomIntensity = max(recipe.bloomIntensity, 0.035)
+            recipe.halationIntensity = max(recipe.halationIntensity, 0.012)
+            recipe.grainAmount = max(recipe.grainAmount, 0.012)
+            recipe.backgroundSeparation = 0.085
+        case .dramatic:
+            recipe.shadowRollOff = max(recipe.shadowRollOff, 0.52)
+            recipe.lowerMidtoneLift = min(recipe.lowerMidtoneLift, -0.005)
+            recipe.midtoneBias = min(recipe.midtoneBias, -0.008)
+            recipe.upperMidtoneSeparation = max(recipe.upperMidtoneSeparation, 0.045)
+            recipe.highlightRollOff = max(recipe.highlightRollOff, 0.58)
+            recipe.whitePoint = min(recipe.whitePoint, 0.965)
+            recipe.colorGradeIntensity = max(recipe.colorGradeIntensity, 0.54)
+            recipe.shadowCoolAmount = max(recipe.shadowCoolAmount, 0.42)
+            recipe.midtoneWarmAmount = max(recipe.midtoneWarmAmount, 0.28)
+            recipe.highlightWarmAmount = max(recipe.highlightWarmAmount, 0.48)
+            recipe.colorContrast = max(recipe.colorContrast, 0.32)
+            recipe.bloomIntensity = max(recipe.bloomIntensity, 0.05)
+            recipe.halationIntensity = max(recipe.halationIntensity, 0.02)
+            recipe.grainAmount = max(recipe.grainAmount, 0.02)
+            recipe.backgroundSeparation = 0.11
+        }
+
+        switch strategy {
+        case .night, .street, .lowLight:
+            recipe.cinematicToneStyle = .lowKey
+            recipe.bloomIntensity = max(recipe.bloomIntensity, 0.055)
+            recipe.vignetteIntensity = max(recipe.vignetteIntensity, 0.055)
+        case .portrait, .food, .outdoor, .brightOutdoor:
+            recipe.cinematicToneStyle = .bright
+            recipe.halationIntensity = min(recipe.halationIntensity, 0.012)
+        case .indoor, .workspace, .architecture:
+            recipe.cinematicToneStyle = .natural
+            recipe.localContrastAmount = max(recipe.localContrastAmount, 0.25)
+        case .landscape, .sunset, .backlitPortrait, .flatScene, .highContrast, .general:
+            recipe.cinematicToneStyle = .natural
+        }
+
+        if analysis.averageSaturation > 0.52 || problems.contains(.oversaturated) {
+            recipe.colorContrast = min(recipe.colorContrast, 0.16)
+            recipe.colorGradeIntensity = min(recipe.colorGradeIntensity, 0.4)
+        }
+
+        actions.append(
+            PhotographyAction(
+                title: intensity.title,
+                reason: "根据场景、动态范围和原片质量自动选择电影强度，并驱动七段影调、三段色彩、空间层次与可选镜头特征。"
+            )
+        )
     }
 
     private func applySkyStrategy(
@@ -237,7 +349,7 @@ final class PhotographyDecisionEngine {
         guard analysis.skyMask != nil else { return }
 
         switch strategy {
-        case .landscape, .brightOutdoor, .highContrast:
+        case .landscape, .outdoor, .brightOutdoor, .highContrast:
             recipe.skyExposureEV = problems.contains(.clippedHighlights) ? -0.12 : -0.04
             recipe.skyHighlightAmount = problems.contains(.clippedHighlights) ? 0.52 : 0.72
             recipe.skySaturation = problems.contains(.oversaturated) ? 0.98 : 1.035
@@ -362,6 +474,41 @@ final class PhotographyDecisionEngine {
                 PhotographyAction(
                     title: "控制灯光高光与噪点",
                     reason: "夜景不粗暴拉亮暗部，优先保住灯牌和路灯高光，适度降噪并维持冷暖电影感。"
+                )
+            )
+        case .street:
+            recipe.highlightAmount = min(recipe.highlightAmount, 0.58)
+            recipe.shadowAmount = min(max(recipe.shadowAmount, 0.1), 0.22)
+            recipe.contrast = max(recipe.contrast, 1.045)
+            recipe.saturation = min(recipe.saturation, 0.99)
+            recipe.vibrance = max(recipe.vibrance, 0.09)
+            recipe.toneCurveAmount = max(recipe.toneCurveAmount, 0.6)
+            recipe.toneCurveStyle = .cinematic
+            recipe.colorGradeIntensity = max(recipe.colorGradeIntensity, 0.48)
+            recipe.shadowCoolAmount = max(recipe.shadowCoolAmount, 0.42)
+            recipe.midtoneWarmAmount = max(recipe.midtoneWarmAmount, 0.2)
+            recipe.highlightWarmAmount = max(recipe.highlightWarmAmount, 0.36)
+            recipe.localContrastAmount = max(recipe.localContrastAmount, 0.24)
+            actions.append(
+                PhotographyAction(
+                    title: "建立街头冷暖与光影秩序",
+                    reason: "控制招牌和天空高光，保留街道暗部深度，并以克制冷暖分离突出城市氛围。"
+                )
+            )
+        case .outdoor:
+            recipe.highlightAmount = min(recipe.highlightAmount, 0.68)
+            recipe.shadowAmount = max(recipe.shadowAmount, 0.13)
+            recipe.contrast = max(recipe.contrast, 1.025)
+            recipe.vibrance = max(recipe.vibrance, 0.085)
+            recipe.toneCurveAmount = max(recipe.toneCurveAmount, 0.48)
+            recipe.toneCurveStyle = .softHighlights
+            recipe.colorGradeIntensity = max(recipe.colorGradeIntensity, 0.3)
+            recipe.shadowCoolAmount = max(recipe.shadowCoolAmount, 0.2)
+            recipe.highlightWarmAmount = max(recipe.highlightWarmAmount, 0.2)
+            actions.append(
+                PhotographyAction(
+                    title: "塑造自然光电影层次",
+                    reason: "保护户外亮部并整理中间调，维持植被、天空和主体的可信颜色。"
                 )
             )
         case .food:
@@ -505,6 +652,10 @@ final class PhotographyDecisionEngine {
             return "参考经典风景摄影的动态范围和层次原则，让天空、地面与色彩保持自然。"
         case .night:
             return "保留夜晚和环境灯光氛围，同时控制高光、噪点和暗部层次。"
+        case .street:
+            return "控制城市高光与暗部，通过真实冷暖关系形成街头电影氛围。"
+        case .outdoor:
+            return "保留自然光和真实环境颜色，同时建立清晰的主体与背景层次。"
         case .food:
             return "让食物色彩自然诱人，并保留纹理与真实白平衡。"
         case .architecture:
@@ -534,6 +685,8 @@ final class PhotographyDecisionEngine {
         case .backlitPortrait: return .protectedBacklightPortrait
         case .landscape, .brightOutdoor, .flatScene, .highContrast: return .luminousLandscape
         case .night, .lowLight: return .cinematicNight
+        case .street: return .cinematicStreet
+        case .outdoor: return .cinematicOutdoor
         case .food: return .appetizingNatural
         case .architecture: return .architecturalClarity
         case .sunset: return .warmSunset

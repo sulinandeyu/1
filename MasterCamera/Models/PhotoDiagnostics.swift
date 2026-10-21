@@ -93,6 +93,10 @@ struct PhotoDiagnosticSection: Identifiable, Equatable, Sendable {
             items: [
                 PhotoDiagnosticItem(label: "场景", value: decision.sceneStrategy.title),
                 PhotoDiagnosticItem(label: "审美目标", value: decision.aestheticTarget.title),
+                PhotoDiagnosticItem(
+                    label: "电影模式",
+                    value: "\(decision.recipe.cinematicIntensity.title) · \(decision.recipe.cinematicToneStyle.rawValue)"
+                ),
                 PhotoDiagnosticItem(label: "意图", value: decision.intent),
                 PhotoDiagnosticItem(
                     label: "明暗参数",
@@ -129,11 +133,36 @@ struct PhotoDiagnosticSection: Identifiable, Equatable, Sendable {
                 PhotoDiagnosticItem(
                     label: "摄影调色",
                     value: String(
-                        format: "强度 %.2f · 暗部冷调 %.2f · 高光暖调 %.2f · 颗粒 %.3f",
+                        format: "强度 %.2f · 暗部冷 %.2f · 中间调暖 %.2f · 高光暖 %.2f · 色彩对比 %.2f",
                         decision.recipe.colorGradeIntensity,
                         decision.recipe.shadowCoolAmount,
+                        decision.recipe.midtoneWarmAmount,
                         decision.recipe.highlightWarmAmount,
-                        decision.recipe.grainAmount
+                        decision.recipe.colorContrast
+                    )
+                ),
+                PhotoDiagnosticItem(
+                    label: "七段影调",
+                    value: String(
+                        format: "黑位 %.3f · 阴影卷降 %.2f · 低中调 %+.3f · 中调 %+.3f · 高中调 %+.3f · 高光卷降 %.2f · 白位 %.3f",
+                        decision.recipe.blackPoint,
+                        decision.recipe.shadowRollOff,
+                        decision.recipe.lowerMidtoneLift,
+                        decision.recipe.midtoneBias,
+                        decision.recipe.upperMidtoneSeparation,
+                        decision.recipe.highlightRollOff,
+                        decision.recipe.whitePoint
+                    )
+                ),
+                PhotoDiagnosticItem(
+                    label: "镜头质感",
+                    value: String(
+                        format: "Bloom %.3f · Halation %.3f · 颗粒 %.3f · 暗角 %.3f · 空间层次 %.3f",
+                        decision.recipe.bloomIntensity,
+                        decision.recipe.halationIntensity,
+                        decision.recipe.grainAmount,
+                        decision.recipe.vignetteIntensity,
+                        decision.recipe.backgroundSeparation
                     )
                 ),
                 PhotoDiagnosticItem(

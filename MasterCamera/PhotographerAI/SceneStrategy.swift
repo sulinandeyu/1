@@ -5,6 +5,8 @@ enum SceneStrategy: String, Equatable, Sendable {
     case backlitPortrait
     case landscape
     case night
+    case street
+    case outdoor
     case food
     case architecture
     case sunset
@@ -26,6 +28,10 @@ enum SceneStrategy: String, Equatable, Sendable {
             return "风景"
         case .night:
             return "夜景"
+        case .street:
+            return "城市街头"
+        case .outdoor:
+            return "户外自然光"
         case .food:
             return "美食"
         case .architecture:
@@ -66,6 +72,10 @@ enum SceneStrategy: String, Equatable, Sendable {
             return .landscape
         case .night:
             return .night
+        case .street:
+            return .street
+        case .outdoor:
+            return .outdoor
         case .food:
             return .food
         case .architecture:
