@@ -266,9 +266,9 @@ private extension Array where Element == Float {
     }
 
     var histogramText: String {
-        let symbols = Array(" ▁▂▃▄▅▆▇█")
+        let symbols: [Character] = Array(" ▁▂▃▄▅▆▇█")
         map { value in
-            let level = min(8, max(0, Int((value * 64).rounded())))
+            let level = Swift.min(8, Swift.max(0, Int((value * 64).rounded())))
             return String(symbols[level])
         }
         .joined()
