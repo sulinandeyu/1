@@ -224,3 +224,4 @@ Phase 14 TestFlight 发布链路和首轮内部真机验证均已完成。build 
 - 图像引擎新增真实作用于像素的 black point 与大半径局部对比模块，模块清单会写入诊断日志。
 - 4 个用户附件是对比界面截图而非原始照片；首轮观察与限制记录于 `docs/V2_REAL_SAMPLE_FINDINGS.md`。真机原始 JPEG/HEIC 复测尚待新构建。
 - macOS / Xcode 的 iOS Simulator Debug 构建已在 GitHub Actions `iOS Build #26` 通过；当前提交未自动触发 TestFlight 发布。
+- TestFlight Release #9 已成功完成，使用 App 构建号 9，发布提交为 `374436b`；等待 App Store Connect 完成后续处理后即可在 TestFlight 更新。
