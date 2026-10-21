@@ -175,10 +175,12 @@ final class PhotoProblemDetector {
         problems: inout [PhotoProblem]
     ) {
         if analysis.semanticScene == .backlitPortrait {
+            let faceText = analysis.faceAverageLuminance?.percentText ?? "未知"
+            let backgroundText = analysis.backgroundAverageLuminance?.percentText ?? "未知"
             append(
                 .backlitSubject,
                 severity: .strong,
-                evidence: "检测到人物，同时高光占 \(analysis.highlightRatio.percentText)、暗部占 \(analysis.shadowRatio.percentText)。",
+                evidence: "人脸亮度为 \(faceText)，背景亮度为 \(backgroundText)，确认主体明显暗于背景。",
                 to: &problems
             )
         }

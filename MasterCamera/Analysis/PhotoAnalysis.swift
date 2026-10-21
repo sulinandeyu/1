@@ -11,6 +11,8 @@ struct PhotoAnalysis: Equatable, Sendable {
     let averageSaturation: Float
     let faceCount: Int
     let faceRegions: [NormalizedPhotoRegion]
+    let faceAverageLuminance: Float?
+    let backgroundAverageLuminance: Float?
     let personMask: NormalizedPhotoMask?
     let salientSubjectMask: NormalizedPhotoMask?
     let skinMask: NormalizedPhotoMask?
@@ -65,9 +67,23 @@ struct PhotoAnalysis: Equatable, Sendable {
         faceCount > 0
     }
 
+    var faceToBackgroundLuminanceDelta: Float? {
+        guard
+            let faceAverageLuminance,
+            let backgroundAverageLuminance
+        else {
+            return nil
+        }
+
+        return faceAverageLuminance - backgroundAverageLuminance
+    }
+
     var semanticScene: SemanticScene {
         if containsFaces {
-            if highlightRatio > 0.12 && shadowRatio > 0.22 {
+            let faceIsBacklit = faceToBackgroundLuminanceDelta.map { $0 < -0.1 } ?? false
+            let backgroundIsBright = (backgroundAverageLuminance ?? averageLuminance) > 0.56
+
+            if faceIsBacklit && (backgroundIsBright || highlightRatio > 0.06) {
                 return .backlitPortrait
             }
             return .portrait
@@ -113,6 +129,8 @@ struct PhotoAnalysis: Equatable, Sendable {
         averageSaturation: 0.0,
         faceCount: 0,
         faceRegions: [],
+        faceAverageLuminance: nil,
+        backgroundAverageLuminance: nil,
         personMask: nil,
         salientSubjectMask: nil,
         skinMask: nil,

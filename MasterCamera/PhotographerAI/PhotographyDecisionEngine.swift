@@ -275,9 +275,16 @@ final class PhotographyDecisionEngine {
             recipe.noiseReductionAmount = max(recipe.noiseReductionAmount, 0.012)
             recipe.skinTextureProtection = 0.56
             recipe.toneCurveAmount = max(recipe.toneCurveAmount, 0.16)
-            if analysis.averageLuminance < 0.48 || analysis.shadowRatio > 0.28 {
-                recipe.subjectExposureEV = analysis.personMask == nil ? 0.0 : 0.06
-                recipe.faceExposureEV = 0.12
+            if let faceLuminance = analysis.faceAverageLuminance, faceLuminance < 0.44 {
+                let correction = min(max((0.46 - faceLuminance) * 0.9, 0.06), 0.24)
+                recipe.subjectExposureEV = analysis.personMask == nil
+                    ? 0.0
+                    : min(max(correction * 0.36, 0.03), 0.09)
+                recipe.faceExposureEV = correction
+            } else if analysis.faceAverageLuminance == nil,
+                      analysis.averageLuminance < 0.4 {
+                recipe.subjectExposureEV = analysis.personMask == nil ? 0.0 : 0.04
+                recipe.faceExposureEV = 0.08
             }
             actions.append(
                 PhotographyAction(
@@ -293,13 +300,19 @@ final class PhotographyDecisionEngine {
             recipe.vibrance = min(max(recipe.vibrance, 0.06), 0.12)
             recipe.sharpeningAmount = min(max(recipe.sharpeningAmount, 0.1), 0.16)
             recipe.skinTextureProtection = 0.62
-            recipe.subjectExposureEV = analysis.personMask == nil ? 0.0 : 0.16
-            recipe.faceExposureEV = 0.24
+            let faceLuminance = analysis.faceAverageLuminance ?? analysis.averageLuminance
+            let backgroundLuminance = analysis.backgroundAverageLuminance ?? analysis.averageLuminance
+            let faceDeficit = max(0, 0.48 - faceLuminance)
+            let backgroundSeparation = max(0, backgroundLuminance - faceLuminance)
+            recipe.subjectExposureEV = analysis.personMask == nil
+                ? 0.0
+                : min(max(0.1 + (backgroundSeparation * 0.42), 0.1), 0.26)
+            recipe.faceExposureEV = min(max(0.16 + (faceDeficit * 0.9), 0.16), 0.4)
             recipe.toneCurveAmount = max(recipe.toneCurveAmount, 0.22)
             actions.append(
                 PhotographyAction(
                     title: "保天空并单独补亮人物",
-                    reason: "高光和暗部同时占比较高，按逆光人像处理：压住背景高光，只对人脸做柔和补光。"
+                    reason: "分区测光确认人脸暗于背景；根据人脸亮度差动态计算补光，同时压住背景高光。"
                 )
             )
         case .landscape:

@@ -49,6 +49,18 @@ struct PhotoDiagnosticSection: Identifiable, Equatable, Sendable {
                 PhotoDiagnosticItem(label: "平均饱和度", value: analysis.averageSaturation.percentText),
                 PhotoDiagnosticItem(label: "色彩倾向", value: analysis.colorCast.title),
                 PhotoDiagnosticItem(label: "人脸", value: analysis.faceCount.faceCountText),
+                PhotoDiagnosticItem(
+                    label: "人脸测光",
+                    value: analysis.faceAverageLuminance.optionalPercentText
+                ),
+                PhotoDiagnosticItem(
+                    label: "背景测光",
+                    value: analysis.backgroundAverageLuminance.optionalPercentText
+                ),
+                PhotoDiagnosticItem(
+                    label: "人脸/背景亮度差",
+                    value: analysis.faceToBackgroundLuminanceDelta.optionalSignedPercentText
+                ),
                 PhotoDiagnosticItem(label: "人物蒙版", value: analysis.personMask.maskSummary),
                 PhotoDiagnosticItem(label: "主体蒙版", value: analysis.salientSubjectMask.maskSummary),
                 PhotoDiagnosticItem(label: "皮肤蒙版", value: analysis.skinMask.maskSummary),
@@ -173,6 +185,18 @@ struct PhotoDiagnosticItem: Identifiable, Equatable, Sendable {
 private extension Float {
     var percentText: String {
         "\(Int((self * 100).rounded()))%"
+    }
+}
+
+private extension Optional where Wrapped == Float {
+    var optionalPercentText: String {
+        guard let value = self else { return "未测得" }
+        return value.percentText
+    }
+
+    var optionalSignedPercentText: String {
+        guard let value = self else { return "未测得" }
+        return String(format: "%+.0f%%", value * 100)
     }
 }
 

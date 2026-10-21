@@ -37,12 +37,21 @@ final class PhotoAnalyzer {
         includeFaceDetection: Bool,
         capturedSkinMask: NormalizedPhotoMask?
     ) throws -> PhotoAnalysis {
-        guard let image = CIImage(data: data) else {
+        guard let image = CIImage(
+            data: data,
+            options: [.applyOrientationProperty: true]
+        ) else {
             throw PhotoAnalysisError.invalidImageData
         }
 
         let statistics = try pixelStatistics(for: image)
         let faceRegions = includeFaceDetection ? detectFaceRegions(in: data) : []
+        let regionalTone = regionalToneStatistics(
+            luminances: statistics.luminances,
+            width: statistics.width,
+            height: statistics.height,
+            faceRegions: faceRegions
+        )
         let personMask = includeFaceDetection ? generatePersonMask(in: data) : nil
         let salientSubjectMask = includeFaceDetection ? generateSalientSubjectMask(in: data) : nil
         let semanticLabels = includeFaceDetection ? classifyScene(in: data) : []
@@ -61,6 +70,8 @@ final class PhotoAnalyzer {
             averageSaturation: statistics.averageSaturation,
             faceCount: faceRegions.count,
             faceRegions: faceRegions,
+            faceAverageLuminance: regionalTone.faceAverageLuminance,
+            backgroundAverageLuminance: regionalTone.backgroundAverageLuminance,
             personMask: personMask,
             salientSubjectMask: salientSubjectMask,
             skinMask: capturedSkinMask?.isValid == true ? capturedSkinMask : nil,
@@ -132,10 +143,10 @@ final class PhotoAnalyzer {
             throw PhotoAnalysisError.analysisFailed
         }
 
-        luminances.sort()
+        let sortedLuminances = luminances.sorted()
         let count = Float(luminances.count)
-        let lowPercentile = luminances[Int(Float(luminances.count - 1) * 0.05)]
-        let highPercentile = luminances[Int(Float(luminances.count - 1) * 0.95)]
+        let lowPercentile = sortedLuminances[Int(Float(sortedLuminances.count - 1) * 0.05)]
+        let highPercentile = sortedLuminances[Int(Float(sortedLuminances.count - 1) * 0.95)]
 
         return PixelStatistics(
             averageLuminance: luminances.reduce(0, +) / count,
@@ -145,7 +156,67 @@ final class PhotoAnalyzer {
             blueAverage: blueTotal / count,
             shadowRatio: Float(shadowCount) / count,
             highlightRatio: Float(highlightCount) / count,
-            averageSaturation: saturationTotal / count
+            averageSaturation: saturationTotal / count,
+            width: width,
+            height: height,
+            luminances: luminances
+        )
+    }
+
+    private func regionalToneStatistics(
+        luminances: [Float],
+        width: Int,
+        height: Int,
+        faceRegions: [NormalizedPhotoRegion]
+    ) -> RegionalToneStatistics {
+        guard
+            !faceRegions.isEmpty,
+            width > 0,
+            height > 0,
+            luminances.count == width * height
+        else {
+            return RegionalToneStatistics(
+                faceAverageLuminance: nil,
+                backgroundAverageLuminance: nil
+            )
+        }
+
+        // Vision 与 Core Image 都使用左下角为归一化坐标原点。向内收缩人脸框，
+        // 减少头发和背景对脸部测光的干扰。
+        let meteringRegions = faceRegions.map { $0.insetForFaceMetering() }
+        var faceTotal: Float = 0
+        var facePixelCount = 0
+        var backgroundTotal: Float = 0
+        var backgroundPixelCount = 0
+
+        for y in 0..<height {
+            let normalizedY = (Float(y) + 0.5) / Float(height)
+
+            for x in 0..<width {
+                let normalizedX = (Float(x) + 0.5) / Float(width)
+                let value = luminances[(y * width) + x]
+                let isFacePixel = meteringRegions.contains {
+                    $0.contains(x: normalizedX, y: normalizedY)
+                }
+
+                if isFacePixel {
+                    faceTotal += value
+                    facePixelCount += 1
+                } else {
+                    backgroundTotal += value
+                    backgroundPixelCount += 1
+                }
+            }
+        }
+
+        let minimumFacePixels = max(4, (width * height) / 2_000)
+        return RegionalToneStatistics(
+            faceAverageLuminance: facePixelCount >= minimumFacePixels
+                ? faceTotal / Float(facePixelCount)
+                : nil,
+            backgroundAverageLuminance: backgroundPixelCount > 0
+                ? backgroundTotal / Float(backgroundPixelCount)
+                : nil
         )
     }
 
@@ -265,6 +336,29 @@ private struct PixelStatistics {
     let shadowRatio: Float
     let highlightRatio: Float
     let averageSaturation: Float
+    let width: Int
+    let height: Int
+    let luminances: [Float]
+}
+
+private struct RegionalToneStatistics {
+    let faceAverageLuminance: Float?
+    let backgroundAverageLuminance: Float?
+}
+
+private extension NormalizedPhotoRegion {
+    func insetForFaceMetering() -> NormalizedPhotoRegion {
+        NormalizedPhotoRegion(
+            x: x + (width * 0.14),
+            y: y + (height * 0.12),
+            width: width * 0.72,
+            height: height * 0.72
+        )
+    }
+
+    func contains(x pointX: Float, y pointY: Float) -> Bool {
+        pointX >= x && pointX <= x + width && pointY >= y && pointY <= y + height
+    }
 }
 
 enum PhotoAnalysisError: LocalizedError {

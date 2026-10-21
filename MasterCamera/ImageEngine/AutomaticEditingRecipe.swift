@@ -81,8 +81,8 @@ struct AutomaticEditingRecipe: Equatable, Sendable {
             sharpeningAmount: sharpeningAmount.clamped(to: 0.0...0.34),
             skinTextureProtection: skinTextureProtection.clamped(to: 0.0...0.8),
             vignetteIntensity: vignetteIntensity.clamped(to: 0.0...0.35),
-            subjectExposureEV: subjectExposureEV.clamped(to: 0.0...0.22),
-            faceExposureEV: faceExposureEV.clamped(to: 0.0...0.28),
+            subjectExposureEV: subjectExposureEV.clamped(to: 0.0...0.3),
+            faceExposureEV: faceExposureEV.clamped(to: 0.0...0.42),
             skyExposureEV: skyExposureEV.clamped(to: -0.2...0.08),
             skyHighlightAmount: skyHighlightAmount.clamped(to: 0.4...1.0),
             skySaturation: skySaturation.clamped(to: 0.96...1.08)
