@@ -8,6 +8,7 @@ final class CoreImageRenderer {
     private let context = CIContext()
     private let outputColorSpace = CGColorSpace(name: CGColorSpace.sRGB)!
     private let localAdjustmentProcessor = LocalAdjustmentProcessor()
+    private let skyAdjustmentProcessor = SkyAdjustmentProcessor()
     private let skinTextureProtectionProcessor = SkinTextureProtectionProcessor()
 
     func renderOriginalPreview(from data: Data) -> UIImage? {
@@ -41,11 +42,16 @@ final class CoreImageRenderer {
         let curved = applyToneCurve(to: recovered, recipe: recipe)
         let colored = applyColorControls(to: curved, recipe: recipe)
         let vibrant = applyVibrance(to: colored, recipe: recipe)
-        let denoised = applyNoiseReduction(to: vibrant, recipe: recipe)
+        let skyAdjusted = skyAdjustmentProcessor.applySkyTreatment(
+            to: vibrant,
+            analysis: analysis,
+            recipe: recipe
+        )
+        let denoised = applyNoiseReduction(to: skyAdjusted, recipe: recipe)
         let sharpened = applySharpening(to: denoised, recipe: recipe)
         let textureProtected = skinTextureProtectionProcessor.protectTexture(
             processedImage: sharpened,
-            sourceImage: vibrant,
+            sourceImage: skyAdjusted,
             analysis: analysis,
             amount: recipe.skinTextureProtection
         )

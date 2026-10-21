@@ -17,6 +17,9 @@ struct AutomaticEditingRecipe: Equatable, Sendable {
     var vignetteIntensity: Float
     var subjectExposureEV: Float
     var faceExposureEV: Float
+    var skyExposureEV: Float
+    var skyHighlightAmount: Float
+    var skySaturation: Float
 
     static let naturalEnhancement = AutomaticEditingRecipe(
         exposureEV: 0.0,
@@ -34,7 +37,10 @@ struct AutomaticEditingRecipe: Equatable, Sendable {
         skinTextureProtection: 0.0,
         vignetteIntensity: 0.0,
         subjectExposureEV: 0.0,
-        faceExposureEV: 0.0
+        faceExposureEV: 0.0,
+        skyExposureEV: 0.0,
+        skyHighlightAmount: 1.0,
+        skySaturation: 1.0
     )
 
     static let safeFallback = AutomaticEditingRecipe(
@@ -53,7 +59,10 @@ struct AutomaticEditingRecipe: Equatable, Sendable {
         skinTextureProtection: 0.0,
         vignetteIntensity: 0.0,
         subjectExposureEV: 0.0,
-        faceExposureEV: 0.0
+        faceExposureEV: 0.0,
+        skyExposureEV: 0.0,
+        skyHighlightAmount: 1.0,
+        skySaturation: 1.0
     )
 
     func clamped() -> AutomaticEditingRecipe {
@@ -73,7 +82,10 @@ struct AutomaticEditingRecipe: Equatable, Sendable {
             skinTextureProtection: skinTextureProtection.clamped(to: 0.0...0.8),
             vignetteIntensity: vignetteIntensity.clamped(to: 0.0...0.35),
             subjectExposureEV: subjectExposureEV.clamped(to: 0.0...0.22),
-            faceExposureEV: faceExposureEV.clamped(to: 0.0...0.28)
+            faceExposureEV: faceExposureEV.clamped(to: 0.0...0.28),
+            skyExposureEV: skyExposureEV.clamped(to: -0.2...0.08),
+            skyHighlightAmount: skyHighlightAmount.clamped(to: 0.4...1.0),
+            skySaturation: skySaturation.clamped(to: 0.96...1.08)
         )
     }
 }

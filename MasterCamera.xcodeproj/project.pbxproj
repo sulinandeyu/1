@@ -37,6 +37,9 @@
 		A0000000000000000000001D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000003D /* Assets.xcassets */; };
 		A0000000000000000000001E /* PhotoProblemDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000003E /* PhotoProblemDetector.swift */; };
 		A0000000000000000000001F /* SkinTextureProtectionProcessor.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000003F /* SkinTextureProtectionProcessor.swift */; };
+		B00000000000000000000001 /* SkySegmentationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000101 /* SkySegmentationService.swift */; };
+		B00000000000000000000002 /* SkyAdjustmentProcessor.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000102 /* SkyAdjustmentProcessor.swift */; };
+		B00000000000000000000003 /* DETRResnet50SemanticSegmentationF16P6.mlpackage in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000103 /* DETRResnet50SemanticSegmentationF16P6.mlpackage */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -72,6 +75,9 @@
 		A0000000000000000000003D /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		A0000000000000000000003E /* PhotoProblemDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoProblemDetector.swift; sourceTree = "<group>"; };
 		A0000000000000000000003F /* SkinTextureProtectionProcessor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkinTextureProtectionProcessor.swift; sourceTree = "<group>"; };
+		B00000000000000000000101 /* SkySegmentationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkySegmentationService.swift; sourceTree = "<group>"; };
+		B00000000000000000000102 /* SkyAdjustmentProcessor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkyAdjustmentProcessor.swift; sourceTree = "<group>"; };
+		B00000000000000000000103 /* DETRResnet50SemanticSegmentationF16P6.mlpackage */ = {isa = PBXFileReference; lastKnownFileType = folder.mlpackage; path = DETRResnet50SemanticSegmentationF16P6.mlpackage; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -111,6 +117,7 @@
 				A0000000000000000000004D /* QualityControl */,
 				A0000000000000000000004E /* Processing */,
 				A0000000000000000000004F /* Configuration */,
+				B00000000000000000000200 /* MLModels */,
 			);
 			path = MasterCamera;
 			sourceTree = "<group>";
@@ -178,6 +185,7 @@
 				A0000000000000000000002E /* AutomaticEditingRecipe.swift */,
 				A00000000000000000000035 /* LocalAdjustmentProcessor.swift */,
 				A0000000000000000000003F /* SkinTextureProtectionProcessor.swift */,
+				B00000000000000000000102 /* SkyAdjustmentProcessor.swift */,
 			);
 			path = ImageEngine;
 			sourceTree = "<group>";
@@ -204,6 +212,7 @@
 				A0000000000000000000002F /* PhotoAnalysis.swift */,
 				A00000000000000000000031 /* PhotoAnalyzer.swift */,
 				A0000000000000000000003E /* PhotoProblemDetector.swift */,
+				B00000000000000000000101 /* SkySegmentationService.swift */,
 			);
 			path = Analysis;
 			sourceTree = "<group>";
@@ -241,6 +250,14 @@
 				A0000000000000000000003B /* ProcessingConfiguration.swift */,
 			);
 			path = Configuration;
+			sourceTree = "<group>";
+		};
+		B00000000000000000000200 /* MLModels */ = {
+			isa = PBXGroup;
+			children = (
+				B00000000000000000000103 /* DETRResnet50SemanticSegmentationF16P6.mlpackage */,
+			);
+			path = MLModels;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -339,6 +356,9 @@
 				A0000000000000000000001C /* PhotoDiagnostics.swift in Sources */,
 				A0000000000000000000001E /* PhotoProblemDetector.swift in Sources */,
 				A0000000000000000000001F /* SkinTextureProtectionProcessor.swift in Sources */,
+				B00000000000000000000001 /* SkySegmentationService.swift in Sources */,
+				B00000000000000000000002 /* SkyAdjustmentProcessor.swift in Sources */,
+				B00000000000000000000003 /* DETRResnet50SemanticSegmentationF16P6.mlpackage in Sources */,
 				A0000000000000000000000C /* PhotoLibraryManager.swift in Sources */,
 				A0000000000000000000000D /* Logger.swift in Sources */,
 			);

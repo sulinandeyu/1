@@ -52,6 +52,12 @@ struct PhotoDiagnosticSection: Identifiable, Equatable, Sendable {
                 PhotoDiagnosticItem(label: "人物蒙版", value: analysis.personMask.maskSummary),
                 PhotoDiagnosticItem(label: "主体蒙版", value: analysis.salientSubjectMask.maskSummary),
                 PhotoDiagnosticItem(label: "皮肤蒙版", value: analysis.skinMask.maskSummary),
+                PhotoDiagnosticItem(
+                    label: "天空蒙版",
+                    value: analysis.skyMask == nil
+                        ? "未检测到"
+                        : "\(analysis.skyMask.maskSummary) · 占画面 \(analysis.skyCoverage.percentText)"
+                ),
                 PhotoDiagnosticItem(label: "语义标签", value: analysis.semanticLabels.labelSummary)
             ]
         )
@@ -101,6 +107,15 @@ struct PhotoDiagnosticSection: Identifiable, Equatable, Sendable {
                         decision.recipe.skinTextureProtection,
                         decision.recipe.subjectExposureEV,
                         decision.recipe.faceExposureEV
+                    )
+                ),
+                PhotoDiagnosticItem(
+                    label: "天空参数",
+                    value: String(
+                        format: "曝光 %+.2f EV · 高光 %.2f · 饱和 %.2f",
+                        decision.recipe.skyExposureEV,
+                        decision.recipe.skyHighlightAmount,
+                        decision.recipe.skySaturation
                     )
                 )
             ] + actionItems

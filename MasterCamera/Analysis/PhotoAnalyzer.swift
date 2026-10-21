@@ -7,6 +7,11 @@ final class PhotoAnalyzer {
     private let context = CIContext()
     private let colorSpace = CGColorSpace(name: CGColorSpace.sRGB)!
     private let sampleLongEdge = 128
+    private let skySegmentationService: SkySegmentationService
+
+    init(skySegmentationService: SkySegmentationService = SkySegmentationService()) {
+        self.skySegmentationService = skySegmentationService
+    }
 
     func analyze(
         data: Data,
@@ -41,6 +46,9 @@ final class PhotoAnalyzer {
         let personMask = includeFaceDetection ? generatePersonMask(in: data) : nil
         let salientSubjectMask = includeFaceDetection ? generateSalientSubjectMask(in: data) : nil
         let semanticLabels = includeFaceDetection ? classifyScene(in: data) : []
+        let skySegmentation = includeFaceDetection
+            ? skySegmentationService.segmentSky(in: data)
+            : nil
 
         return PhotoAnalysis(
             averageLuminance: statistics.averageLuminance,
@@ -56,6 +64,8 @@ final class PhotoAnalyzer {
             personMask: personMask,
             salientSubjectMask: salientSubjectMask,
             skinMask: capturedSkinMask?.isValid == true ? capturedSkinMask : nil,
+            skyMask: skySegmentation?.mask,
+            skyCoverage: skySegmentation?.coverage ?? 0,
             semanticLabels: semanticLabels
         )
     }

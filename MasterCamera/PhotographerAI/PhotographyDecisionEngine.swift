@@ -31,6 +31,13 @@ final class PhotographyDecisionEngine {
             recipe: &recipe,
             actions: &actions
         )
+        applySkyStrategy(
+            analysis: analysis,
+            strategy: strategy,
+            problems: problems,
+            recipe: &recipe,
+            actions: &actions
+        )
         applyProblemSafetyLimits(problems: problems, recipe: &recipe)
 
         if actions.isEmpty {
@@ -218,6 +225,40 @@ final class PhotographyDecisionEngine {
         if problems.contains(.noiseRisk) {
             recipe.sharpeningAmount = min(recipe.sharpeningAmount, 0.16)
         }
+    }
+
+    private func applySkyStrategy(
+        analysis: PhotoAnalysis,
+        strategy: SceneStrategy,
+        problems: PhotoProblemReport,
+        recipe: inout AutomaticEditingRecipe,
+        actions: inout [PhotographyAction]
+    ) {
+        guard analysis.skyMask != nil else { return }
+
+        switch strategy {
+        case .landscape, .brightOutdoor, .highContrast:
+            recipe.skyExposureEV = problems.contains(.clippedHighlights) ? -0.12 : -0.04
+            recipe.skyHighlightAmount = problems.contains(.clippedHighlights) ? 0.52 : 0.72
+            recipe.skySaturation = problems.contains(.oversaturated) ? 0.98 : 1.035
+        case .sunset:
+            recipe.skyExposureEV = -0.08
+            recipe.skyHighlightAmount = 0.5
+            recipe.skySaturation = problems.contains(.oversaturated) ? 0.98 : 1.025
+        case .backlitPortrait:
+            recipe.skyExposureEV = -0.09
+            recipe.skyHighlightAmount = 0.54
+            recipe.skySaturation = 1.0
+        default:
+            return
+        }
+
+        actions.append(
+            PhotographyAction(
+                title: "分区保护天空",
+                reason: "离线语义分割确认天空约占画面 \(Int((analysis.skyCoverage * 100).rounded()))%，只在天空蒙版内恢复高光和层次，不压暗人物或地面。"
+            )
+        )
     }
 
     private func applySceneStrategy(
