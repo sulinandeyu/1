@@ -10,6 +10,10 @@ struct PhotoDiagnostics: Equatable, Sendable {
             sections.append(.analysis(analysis))
         }
 
+        if let problemReport = photo.problemReport {
+            sections.append(.problems(problemReport))
+        }
+
         if let decision = photo.decision {
             sections.append(.decision(decision))
         }
@@ -98,6 +102,23 @@ struct PhotoDiagnosticSection: Identifiable, Equatable, Sendable {
                     )
                 )
             ] + actionItems
+        )
+    }
+
+    static func problems(_ report: PhotoProblemReport) -> PhotoDiagnosticSection {
+        let items = report.isEmpty
+            ? [PhotoDiagnosticItem(label: "结论", value: "未发现需要主动修正的明显问题")]
+            : report.problems.enumerated().map { index, problem in
+                PhotoDiagnosticItem(
+                    label: "问题 \(index + 1) · \(problem.severity.title)",
+                    value: "\(problem.kind.title)：\(problem.evidence)"
+                )
+            }
+
+        return PhotoDiagnosticSection(
+            id: "problems",
+            title: "摄影问题诊断",
+            items: items
         )
     }
 

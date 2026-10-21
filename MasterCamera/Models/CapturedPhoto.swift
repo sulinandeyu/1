@@ -7,6 +7,7 @@ struct CapturedPhoto: Identifiable, Equatable, Sendable {
     let editedImageData: Data
     let capturedAt: Date
     let analysis: PhotoAnalysis?
+    let problemReport: PhotoProblemReport?
     let decision: PhotographyDecision?
     let qualityCheck: QualityCheckResult?
 
@@ -15,6 +16,7 @@ struct CapturedPhoto: Identifiable, Equatable, Sendable {
         editedImageData: Data? = nil,
         capturedAt: Date,
         analysis: PhotoAnalysis? = nil,
+        problemReport: PhotoProblemReport? = nil,
         decision: PhotographyDecision? = nil,
         qualityCheck: QualityCheckResult? = nil
     ) {
@@ -22,6 +24,7 @@ struct CapturedPhoto: Identifiable, Equatable, Sendable {
         self.editedImageData = editedImageData ?? originalImageData
         self.capturedAt = capturedAt
         self.analysis = analysis
+        self.problemReport = problemReport
         self.decision = decision
         self.qualityCheck = qualityCheck
     }

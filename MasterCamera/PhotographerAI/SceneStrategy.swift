@@ -46,7 +46,14 @@ enum SceneStrategy: String, Equatable, Sendable {
         }
     }
 
-    static func choose(for analysis: PhotoAnalysis) -> SceneStrategy {
+    static func choose(
+        for analysis: PhotoAnalysis,
+        problems: PhotoProblemReport
+    ) -> SceneStrategy {
+        if problems.contains(.backlitSubject) {
+            return .backlitPortrait
+        }
+
         switch analysis.semanticScene {
         case .portrait:
             return .portrait
@@ -68,19 +75,19 @@ enum SceneStrategy: String, Equatable, Sendable {
             break
         }
 
-        if analysis.exposureProfile == .underexposed {
+        if problems.contains(.underexposed) {
             return .lowLight
         }
 
-        if analysis.exposureProfile == .overexposed {
+        if problems.contains(.overexposed) || problems.contains(.clippedHighlights) {
             return .brightOutdoor
         }
 
-        if analysis.contrastProfile == .flat {
+        if problems.contains(.flatContrast) {
             return .flatScene
         }
 
-        if analysis.contrastProfile == .highContrast {
+        if problems.contains(.harshContrast) {
             return .highContrast
         }
 

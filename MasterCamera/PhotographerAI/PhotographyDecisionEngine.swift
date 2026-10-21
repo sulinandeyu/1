@@ -1,24 +1,27 @@
 import Foundation
 
 final class PhotographyDecisionEngine {
-    func makeDecision(for analysis: PhotoAnalysis) -> PhotographyDecision {
-        let strategy = SceneStrategy.choose(for: analysis)
+    func makeDecision(
+        for analysis: PhotoAnalysis,
+        problems: PhotoProblemReport
+    ) -> PhotographyDecision {
+        let strategy = SceneStrategy.choose(for: analysis, problems: problems)
         var recipe = AutomaticEditingRecipe.naturalEnhancement
         var actions: [PhotographyAction] = []
 
         applyExposureStrategy(
             analysis: analysis,
+            problems: problems,
             recipe: &recipe,
             actions: &actions
         )
         applyContrastStrategy(
-            analysis: analysis,
+            problems: problems,
             recipe: &recipe,
             actions: &actions
         )
         applyColorStrategy(
-            analysis: analysis,
-            strategy: strategy,
+            problems: problems,
             recipe: &recipe,
             actions: &actions
         )
@@ -28,6 +31,7 @@ final class PhotographyDecisionEngine {
             recipe: &recipe,
             actions: &actions
         )
+        applyProblemSafetyLimits(problems: problems, recipe: &recipe)
 
         if actions.isEmpty {
             actions.append(
@@ -49,17 +53,17 @@ final class PhotographyDecisionEngine {
 
     private func applyExposureStrategy(
         analysis: PhotoAnalysis,
+        problems: PhotoProblemReport,
         recipe: inout AutomaticEditingRecipe,
         actions: inout [PhotographyAction]
     ) {
-        switch analysis.exposureProfile {
-        case .underexposed:
+        if problems.contains(.underexposed) {
             if analysis.semanticScene == .night {
                 recipe.exposureEV += 0.05
                 recipe.shadowAmount = max(recipe.shadowAmount, 0.12)
                 recipe.noiseReductionAmount = max(recipe.noiseReductionAmount, 0.04)
             } else {
-                recipe.exposureEV += 0.14
+                recipe.exposureEV += problems.severity(of: .underexposed) == .strong ? 0.18 : 0.14
                 recipe.highlightAmount = min(recipe.highlightAmount, 0.86)
                 recipe.shadowAmount = max(recipe.shadowAmount, 0.3)
                 recipe.noiseReductionAmount = max(recipe.noiseReductionAmount, 0.018)
@@ -72,10 +76,8 @@ final class PhotographyDecisionEngine {
                         : "画面整体偏暗，适度提亮曝光和阴影，同时避免灰雾感。"
                 )
             )
-        case .balanced:
-            break
-        case .overexposed:
-            recipe.exposureEV -= 0.1
+        } else if problems.contains(.overexposed) {
+            recipe.exposureEV -= problems.severity(of: .overexposed) == .strong ? 0.14 : 0.1
             recipe.highlightAmount = min(recipe.highlightAmount, 0.5)
             recipe.contrast = max(recipe.contrast, 1.02)
             actions.append(
@@ -85,15 +87,53 @@ final class PhotographyDecisionEngine {
                 )
             )
         }
+
+        if problems.contains(.clippedHighlights) {
+            recipe.highlightAmount = min(
+                recipe.highlightAmount,
+                problems.severity(of: .clippedHighlights) == .strong ? 0.42 : 0.58
+            )
+            actions.append(
+                PhotographyAction(
+                    title: "恢复亮部过渡",
+                    reason: "问题诊断发现高光区域占比偏高，进一步收拢高光，避免天空和灯光失去细节。"
+                )
+            )
+        }
+
+        if problems.contains(.blockedShadows) && analysis.semanticScene != .night {
+            recipe.shadowAmount = max(
+                recipe.shadowAmount,
+                problems.severity(of: .blockedShadows) == .strong ? 0.24 : 0.14
+            )
+            actions.append(
+                PhotographyAction(
+                    title: "打开有效暗部",
+                    reason: "暗部堵塞比例偏高；只恢复可用层次，夜景和逆光主体仍由场景策略限制强度。"
+                )
+            )
+        }
+
+        if problems.contains(.noiseRisk) {
+            recipe.noiseReductionAmount = max(
+                recipe.noiseReductionAmount,
+                problems.severity(of: .noiseRisk) == .strong ? 0.05 : 0.03
+            )
+            actions.append(
+                PhotographyAction(
+                    title: "控制暗部噪点",
+                    reason: "问题诊断预判暗部提亮会暴露噪点，因此使用克制降噪并限制锐化。"
+                )
+            )
+        }
     }
 
     private func applyContrastStrategy(
-        analysis: PhotoAnalysis,
+        problems: PhotoProblemReport,
         recipe: inout AutomaticEditingRecipe,
         actions: inout [PhotographyAction]
     ) {
-        switch analysis.contrastProfile {
-        case .flat:
+        if problems.contains(.flatContrast) {
             recipe.contrast += 0.055
             recipe.vibrance += 0.05
             recipe.toneCurveAmount = max(recipe.toneCurveAmount, 0.3)
@@ -104,9 +144,7 @@ final class PhotographyDecisionEngine {
                     reason: "画面层次偏平，适度增加对比和细节会更有立体感。"
                 )
             )
-        case .balanced:
-            break
-        case .highContrast:
+        } else if problems.contains(.harshContrast) {
             recipe.contrast -= 0.03
             recipe.highlightAmount = min(recipe.highlightAmount, 0.58)
             recipe.shadowAmount = max(recipe.shadowAmount, 0.12)
@@ -120,50 +158,65 @@ final class PhotographyDecisionEngine {
     }
 
     private func applyColorStrategy(
-        analysis: PhotoAnalysis,
-        strategy: SceneStrategy,
+        problems: PhotoProblemReport,
         recipe: inout AutomaticEditingRecipe,
         actions: inout [PhotographyAction]
     ) {
-        switch analysis.colorCast {
-        case .cool:
-            if strategy != .night && strategy != .landscape {
-                recipe.temperatureShift += 140
-            }
-            if strategy != .landscape {
-                actions.append(
-                    PhotographyAction(
-                        title: strategy == .night ? "保留冷暖关系" : "校正偏冷色温",
-                        reason: strategy == .night
-                            ? "夜景允许保留环境冷色，不通过整体增饱和破坏灯光关系。"
-                            : "画面偏冷，轻微提高色温，让中性色和肤色更自然。"
-                    )
+        if problems.contains(.coolCast) {
+            recipe.temperatureShift += 140
+            actions.append(
+                PhotographyAction(
+                    title: "校正偏冷色温",
+                    reason: "问题诊断确认冷色不是当前场景的合理氛围，轻微提高色温而不增加全局饱和度。"
                 )
-            }
-        case .neutral:
-            break
-        case .warm:
-            if strategy != .sunset && strategy != .food {
-                recipe.temperatureShift -= 80
-                recipe.saturation -= 0.008
-                actions.append(
-                    PhotographyAction(
-                        title: "控制暖色偏移",
-                        reason: "画面整体偏暖，轻微回正色温，避免黄色滤镜感。"
-                    )
+            )
+        } else if problems.contains(.warmCast) {
+            recipe.temperatureShift -= 80
+            recipe.saturation -= 0.008
+            actions.append(
+                PhotographyAction(
+                    title: "控制暖色偏移",
+                    reason: "问题诊断确认暖色不是日落或食物的记忆色，轻微回正色温，避免黄色滤镜感。"
                 )
-            }
-        case .green:
-            if strategy != .landscape {
-                recipe.tintShift += 5
-                recipe.saturation -= 0.01
-                actions.append(
-                    PhotographyAction(
-                        title: "控制偏绿",
-                        reason: "通道平衡显示画面可能偏绿，因此向洋红方向轻微校正，而不是增加全局饱和度。"
-                    )
+            )
+        } else if problems.contains(.greenCast) {
+            recipe.tintShift += 5
+            recipe.saturation -= 0.01
+            actions.append(
+                PhotographyAction(
+                    title: "控制偏绿",
+                    reason: "问题诊断排除自然风景记忆色后确认偏绿，向洋红方向轻微校正。"
                 )
-            }
+            )
+        }
+
+        if problems.contains(.oversaturated) {
+            recipe.saturation = min(recipe.saturation, 0.96)
+            recipe.vibrance = min(recipe.vibrance, 0.04)
+            actions.append(
+                PhotographyAction(
+                    title: "恢复真实色彩",
+                    reason: "原片平均饱和度过高，降低全局饱和度并限制后续自然饱和增强。"
+                )
+            )
+        }
+    }
+
+    private func applyProblemSafetyLimits(
+        problems: PhotoProblemReport,
+        recipe: inout AutomaticEditingRecipe
+    ) {
+        if problems.contains(.clippedHighlights) {
+            recipe.highlightAmount = min(recipe.highlightAmount, 0.58)
+        }
+
+        if problems.contains(.oversaturated) {
+            recipe.saturation = min(recipe.saturation, 0.96)
+            recipe.vibrance = min(recipe.vibrance, 0.04)
+        }
+
+        if problems.contains(.noiseRisk) {
+            recipe.sharpeningAmount = min(recipe.sharpeningAmount, 0.16)
         }
     }
 
