@@ -16,6 +16,11 @@ struct PhotoAnalysis: Equatable, Sendable {
     let whiteRatio: Float
     let midtoneRatio: Float
     let mixedLightScore: Float
+    let highlightConcentration: Float
+    let highlightSourceCount: Int
+    let highlightCentroidX: Float
+    let highlightCentroidY: Float
+    let spatialLuminanceVariance: Float
     let faceCount: Int
     let faceRegions: [NormalizedPhotoRegion]
     let faceAverageLuminance: Float?
@@ -160,6 +165,11 @@ struct PhotoAnalysis: Equatable, Sendable {
         whiteRatio: 0.0,
         midtoneRatio: 1.0,
         mixedLightScore: 0.0,
+        highlightConcentration: 0.0,
+        highlightSourceCount: 0,
+        highlightCentroidX: 0.5,
+        highlightCentroidY: 0.5,
+        spatialLuminanceVariance: 0.0,
         faceCount: 0,
         faceRegions: [],
         faceAverageLuminance: nil,

@@ -56,6 +56,11 @@ struct PhotoDiagnosticSection: Identifiable, Equatable, Sendable {
                 PhotoDiagnosticItem(label: "纯黑/纯白", value: "\(analysis.blackRatio.percentText) / \(analysis.whiteRatio.percentText)"),
                 PhotoDiagnosticItem(label: "中间调占比", value: analysis.midtoneRatio.percentText),
                 PhotoDiagnosticItem(label: "混合光风险", value: analysis.mixedLightScore.percentText),
+                PhotoDiagnosticItem(
+                    label: "局部亮源",
+                    value: "\(analysis.highlightSourceCount) 处 · 集中度 \(analysis.highlightConcentration.percentText) · 位置 \(analysis.highlightCentroidX.percentText)/\(analysis.highlightCentroidY.percentText)"
+                ),
+                PhotoDiagnosticItem(label: "空间光比", value: analysis.spatialLuminanceVariance.percentText),
                 PhotoDiagnosticItem(label: "色彩倾向", value: analysis.colorCast.title),
                 PhotoDiagnosticItem(label: "人脸", value: analysis.faceCount.faceCountText),
                 PhotoDiagnosticItem(
@@ -192,6 +197,15 @@ struct PhotoDiagnosticSection: Identifiable, Equatable, Sendable {
                         decision.recipe.skyExposureEV,
                         decision.recipe.skyHighlightAmount,
                         decision.recipe.skySaturation
+                    )
+                ),
+                PhotoDiagnosticItem(
+                    label: "亮度蒙版",
+                    value: String(
+                        format: "阴影 %+.2f EV · 高光 %+.2f EV · 强度 %.2f",
+                        decision.recipe.shadowZoneExposureEV,
+                        decision.recipe.highlightZoneExposureEV,
+                        decision.recipe.luminanceMaskStrength
                     )
                 )
             ] + actionItems

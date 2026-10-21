@@ -17,6 +17,7 @@ final class CoreImageRenderer {
     private let skinTextureProtectionProcessor = SkinTextureProtectionProcessor()
     private let cinematicToneMappingEngine = CinematicToneMappingEngine()
     private let professionalHSLProcessor = ProfessionalHSLProcessor()
+    private let luminanceZoneProcessor = LuminanceZoneProcessor()
     private let cinematicColorGradingEngine = CinematicColorGradingEngine()
     private let cinematicSpatialDepthProcessor = CinematicSpatialDepthProcessor()
     private let cinematicLensCharacterProcessor = CinematicLensCharacterProcessor()
@@ -105,7 +106,8 @@ final class CoreImageRenderer {
         let recovered = applyHighlightShadow(to: exposed, recipe: recipe)
         let blackAdjusted = applyBlackPoint(to: recovered, recipe: recipe)
         let baseCurved = applyToneCurve(to: blackAdjusted, recipe: recipe)
-        let curved = try checkedCanvas(cinematicToneMappingEngine.apply(to: baseCurved, recipe: recipe), canvas: canvas, stage: "七段电影影调")
+        let filmic = cinematicToneMappingEngine.apply(to: baseCurved, recipe: recipe)
+        let curved = try checkedCanvas(luminanceZoneProcessor.apply(to: filmic, recipe: recipe), canvas: canvas, stage: "亮度蒙版影调")
         let toneTime = ProcessInfo.processInfo.systemUptime - start
 
         start = ProcessInfo.processInfo.systemUptime
@@ -269,6 +271,7 @@ final class CoreImageRenderer {
         modules.append("色彩控制")
         if recipe.vibrance > 0.001 { modules.append("自然饱和度") }
         if recipe.hsl != .neutral { modules.append("分区 HSL") }
+        if recipe.luminanceMaskStrength > 0.001 { modules.append("亮度蒙版高光/阴影") }
         if recipe.colorGradeIntensity > 0.001 { modules.append("阴影/中间调/高光电影分级") }
         if recipe.subjectExposureEV > 0.001 || recipe.faceExposureEV > 0.001 { modules.append("主体/人脸补光") }
         if analysis?.skyMask != nil,

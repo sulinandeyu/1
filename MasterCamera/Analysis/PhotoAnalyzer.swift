@@ -74,6 +74,11 @@ final class PhotoAnalyzer {
             whiteRatio: statistics.whiteRatio,
             midtoneRatio: statistics.midtoneRatio,
             mixedLightScore: statistics.mixedLightScore,
+            highlightConcentration: statistics.highlightConcentration,
+            highlightSourceCount: statistics.highlightSourceCount,
+            highlightCentroidX: statistics.highlightCentroidX,
+            highlightCentroidY: statistics.highlightCentroidY,
+            spatialLuminanceVariance: statistics.spatialLuminanceVariance,
             faceCount: faceRegions.count,
             faceRegions: faceRegions,
             faceAverageLuminance: regionalTone.faceAverageLuminance,
@@ -164,6 +169,7 @@ final class PhotoAnalyzer {
         let lowPercentile = sortedLuminances[Int(Float(sortedLuminances.count - 1) * 0.05)]
         let highPercentile = sortedLuminances[Int(Float(sortedLuminances.count - 1) * 0.95)]
         let neighborhood = neighborhoodQuality(luminances: luminances, width: width, height: height)
+        let spatialLight = spatialLightStatistics(luminances: luminances, width: width, height: height)
         let warmRatio = Float(warmCount) / count
         let coolRatio = Float(coolCount) / count
 
@@ -182,9 +188,90 @@ final class PhotoAnalyzer {
             whiteRatio: Float(whiteCount) / count,
             midtoneRatio: Float(midtoneCount) / count,
             mixedLightScore: min(warmRatio, coolRatio) * 2,
+            highlightConcentration: spatialLight.concentration,
+            highlightSourceCount: spatialLight.sourceCount,
+            highlightCentroidX: spatialLight.centroidX,
+            highlightCentroidY: spatialLight.centroidY,
+            spatialLuminanceVariance: spatialLight.zoneVariance,
             width: width,
             height: height,
             luminances: luminances
+        )
+    }
+
+    private func spatialLightStatistics(
+        luminances: [Float],
+        width: Int,
+        height: Int
+    ) -> (concentration: Float, sourceCount: Int, centroidX: Float, centroidY: Float, zoneVariance: Float) {
+        guard width > 0, height > 0, luminances.count == width * height else {
+            return (0, 0, 0.5, 0.5, 0)
+        }
+        let threshold: Float = 0.88
+        var visited = [Bool](repeating: false, count: luminances.count)
+        var componentSizes: [Int] = []
+        var brightX: Float = 0
+        var brightY: Float = 0
+        var brightCount = 0
+        let neighbors = [(-1, 0), (1, 0), (0, -1), (0, 1)]
+
+        for index in luminances.indices where luminances[index] >= threshold {
+            let x = index % width
+            let y = index / width
+            brightX += (Float(x) + 0.5) / Float(width)
+            brightY += (Float(y) + 0.5) / Float(height)
+            brightCount += 1
+            guard !visited[index] else { continue }
+            var queue = [index]
+            visited[index] = true
+            var cursor = 0
+            while cursor < queue.count {
+                let current = queue[cursor]
+                cursor += 1
+                let currentX = current % width
+                let currentY = current / width
+                for (dx, dy) in neighbors {
+                    let nx = currentX + dx
+                    let ny = currentY + dy
+                    guard nx >= 0, nx < width, ny >= 0, ny < height else { continue }
+                    let neighbor = ny * width + nx
+                    if !visited[neighbor], luminances[neighbor] >= threshold {
+                        visited[neighbor] = true
+                        queue.append(neighbor)
+                    }
+                }
+            }
+            if queue.count >= 2 { componentSizes.append(queue.count) }
+        }
+
+        var zoneMeans: [Float] = []
+        for zoneY in 0..<3 {
+            for zoneX in 0..<3 {
+                var total: Float = 0
+                var count: Float = 0
+                let minX = zoneX * width / 3
+                let maxX = (zoneX + 1) * width / 3
+                let minY = zoneY * height / 3
+                let maxY = (zoneY + 1) * height / 3
+                for y in minY..<maxY {
+                    for x in minX..<maxX {
+                        total += luminances[y * width + x]
+                        count += 1
+                    }
+                }
+                zoneMeans.append(count > 0 ? total / count : 0)
+            }
+        }
+        let zoneMean = zoneMeans.reduce(0, +) / Float(max(zoneMeans.count, 1))
+        let variance = zoneMeans.reduce(Float(0)) { $0 + (($1 - zoneMean) * ($1 - zoneMean)) }
+            / Float(max(zoneMeans.count, 1))
+        let largest = componentSizes.max() ?? 0
+        return (
+            brightCount > 0 ? Float(largest) / Float(brightCount) : 0,
+            componentSizes.count,
+            brightCount > 0 ? brightX / Float(brightCount) : 0.5,
+            brightCount > 0 ? brightY / Float(brightCount) : 0.5,
+            min(1, variance * 12)
         )
     }
 
@@ -401,6 +488,11 @@ private struct PixelStatistics {
     let whiteRatio: Float
     let midtoneRatio: Float
     let mixedLightScore: Float
+    let highlightConcentration: Float
+    let highlightSourceCount: Int
+    let highlightCentroidX: Float
+    let highlightCentroidY: Float
+    let spatialLuminanceVariance: Float
     let width: Int
     let height: Int
     let luminances: [Float]

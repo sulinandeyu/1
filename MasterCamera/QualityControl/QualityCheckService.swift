@@ -64,6 +64,19 @@ final class QualityCheckService {
             issues.append(.oversaturated)
         }
 
+        if editedAnalysis.noiseEstimate > max(0.16, originalAnalysis.noiseEstimate + 0.055) {
+            issues.append(.amplifiedNoise)
+        }
+
+        if editedAnalysis.detailScore > max(0.42, originalAnalysis.detailScore * 1.75),
+           editedAnalysis.noiseEstimate >= originalAnalysis.noiseEstimate {
+            issues.append(.overprocessedDetail)
+        }
+
+        if editedAnalysis.whiteRatio > max(0.035, originalAnalysis.whiteRatio + 0.025) {
+            issues.append(.expandedPureWhite)
+        }
+
         if editedData == originalData {
             issues.append(.possibleRenderFallback)
         }
@@ -104,7 +117,10 @@ final class QualityCheckService {
             .abnormalBlackCoverage,
             .excessiveHighlightSpread,
             .abnormalColorCast,
-            .crushedShadows
+            .crushedShadows,
+            .amplifiedNoise,
+            .overprocessedDetail,
+            .expandedPureWhite
         ]
         if issues.contains(where: criticalIssues.contains) {
             return .failed

@@ -71,6 +71,37 @@ final class PhotographyDecisionEngine {
         recipe: inout AutomaticEditingRecipe,
         actions: inout [PhotographyAction]
     ) {
+        let recoverableShadow = max(0, analysis.shadowRatio - analysis.blackRatio)
+        recipe.shadowZoneExposureEV = min(
+            analysis.semanticScene == .night ? 0.12 : 0.18,
+            max(0.025, recoverableShadow * 0.28)
+        )
+        recipe.highlightZoneExposureEV = -min(0.2, max(0.035, analysis.highlightRatio * 0.9))
+        recipe.luminanceMaskStrength = min(
+            0.82,
+            max(0.3, (recoverableShadow + analysis.highlightRatio) * 1.45)
+        )
+
+        if analysis.spatialLuminanceVariance > 0.18 {
+            recipe.localContrastAmount = min(recipe.localContrastAmount, 0.1)
+            recipe.contrast = min(recipe.contrast, 1.035)
+            actions.append(PhotographyAction(
+                title: "按空间光比塑造影调",
+                reason: "九宫格测光显示局部光比明显，使用亮度蒙版保护亮源并恢复可用阴影，而不是继续增加全局对比度。"
+            ))
+        }
+
+        if analysis.highlightSourceCount > 0 && analysis.highlightConcentration > 0.28 {
+            recipe.highlightZoneExposureEV = min(recipe.highlightZoneExposureEV, -0.1)
+            recipe.bloomIntensity = min(recipe.bloomIntensity, 0.004)
+            recipe.halationIntensity = min(recipe.halationIntensity, 0.0015)
+            recipe.highlightGlowThreshold = max(recipe.highlightGlowThreshold, 0.96)
+            actions.append(PhotographyAction(
+                title: "保护真实光源形态",
+                reason: "检测到集中的高亮光源，优先保留灯具核心和边缘，只允许极弱的高光扩散。"
+            ))
+        }
+
         if analysis.noiseEstimate > 0.12 {
             recipe.noiseReductionAmount = max(recipe.noiseReductionAmount, min(0.055, analysis.noiseEstimate * 0.22))
             recipe.sharpeningAmount = min(recipe.sharpeningAmount, 0.09)
@@ -104,6 +135,7 @@ final class PhotographyDecisionEngine {
             recipe.blackPoint = 0
             recipe.shadowAmount = max(recipe.shadowAmount, 0.18)
             recipe.shadowRollOff = max(recipe.shadowRollOff, 0.24)
+            recipe.shadowZoneExposureEV = min(recipe.shadowZoneExposureEV, 0.1)
         }
     }
 

@@ -64,6 +64,9 @@ enum QualityIssue: String, Equatable, Hashable, Sendable {
     case abnormalBlackCoverage
     case excessiveHighlightSpread
     case abnormalColorCast
+    case amplifiedNoise
+    case overprocessedDetail
+    case expandedPureWhite
 
     var title: String {
         switch self {
@@ -91,6 +94,12 @@ enum QualityIssue: String, Equatable, Hashable, Sendable {
             return "高光扩散范围异常"
         case .abnormalColorCast:
             return "出现明显异常偏色"
+        case .amplifiedNoise:
+            return "暗部噪点被放大"
+        case .overprocessedDetail:
+            return "细节增强过硬"
+        case .expandedPureWhite:
+            return "纯白溢出区域扩大"
         }
     }
 }

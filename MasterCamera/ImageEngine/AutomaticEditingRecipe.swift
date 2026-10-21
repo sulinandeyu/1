@@ -104,6 +104,9 @@ struct AutomaticEditingRecipe: Equatable, Sendable {
     var highlightGlowThreshold: Float
     var backgroundSeparation: Float
     var hsl: ProfessionalHSLAdjustment
+    var shadowZoneExposureEV: Float
+    var highlightZoneExposureEV: Float
+    var luminanceMaskStrength: Float
 
     static let naturalEnhancement = AutomaticEditingRecipe(
         exposureEV: 0.0,
@@ -146,7 +149,10 @@ struct AutomaticEditingRecipe: Equatable, Sendable {
         halationIntensity: 0.0,
         highlightGlowThreshold: 0.92,
         backgroundSeparation: 0.0,
-        hsl: .neutral
+        hsl: .neutral,
+        shadowZoneExposureEV: 0,
+        highlightZoneExposureEV: 0,
+        luminanceMaskStrength: 0
     )
 
     static let safeFallback = AutomaticEditingRecipe(
@@ -190,7 +196,10 @@ struct AutomaticEditingRecipe: Equatable, Sendable {
         halationIntensity: 0.0,
         highlightGlowThreshold: 0.95,
         backgroundSeparation: 0.0,
-        hsl: .neutral
+        hsl: .neutral,
+        shadowZoneExposureEV: 0.04,
+        highlightZoneExposureEV: -0.04,
+        luminanceMaskStrength: 0.35
     )
 
     func clamped() -> AutomaticEditingRecipe {
@@ -235,7 +244,10 @@ struct AutomaticEditingRecipe: Equatable, Sendable {
             halationIntensity: halationIntensity.clamped(to: 0.0...0.012),
             highlightGlowThreshold: highlightGlowThreshold.clamped(to: 0.84...0.98),
             backgroundSeparation: backgroundSeparation.clamped(to: 0.0...0.18),
-            hsl: hsl.clamped()
+            hsl: hsl.clamped(),
+            shadowZoneExposureEV: shadowZoneExposureEV.clamped(to: 0.0...0.22),
+            highlightZoneExposureEV: highlightZoneExposureEV.clamped(to: -0.24...0.0),
+            luminanceMaskStrength: luminanceMaskStrength.clamped(to: 0.0...1.0)
         )
     }
 }

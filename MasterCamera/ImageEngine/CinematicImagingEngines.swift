@@ -182,6 +182,53 @@ final class ProfessionalHSLProcessor {
     private func clamp(_ value: Float) -> Float { min(max(value, 0), 1) }
 }
 
+/// 以连续亮度蒙版分别处理可恢复阴影和高光，避免全局 HDR 把黑色抬灰或压暗主体。
+final class LuminanceZoneProcessor {
+    func apply(to image: CIImage, recipe: AutomaticEditingRecipe) -> CIImage {
+        let strength = recipe.luminanceMaskStrength
+        guard strength > 0.001 else { return image }
+        let luminance = image.applyingFilter("CIColorControls", parameters: [
+            kCIInputSaturationKey: 0.0
+        ])
+        var output = image
+        if recipe.shadowZoneExposureEV > 0.001 {
+            let inverted = luminance.applyingFilter("CIColorInvert")
+            let shadowMask = inverted.applyingFilter("CIGammaAdjust", parameters: [
+                "inputPower": 2.35
+            ]).applyingFilter("CIColorMatrix", parameters: [
+                "inputRVector": CIVector(x: CGFloat(strength), y: 0, z: 0, w: 0),
+                "inputGVector": CIVector(x: 0, y: CGFloat(strength), z: 0, w: 0),
+                "inputBVector": CIVector(x: 0, y: 0, z: CGFloat(strength), w: 0)
+            ])
+            let lifted = output.applyingFilter("CIExposureAdjust", parameters: [
+                kCIInputEVKey: recipe.shadowZoneExposureEV
+            ])
+            output = blend(lifted, over: output, mask: shadowMask)
+        }
+        if recipe.highlightZoneExposureEV < -0.001 {
+            let highlightMask = luminance.applyingFilter("CIGammaAdjust", parameters: [
+                "inputPower": 3.0
+            ]).applyingFilter("CIColorMatrix", parameters: [
+                "inputRVector": CIVector(x: CGFloat(strength), y: 0, z: 0, w: 0),
+                "inputGVector": CIVector(x: 0, y: CGFloat(strength), z: 0, w: 0),
+                "inputBVector": CIVector(x: 0, y: 0, z: CGFloat(strength), w: 0)
+            ])
+            let protected = output.applyingFilter("CIExposureAdjust", parameters: [
+                kCIInputEVKey: recipe.highlightZoneExposureEV
+            ])
+            output = blend(protected, over: output, mask: highlightMask)
+        }
+        return output.cropped(to: image.extent)
+    }
+
+    private func blend(_ foreground: CIImage, over background: CIImage, mask: CIImage) -> CIImage {
+        foreground.applyingFilter("CIBlendWithMask", parameters: [
+            kCIInputBackgroundImageKey: background,
+            kCIInputMaskImageKey: mask
+        ]).cropped(to: background.extent)
+    }
+}
+
 /// Independently grades shadows, midtones and highlights with soft luminance masks.
 final class CinematicColorGradingEngine {
     func apply(to image: CIImage, recipe: AutomaticEditingRecipe) -> CIImage {
