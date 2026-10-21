@@ -11,10 +11,9 @@ final class SkinTextureProtectionProcessor {
     ) -> CIImage {
         guard
             amount > 0.001,
-            let faceRegions = analysis?.faceRegions,
-            !faceRegions.isEmpty,
-            let mask = makeSkinTextureMask(
-                for: faceRegions,
+            let analysis,
+            let mask = makeProtectionMask(
+                analysis: analysis,
                 extent: processedImage.extent,
                 amount: amount
             ),
@@ -27,6 +26,63 @@ final class SkinTextureProtectionProcessor {
         blend.setValue(processedImage, forKey: kCIInputBackgroundImageKey)
         blend.setValue(mask, forKey: kCIInputMaskImageKey)
         return blend.outputImage?.cropped(to: processedImage.extent) ?? processedImage
+    }
+
+    private func makeProtectionMask(
+        analysis: PhotoAnalysis,
+        extent: CGRect,
+        amount: Float
+    ) -> CIImage? {
+        if let skinMask = analysis.skinMask,
+           let pixelMask = makePixelMask(from: skinMask, extent: extent, amount: amount) {
+            return pixelMask
+        }
+
+        guard !analysis.faceRegions.isEmpty else { return nil }
+        return makeSkinTextureMask(
+            for: analysis.faceRegions,
+            extent: extent,
+            amount: amount
+        )
+    }
+
+    private func makePixelMask(
+        from photoMask: NormalizedPhotoMask,
+        extent: CGRect,
+        amount: Float
+    ) -> CIImage? {
+        guard photoMask.isValid else { return nil }
+
+        let maskImage = CIImage(
+            bitmapData: photoMask.pixels,
+            bytesPerRow: photoMask.width,
+            size: CGSize(width: photoMask.width, height: photoMask.height),
+            format: .L8,
+            colorSpace: nil
+        )
+        let scaled = maskImage
+            .transformed(
+                by: CGAffineTransform(
+                    scaleX: extent.width / CGFloat(photoMask.width),
+                    y: extent.height / CGFloat(photoMask.height)
+                )
+            )
+            .transformed(
+                by: CGAffineTransform(
+                    translationX: extent.minX,
+                    y: extent.minY
+                )
+            )
+
+        let controlled = scaled.applyingFilter(
+            "CIColorMatrix",
+            parameters: [
+                "inputRVector": CIVector(x: CGFloat(amount), y: 0, z: 0, w: 0),
+                "inputGVector": CIVector(x: 0, y: CGFloat(amount), z: 0, w: 0),
+                "inputBVector": CIVector(x: 0, y: 0, z: CGFloat(amount), w: 0)
+            ]
+        )
+        return controlled.cropped(to: extent)
     }
 
     private func makeSkinTextureMask(

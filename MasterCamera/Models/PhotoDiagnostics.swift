@@ -51,6 +51,7 @@ struct PhotoDiagnosticSection: Identifiable, Equatable, Sendable {
                 PhotoDiagnosticItem(label: "人脸", value: analysis.faceCount.faceCountText),
                 PhotoDiagnosticItem(label: "人物蒙版", value: analysis.personMask.maskSummary),
                 PhotoDiagnosticItem(label: "主体蒙版", value: analysis.salientSubjectMask.maskSummary),
+                PhotoDiagnosticItem(label: "皮肤蒙版", value: analysis.skinMask.maskSummary),
                 PhotoDiagnosticItem(label: "语义标签", value: analysis.semanticLabels.labelSummary)
             ]
         )

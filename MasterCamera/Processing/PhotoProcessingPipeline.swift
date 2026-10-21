@@ -23,7 +23,10 @@ final class PhotoProcessingPipeline {
 
     func process(_ photo: CapturedPhoto) throws -> CapturedPhoto {
         // 1. 理解照片
-        let analysis = try analyzer.analyze(data: photo.originalImageData)
+        let analysis = try analyzer.analyze(
+            data: photo.originalImageData,
+            capturedSkinMask: photo.skinMask
+        )
         // 2. 找问题
         let problemReport = problemDetector.detect(in: analysis)
         // 3–4. 判断摄影风格并制定处理策略
@@ -50,6 +53,7 @@ final class PhotoProcessingPipeline {
             originalImageData: photo.originalImageData,
             editedImageData: finalEdit.data,
             capturedAt: photo.capturedAt,
+            skinMask: photo.skinMask,
             analysis: analysis,
             problemReport: problemReport,
             decision: decision,

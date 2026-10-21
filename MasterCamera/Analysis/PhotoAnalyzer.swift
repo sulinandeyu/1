@@ -8,15 +8,30 @@ final class PhotoAnalyzer {
     private let colorSpace = CGColorSpace(name: CGColorSpace.sRGB)!
     private let sampleLongEdge = 128
 
-    func analyze(data: Data) throws -> PhotoAnalysis {
-        try analyze(data: data, includeFaceDetection: true)
+    func analyze(
+        data: Data,
+        capturedSkinMask: NormalizedPhotoMask? = nil
+    ) throws -> PhotoAnalysis {
+        try analyze(
+            data: data,
+            includeFaceDetection: true,
+            capturedSkinMask: capturedSkinMask
+        )
     }
 
     func analyzeImageQuality(data: Data) throws -> PhotoAnalysis {
-        try analyze(data: data, includeFaceDetection: false)
+        try analyze(
+            data: data,
+            includeFaceDetection: false,
+            capturedSkinMask: nil
+        )
     }
 
-    private func analyze(data: Data, includeFaceDetection: Bool) throws -> PhotoAnalysis {
+    private func analyze(
+        data: Data,
+        includeFaceDetection: Bool,
+        capturedSkinMask: NormalizedPhotoMask?
+    ) throws -> PhotoAnalysis {
         guard let image = CIImage(data: data) else {
             throw PhotoAnalysisError.invalidImageData
         }
@@ -40,6 +55,7 @@ final class PhotoAnalyzer {
             faceRegions: faceRegions,
             personMask: personMask,
             salientSubjectMask: salientSubjectMask,
+            skinMask: capturedSkinMask?.isValid == true ? capturedSkinMask : nil,
             semanticLabels: semanticLabels
         )
     }

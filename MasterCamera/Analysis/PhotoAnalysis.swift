@@ -13,6 +13,7 @@ struct PhotoAnalysis: Equatable, Sendable {
     let faceRegions: [NormalizedPhotoRegion]
     let personMask: NormalizedPhotoMask?
     let salientSubjectMask: NormalizedPhotoMask?
+    let skinMask: NormalizedPhotoMask?
     let semanticLabels: [SceneLabel]
 
     var exposureProfile: ExposureProfile {
@@ -112,6 +113,7 @@ struct PhotoAnalysis: Equatable, Sendable {
         faceRegions: [],
         personMask: nil,
         salientSubjectMask: nil,
+        skinMask: nil,
         semanticLabels: []
     )
 }
