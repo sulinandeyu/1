@@ -91,18 +91,25 @@ struct CameraView: View {
                 .monospacedDigit()
                 .foregroundStyle(.white)
 
-            Slider(
-                value: Binding(
-                    get: { Double(viewModel.zoomFactor) },
-                    set: { viewModel.setZoomFactor(CGFloat($0)) }
-                ),
-                in: 1.0...Double(max(viewModel.maximumZoomFactor, 1.0)),
-                step: 0.1
-            )
-            .tint(.yellow)
-            .disabled(viewModel.maximumZoomFactor <= 1.0 || viewModel.state != .ready)
-            .accessibilityLabel("相机倍率")
-            .accessibilityValue(String(format: "%.1f 倍", viewModel.zoomFactor))
+            if viewModel.maximumZoomFactor > 1.0 {
+                Slider(
+                    value: Binding(
+                        get: { Double(viewModel.zoomFactor) },
+                        set: { viewModel.setZoomFactor(CGFloat($0)) }
+                    ),
+                    in: 1.0...Double(viewModel.maximumZoomFactor),
+                    step: 0.1
+                )
+                .tint(.yellow)
+                .disabled(viewModel.state != .ready)
+                .accessibilityLabel("相机倍率")
+                .accessibilityValue(String(format: "%.1f 倍", viewModel.zoomFactor))
+            } else {
+                Capsule()
+                    .fill(.white.opacity(0.22))
+                    .frame(height: 4)
+                    .accessibilityHidden(true)
+            }
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)

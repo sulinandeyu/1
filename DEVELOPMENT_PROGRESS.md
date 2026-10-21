@@ -183,3 +183,10 @@ Phase 14 TestFlight 发布链路和首轮内部真机验证均已完成。build 
 1. 等待 App Store Connect 完成 build `1.0 (5)` 处理，在同一台 iPhone 真机复测真实 1×、倍率滑杆、皮肤/天空蒙版方向、处理速度和场景成片差异。
 2. 建立固定原片样张回归框架，覆盖人像、逆光、风景、夜景、美食、建筑、日落和室内场景，并记录分析、问题、配方与质检结果。
 3. 根据真实样张和盲评结果校准阈值；大师作品只用于抽象色调、层次和光影原则，不复制具体作品风格。
+# TestFlight build 5/6 启动崩溃根因与修复（2026-10-21）
+
+- 用户提供的 `MasterCamera-2026-10-21-091823.ips` 确认崩溃发生在主线程。
+- 异常为 `EXC_BREAKPOINT / SIGTRAP`，栈顶是 SwiftUI `Normalizing.init(min:max:stride:)` 和 `Slider.init`。
+- 根因是 App 首次布局时 `maximumZoomFactor` 尚为 `1.0`，代码却创建了范围为 `1.0...1.0`、步长为 `0.1` 的 Slider。iOS 26.2 会对这个无有效跨度的范围直接断言崩溃，即使 Slider 同时设为 disabled。
+- 修复方式：只有在设备报告的最大倍率大于 `1.0` 时才构造 Slider；相机配置完成前显示无交互的占位轨道。
+- build 6 与 build 5 包含同一个 Slider 初始化问题；上一次禁用皮肤语义蒙版与此崩溃无关。
