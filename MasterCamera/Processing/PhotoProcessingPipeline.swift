@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 
 final class PhotoProcessingPipeline {
     private let analyzer: PhotoAnalyzer
@@ -26,6 +27,7 @@ final class PhotoProcessingPipeline {
 
     func process(_ photo: CapturedPhoto) throws -> CapturedPhoto {
         let totalStart = ProcessInfo.processInfo.systemUptime
+        let startingMemory = Self.memoryFootprint()
         let analysisStart = totalStart
         // 1. 理解照片
         let analysis = try analyzer.analyze(
@@ -68,6 +70,7 @@ final class PhotoProcessingPipeline {
         )
         let qualityDuration = ProcessInfo.processInfo.systemUptime - qualityStart
         let totalDuration = ProcessInfo.processInfo.systemUptime - totalStart
+        let finishingMemory = Self.memoryFootprint()
         AppLogger.imageEngine.info(
             "处理完成：渲染=\(Self.milliseconds(renderDuration))ms，质检/回退=\(Self.milliseconds(qualityDuration))ms，总计=\(Self.milliseconds(totalDuration))ms，状态=\(finalEdit.qualityCheck.status.rawValue)，安全回退=\(finalEdit.qualityCheck.fallbackApplied)"
         )
@@ -101,7 +104,7 @@ final class PhotoProcessingPipeline {
                 name: "总耗时",
                 durationMilliseconds: Self.milliseconds(totalDuration),
                 executed: true,
-                detail: "分析到最终成片"
+                detail: Self.memorySummary(start: startingMemory, end: finishingMemory)
             )
         ]
         let diagnosticsResult: ImageDiagnosticsResult?
@@ -204,6 +207,30 @@ final class PhotoProcessingPipeline {
 
     private static func milliseconds(_ seconds: TimeInterval) -> Int {
         Int((seconds * 1_000).rounded())
+    }
+
+    private static func memoryFootprint() -> UInt64? {
+        var info = task_vm_info_data_t()
+        var count = mach_msg_type_number_t(
+            MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<natural_t>.size
+        )
+        let result = withUnsafeMutablePointer(to: &info) { pointer in
+            pointer.withMemoryRebound(to: integer_t.self, capacity: Int(count)) { rebound in
+                task_info(mach_task_self_, task_flavor_t(TASK_VM_INFO), rebound, &count)
+            }
+        }
+        return result == KERN_SUCCESS ? UInt64(info.phys_footprint) : nil
+    }
+
+    private static func memorySummary(start: UInt64?, end: UInt64?) -> String {
+        guard let start, let end else { return "分析到最终成片 · 内存指标不可用" }
+        let megabyte = 1_048_576.0
+        let delta = Double(Int64(end) - Int64(start)) / megabyte
+        return String(
+            format: "分析到最终成片 · 物理占用 %.1f MB · 变化 %+.1f MB",
+            Double(end) / megabyte,
+            delta
+        )
     }
 }
 
