@@ -102,6 +102,27 @@ struct PhotoDiagnosticSection: Identifiable, Equatable, Sendable {
             title: "AI 摄影决策",
             items: [
                 PhotoDiagnosticItem(label: "场景", value: decision.sceneStrategy.title),
+                PhotoDiagnosticItem(
+                    label: "多维场景",
+                    value: decision.context.sceneFacets.map(\.rawValue).joined(separator: "、")
+                ),
+                PhotoDiagnosticItem(
+                    label: "光照条件",
+                    value: decision.context.lightingConditions.map(\.rawValue).joined(separator: "、")
+                ),
+                PhotoDiagnosticItem(
+                    label: "光向与空间",
+                    value: String(
+                        format: "%@ · 景深层次 %.0f%% · 氛围 %.0f%%",
+                        decision.context.lightDirection.rawValue,
+                        decision.context.spatialDepthScore * 100,
+                        decision.context.atmosphereScore * 100
+                    )
+                ),
+                PhotoDiagnosticItem(
+                    label: "摄影风格判断",
+                    value: "\(decision.context.style.rawValue)：\(decision.context.styleReason)"
+                ),
                 PhotoDiagnosticItem(label: "审美目标", value: decision.aestheticTarget.title),
                 PhotoDiagnosticItem(
                     label: "电影模式",

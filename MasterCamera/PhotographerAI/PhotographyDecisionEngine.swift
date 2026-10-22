@@ -6,6 +6,7 @@ final class PhotographyDecisionEngine {
         problems: PhotoProblemReport
     ) -> PhotographyDecision {
         let strategy = SceneStrategy.choose(for: analysis, problems: problems)
+        let context = analysis.photographyContext
         var recipe = AutomaticEditingRecipe.naturalEnhancement
         var actions: [PhotographyAction] = []
 
@@ -45,6 +46,12 @@ final class PhotographyDecisionEngine {
             recipe: &recipe,
             actions: &actions
         )
+        applyContextStrategy(
+            context: context,
+            analysis: analysis,
+            recipe: &recipe,
+            actions: &actions
+        )
         applyProblemSafetyLimits(problems: problems, recipe: &recipe)
         reconcileQualitySignals(analysis: analysis, recipe: &recipe, actions: &actions)
 
@@ -59,11 +66,82 @@ final class PhotographyDecisionEngine {
 
         return PhotographyDecision(
             sceneStrategy: strategy,
+            context: context,
             aestheticTarget: aestheticTarget(for: strategy),
             intent: intent(for: strategy),
             actions: actions,
             recipe: recipe.clamped()
         )
+    }
+
+    private func applyContextStrategy(
+        context: PhotographyContext,
+        analysis: PhotoAnalysis,
+        recipe: inout AutomaticEditingRecipe,
+        actions: inout [PhotographyAction]
+    ) {
+        let recoverableHighlights = max(0, analysis.highlightRatio - analysis.whiteRatio)
+        let recoverableShadows = max(0, analysis.shadowRatio - analysis.blackRatio)
+
+        switch context.style {
+        case .blueHour:
+            let coolEvidence = min(1, max(0, (analysis.blueAverage - analysis.redAverage) * 5))
+            recipe.saturation = min(recipe.saturation, 1.0)
+            recipe.vibrance = min(recipe.vibrance, 0.1 + coolEvidence * 0.025)
+            recipe.hsl.cyanSaturation = min(recipe.hsl.cyanSaturation, -0.02 - coolEvidence * 0.045)
+            recipe.hsl.blueSaturation = min(recipe.hsl.blueSaturation, -0.015 - coolEvidence * 0.035)
+            recipe.hsl.orangeSaturation = max(recipe.hsl.orangeSaturation, 0.01)
+            recipe.highlightAmount = min(recipe.highlightAmount, 0.62 - recoverableHighlights * 0.3)
+            recipe.shadowCoolAmount = min(recipe.shadowCoolAmount, 0.1)
+        case .goldenHour:
+            let warmEvidence = min(1, max(0, (analysis.redAverage - analysis.blueAverage) * 5))
+            recipe.temperatureShift += 35 + 70 * warmEvidence
+            recipe.hsl.orangeSaturation = min(0.08, recipe.hsl.orangeSaturation + 0.015 + warmEvidence * 0.025)
+            recipe.highlightAmount = min(recipe.highlightAmount, 0.66 - recoverableHighlights * 0.32)
+            recipe.highlightWarmAmount = min(recipe.highlightWarmAmount, 0.18)
+        case .commercialPortrait, .environmentalPortrait:
+            recipe.skinTextureProtection = max(recipe.skinTextureProtection, 0.68)
+            recipe.faceExposureEV = max(recipe.faceExposureEV, min(0.2, max(0, -(analysis.faceToBackgroundLuminanceDelta ?? 0)) * 0.75))
+            recipe.shadowCoolAmount = min(recipe.shadowCoolAmount, 0.055)
+            recipe.sharpeningAmount = min(recipe.sharpeningAmount, 0.1)
+            recipe.localContrastAmount = min(recipe.localContrastAmount, 0.09)
+        case .interiorAtmosphere:
+            recipe.colorGradeIntensity = min(recipe.colorGradeIntensity, analysis.mixedLightScore > 0.18 ? 0.16 : 0.22)
+            recipe.shadowCoolAmount = min(recipe.shadowCoolAmount, 0.035)
+            recipe.hsl.cyanSaturation = min(recipe.hsl.cyanSaturation, -0.035)
+            recipe.hsl.blueSaturation = min(recipe.hsl.blueSaturation, -0.025)
+            recipe.shadowAmount = max(recipe.shadowAmount, min(0.3, recoverableShadows * 0.55))
+        case .urbanArchitecture:
+            let safeDetail = max(0, analysis.detailScore - analysis.noiseEstimate)
+            recipe.localContrastAmount = min(0.12, max(recipe.localContrastAmount, 0.045 + safeDetail * 0.16))
+            recipe.sharpeningAmount = min(0.11, max(recipe.sharpeningAmount, 0.055 + safeDetail * 0.12))
+            if analysis.highlightSourceCount > 0 {
+                recipe.bloomIntensity = min(recipe.bloomIntensity, 0.003)
+                recipe.halationIntensity = min(recipe.halationIntensity, 0.001)
+                recipe.highlightGlowThreshold = max(recipe.highlightGlowThreshold, 0.965)
+            }
+        case .professionalLandscape:
+            if analysis.skyMask?.isValid == true {
+                recipe.skyExposureEV = min(recipe.skyExposureEV, -min(0.18, recoverableHighlights * 0.8))
+            } else {
+                recipe.skyExposureEV = 0
+            }
+            recipe.hsl.greenSaturation = max(-0.08, min(recipe.hsl.greenSaturation, analysis.averageSaturation > 0.38 ? -0.04 : 0.02))
+            recipe.hsl.blueSaturation = max(-0.07, min(recipe.hsl.blueSaturation, analysis.averageSaturation > 0.34 ? -0.035 : 0.025))
+        case .stillLife:
+            recipe.localContrastAmount = min(0.11, max(recipe.localContrastAmount, 0.055))
+            recipe.sharpeningAmount = min(0.115, max(recipe.sharpeningAmount, 0.065))
+            recipe.saturation = min(recipe.saturation, 1.01)
+        case .lifestyle, .naturalDocumentary:
+            recipe.colorGradeIntensity = min(recipe.colorGradeIntensity, 0.2)
+            recipe.shadowCoolAmount = min(recipe.shadowCoolAmount, 0.06)
+            recipe.highlightWarmAmount = min(recipe.highlightWarmAmount, 0.1)
+        }
+
+        actions.append(PhotographyAction(
+            title: "多维摄影语境：\(context.style.rawValue)",
+            reason: context.styleReason
+        ))
     }
 
     private func reconcileQualitySignals(

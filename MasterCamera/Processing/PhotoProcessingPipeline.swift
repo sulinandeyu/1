@@ -170,39 +170,111 @@ final class PhotoProcessingPipeline {
         }
 
         AppLogger.imageEngine.warning(
-            "初版成片质检失败，原因：\(initialQualityCheck.issues.map(\.rawValue).joined(separator: ","))；开始安全回退"
+            "初版成片质检失败，原因：\(initialQualityCheck.issues.map(\.rawValue).joined(separator: ","))；开始一次有边界的针对性重算"
         )
 
         do {
-            let fallbackData = try renderer.renderAutomaticEdit(
-                from: originalData,
-                recipe: .safeFallback,
-                analysis: nil
+            let correctiveRecipe = correctionRecipe(
+                from: initialRecipe,
+                issues: initialQualityCheck.issues
             )
-            let fallbackQualityCheck = try qualityService
-                .check(originalData: originalData, editedData: fallbackData)
+            let correctiveData = try renderer.renderAutomaticEdit(
+                from: originalData,
+                recipe: correctiveRecipe,
+                analysis: analysis
+            )
+            let correctiveQualityCheck = try qualityService
+                .check(originalData: originalData, editedData: correctiveData)
                 .applyingFallback()
 
-            if fallbackQualityCheck.status.isBetter(than: initialQualityCheck.status) {
-                AppLogger.imageEngine.warning("安全回退结果更可靠，采用克制版成片")
+            if correctiveQualityCheck.status.isBetter(than: initialQualityCheck.status) {
+                AppLogger.imageEngine.warning("针对性重算结果更可靠，采用修正版成片；不再继续循环调整")
                 return (
-                    fallbackData,
-                    fallbackQualityCheck,
-                    .safeFallback,
-                    nil,
-                    initialQualityCheck.issues.map(\.rawValue).joined(separator: ",")
+                    correctiveData,
+                    correctiveQualityCheck,
+                    correctiveRecipe,
+                    analysis,
+                    "V7 一次性修正：" + initialQualityCheck.issues.map(\.rawValue).joined(separator: ",")
                 )
             }
 
-            AppLogger.imageEngine.error("初版与安全回退均未通过质量验证，拒绝把异常图片标记为 AI 成片")
+            AppLogger.imageEngine.error("初版与一次针对性重算均未通过质量验证，拒绝把异常图片标记为 AI 成片")
             throw PhotoProcessingError.qualityValidationFailed(
                 initialQualityCheck.issues.map(\.rawValue).joined(separator: ",")
             )
         } catch {
             if let processingError = error as? PhotoProcessingError { throw processingError }
-            AppLogger.imageEngine.error("安全回退处理失败，拒绝输出异常成片：\(error.localizedDescription)")
+            AppLogger.imageEngine.error("针对性重算失败，拒绝输出异常成片：\(error.localizedDescription)")
             throw PhotoProcessingError.safeFallbackFailed(error.localizedDescription)
         }
+    }
+
+    /// V7 quality feedback is deliberately bounded: the original analysis is
+    /// reused and at most one issue-specific correction render is attempted.
+    private func correctionRecipe(
+        from original: AutomaticEditingRecipe,
+        issues: [QualityIssue]
+    ) -> AutomaticEditingRecipe {
+        if issues.contains(.canvasMismatch) || issues.contains(.possibleRenderFallback) {
+            return .safeFallback
+        }
+
+        var recipe = original
+        let set = Set(issues)
+
+        if !set.isDisjoint(with: [.tooDark, .crushedShadows, .abnormalBlackCoverage]) {
+            recipe.exposureEV = max(recipe.exposureEV, 0.04)
+            recipe.shadowAmount = max(recipe.shadowAmount, 0.2)
+            recipe.shadowRollOff = max(recipe.shadowRollOff, 0.24)
+            recipe.shadowZoneExposureEV = min(0.16, max(recipe.shadowZoneExposureEV, 0.08))
+            recipe.blackPoint = min(recipe.blackPoint, 0.004)
+            recipe.contrast = min(recipe.contrast, 1.025)
+        }
+
+        if !set.isDisjoint(with: [.tooBright, .clippedHighlights, .expandedPureWhite, .excessiveHighlightSpread]) {
+            recipe.exposureEV = min(recipe.exposureEV, -0.035)
+            recipe.highlightAmount = min(recipe.highlightAmount, 0.52)
+            recipe.highlightRollOff = max(recipe.highlightRollOff, 0.32)
+            recipe.highlightZoneExposureEV = max(-0.2, min(recipe.highlightZoneExposureEV, -0.1))
+            recipe.whitePoint = min(recipe.whitePoint, 0.97)
+            recipe.bloomIntensity = 0
+            recipe.halationIntensity = 0
+        }
+
+        if set.contains(.tooFlat) {
+            recipe.toneCurveAmount = max(recipe.toneCurveAmount, 0.26)
+            recipe.contrast = max(recipe.contrast, 1.025)
+            recipe.localContrastAmount = min(0.08, max(recipe.localContrastAmount, 0.04))
+        }
+
+        if set.contains(.tooHarsh) || set.contains(.overprocessedDetail) {
+            recipe.contrast = min(recipe.contrast, 1.015)
+            recipe.localContrastAmount = min(recipe.localContrastAmount, 0.055)
+            recipe.sharpeningAmount = min(recipe.sharpeningAmount, 0.065)
+            recipe.toneCurveAmount = min(recipe.toneCurveAmount, 0.34)
+        }
+
+        if set.contains(.oversaturated) || set.contains(.abnormalColorCast) {
+            recipe.saturation = min(recipe.saturation, 0.995)
+            recipe.vibrance = min(recipe.vibrance, 0.055)
+            recipe.temperatureShift *= 0.45
+            recipe.tintShift *= 0.45
+            recipe.colorGradeIntensity = min(recipe.colorGradeIntensity, 0.1)
+            recipe.shadowCoolAmount = min(recipe.shadowCoolAmount, 0.025)
+            recipe.midtoneWarmAmount = min(recipe.midtoneWarmAmount, 0.04)
+            recipe.highlightWarmAmount = min(recipe.highlightWarmAmount, 0.05)
+            recipe.colorContrast = min(recipe.colorContrast, 0.04)
+        }
+
+        if set.contains(.amplifiedNoise) {
+            recipe.noiseReductionAmount = max(recipe.noiseReductionAmount, 0.045)
+            recipe.sharpeningAmount = min(recipe.sharpeningAmount, 0.055)
+            recipe.localContrastAmount = min(recipe.localContrastAmount, 0.045)
+            recipe.grainAmount = 0
+            recipe.shadowZoneExposureEV = min(recipe.shadowZoneExposureEV, 0.08)
+        }
+
+        return recipe.clamped()
     }
 
     private static func milliseconds(_ seconds: TimeInterval) -> Int {

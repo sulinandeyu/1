@@ -2,6 +2,7 @@ import Foundation
 
 struct PhotographyDecision: Equatable, Sendable {
     let sceneStrategy: SceneStrategy
+    let context: PhotographyContext
     let aestheticTarget: AestheticTarget
     let intent: String
     let actions: [PhotographyAction]
