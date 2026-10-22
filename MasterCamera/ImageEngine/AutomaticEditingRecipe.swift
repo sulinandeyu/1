@@ -255,6 +255,40 @@ struct AutomaticEditingRecipe: Equatable, Sendable {
             luminanceMaskStrength: luminanceMaskStrength.clamped(to: 0.0...1.0)
         )
     }
+
+    var traceSummary: String {
+        String(
+            format: "tone=%@/%.3f cinematic=%@/%@ exposure=%.3f highlight=%.3f shadow=%.3f contrast=%.3f saturation=%.3f vibrance=%.3f wb=%.0f/%.2f grade=%.3f/%.3f/%.3f/%.3f hsl=o%.3f,y%.3f,g%.3f,c%.3f,b%.3f local=subject%.3f,face%.3f,sky%.3f/%.3f/%.3f detail=%.3f/%.3f",
+            toneCurveStyle.rawValue,
+            toneCurveAmount,
+            cinematicIntensity.rawValue,
+            cinematicToneStyle.rawValue,
+            exposureEV,
+            highlightAmount,
+            shadowAmount,
+            contrast,
+            saturation,
+            vibrance,
+            temperatureShift,
+            tintShift,
+            colorGradeIntensity,
+            shadowCoolAmount,
+            midtoneWarmAmount,
+            highlightWarmAmount,
+            hsl.orangeSaturation,
+            hsl.yellowSaturation,
+            hsl.greenSaturation,
+            hsl.cyanSaturation,
+            hsl.blueSaturation,
+            subjectExposureEV,
+            faceExposureEV,
+            skyExposureEV,
+            skyHighlightAmount,
+            skySaturation,
+            noiseReductionAmount,
+            sharpeningAmount
+        )
+    }
 }
 
 /// V6 的统一专业配方名称；保留旧名称以兼容现有相机与诊断数据。

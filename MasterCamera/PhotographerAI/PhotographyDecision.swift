@@ -12,6 +12,17 @@ struct PhotographyDecision: Equatable, Sendable {
         let actionText = actions.map(\.title).joined(separator: ", ")
         return "\(sceneStrategy.title): \(actionText)"
     }
+
+    func replacingRecipe(with recipe: AutomaticEditingRecipe) -> PhotographyDecision {
+        PhotographyDecision(
+            sceneStrategy: sceneStrategy,
+            context: context,
+            aestheticTarget: aestheticTarget,
+            intent: intent,
+            actions: actions,
+            recipe: recipe
+        )
+    }
 }
 
 enum AestheticTarget: String, Equatable, Sendable {

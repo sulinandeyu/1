@@ -54,6 +54,9 @@ final class CoreImageRenderer {
         recipe: AutomaticEditingRecipe = .naturalEnhancement,
         analysis: PhotoAnalysis? = nil
     ) throws -> Data {
+        AppLogger.imageEngine.info(
+            "渲染器收到配方：\(recipe.traceSummary, privacy: .public)；局部蒙版 person=\(analysis?.personMask?.isValid == true)，subject=\(analysis?.salientSubjectMask?.isValid == true)，sky=\(analysis?.skyMask?.isValid == true)"
+        )
         let result = try processImage(data: data, recipe: recipe, analysis: analysis)
         let finished = result.finalImage
         let canvas = result.canvas

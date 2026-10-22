@@ -156,6 +156,34 @@ struct PhotoAnalysis: Equatable, Sendable {
         return .general
     }
 
+    var traceSummary: String {
+        let labels = semanticLabels.map {
+            "\($0.identifier)=\(String(format: "%.3f", $0.confidence))"
+        }.joined(separator: ",")
+        let context = photographyContext
+        return String(
+            format: "semantic=%@ labels=[%@] facets=[%@] lighting=[%@] style=%@ luma=%.3f contrast=%.3f shadow=%.3f highlight=%.3f saturation=%.3f rgb=%.3f/%.3f/%.3f masks=person:%@,subject:%@,skin:%@,sky:%@(%.3f)",
+            semanticScene.rawValue,
+            labels,
+            context.sceneFacets.map(\.rawValue).joined(separator: ","),
+            context.lightingConditions.map(\.rawValue).joined(separator: ","),
+            context.style.rawValue,
+            averageLuminance,
+            contrastRange,
+            shadowRatio,
+            highlightRatio,
+            averageSaturation,
+            redAverage,
+            greenAverage,
+            blueAverage,
+            personMask?.isValid == true ? "yes" : "no",
+            salientSubjectMask?.isValid == true ? "yes" : "no",
+            skinMask?.isValid == true ? "yes" : "no",
+            skyMask?.isValid == true ? "yes" : "no",
+            skyCoverage
+        )
+    }
+
     static let fallback = PhotoAnalysis(
         averageLuminance: 0.5,
         contrastRange: 0.5,

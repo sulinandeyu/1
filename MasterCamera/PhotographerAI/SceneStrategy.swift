@@ -63,6 +63,30 @@ enum SceneStrategy: String, Equatable, Sendable {
             return .backlitPortrait
         }
 
+        // Vision returns several labels for one photograph. Choose the strategy from the
+        // structured context first so a generic label such as "outdoor" cannot hide a more
+        // useful coast, architecture or workspace label.
+        let context = analysis.photographyContext
+        let facets = Set(context.sceneFacets)
+        let lighting = Set(context.lightingConditions)
+
+        if facets.contains(.portrait) || facets.contains(.groupPortrait) {
+            return analysis.semanticScene == .backlitPortrait ? .backlitPortrait : .portrait
+        }
+        if lighting.contains(.sunrise) || lighting.contains(.dusk) || lighting.contains(.goldenHour) {
+            return .sunset
+        }
+        if facets.contains(.workspace) { return .workspace }
+        if facets.contains(.food) { return .food }
+        if facets.contains(.interior) { return .indoor }
+        if lighting.contains(.night) && !lighting.contains(.blueHour) { return .night }
+        if !facets.isDisjoint(with: [.water, .coast, .mountain, .forest, .countryRoad, .nature]) {
+            return .landscape
+        }
+        if facets.contains(.architecture) { return .architecture }
+        if facets.contains(.street) || facets.contains(.city) { return .street }
+        if facets.contains(.sky) { return .landscape }
+
         switch analysis.semanticScene {
         case .portrait:
             return .portrait

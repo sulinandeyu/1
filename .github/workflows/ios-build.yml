@@ -26,6 +26,9 @@ jobs:
             -scheme MasterCamera \
             -showBuildSettings
 
+      - name: Test scene-adaptive decision contracts
+        run: swift test
+
       - name: Build for iOS Simulator
         run: |
           xcodebuild build \

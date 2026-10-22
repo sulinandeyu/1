@@ -36,7 +36,7 @@ final class PhotoProcessingPipeline {
         )
         let analysisDuration = ProcessInfo.processInfo.systemUptime - analysisStart
         AppLogger.imageEngine.info(
-            "分析完成 \(Self.milliseconds(analysisDuration))ms：场景=\(analysis.semanticScene.rawValue)，亮度=\(analysis.averageLuminance)，高光=\(analysis.highlightRatio)，暗部=\(analysis.shadowRatio)，人脸=\(analysis.faceCount)"
+            "分析完成 \(Self.milliseconds(analysisDuration))ms：\(analysis.traceSummary, privacy: .public)"
         )
         // 2. 找问题
         let decisionStart = ProcessInfo.processInfo.systemUptime
@@ -45,7 +45,7 @@ final class PhotoProcessingPipeline {
         let decision = decisionEngine.makeDecision(for: analysis, problems: problemReport)
         let decisionDuration = ProcessInfo.processInfo.systemUptime - decisionStart
         AppLogger.imageEngine.info(
-            "决策完成 \(Self.milliseconds(decisionDuration))ms：策略=\(decision.sceneStrategy.rawValue)，问题=\(problemReport.problems.count)，曲线=\(decision.recipe.toneCurveStyle.rawValue)/\(decision.recipe.toneCurveAmount)，调色=\(decision.recipe.colorGradeIntensity)，主体=\(decision.recipe.subjectExposureEV)EV，人脸=\(decision.recipe.faceExposureEV)EV"
+            "决策完成 \(Self.milliseconds(decisionDuration))ms：策略=\(decision.sceneStrategy.rawValue)，问题=[\(problemReport.problems.map { $0.kind.rawValue }.joined(separator: ","), privacy: .public)]，配方=\(decision.recipe.traceSummary, privacy: .public)"
         )
         // 5. 使用人物、主体和人脸蒙版执行分区域及全局处理
         let renderStart = ProcessInfo.processInfo.systemUptime
@@ -68,11 +68,12 @@ final class PhotoProcessingPipeline {
             initialRecipe: decision.recipe,
             analysis: analysis
         )
+        let finalDecision = decision.replacingRecipe(with: finalEdit.recipe)
         let qualityDuration = ProcessInfo.processInfo.systemUptime - qualityStart
         let totalDuration = ProcessInfo.processInfo.systemUptime - totalStart
         let finishingMemory = Self.memoryFootprint()
         AppLogger.imageEngine.info(
-            "处理完成：渲染=\(Self.milliseconds(renderDuration))ms，质检/回退=\(Self.milliseconds(qualityDuration))ms，总计=\(Self.milliseconds(totalDuration))ms，状态=\(finalEdit.qualityCheck.status.rawValue)，安全回退=\(finalEdit.qualityCheck.fallbackApplied)"
+            "处理完成：渲染=\(Self.milliseconds(renderDuration))ms，质检/回退=\(Self.milliseconds(qualityDuration))ms，总计=\(Self.milliseconds(totalDuration))ms，状态=\(finalEdit.qualityCheck.status.rawValue)，安全回退=\(finalEdit.qualityCheck.fallbackApplied)，最终配方=\(finalEdit.recipe.traceSummary, privacy: .public)"
         )
 
         let stageRecords = [
@@ -144,7 +145,7 @@ final class PhotoProcessingPipeline {
             skinMask: photo.skinMask,
             analysis: analysis,
             problemReport: problemReport,
-            decision: decision,
+            decision: finalDecision,
             qualityCheck: finalEdit.qualityCheck,
             processingDiagnostics: diagnosticsResult?.diagnostics,
             differenceImageData: diagnosticsResult?.differenceImageData,

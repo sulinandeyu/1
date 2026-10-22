@@ -93,24 +93,35 @@ final class PhotographyDecisionEngine {
             recipe.hsl.orangeSaturation = max(recipe.hsl.orangeSaturation, 0.01)
             recipe.highlightAmount = min(recipe.highlightAmount, 0.62 - recoverableHighlights * 0.3)
             recipe.shadowCoolAmount = min(recipe.shadowCoolAmount, 0.1)
+            recipe.midtoneWarmAmount = min(recipe.midtoneWarmAmount, 0.07)
+            recipe.highlightWarmAmount = min(recipe.highlightWarmAmount, 0.12)
+            recipe.colorGradeIntensity = min(recipe.colorGradeIntensity, 0.22)
         case .goldenHour:
             let warmEvidence = min(1, max(0, (analysis.redAverage - analysis.blueAverage) * 5))
             recipe.temperatureShift += 35 + 70 * warmEvidence
             recipe.hsl.orangeSaturation = min(0.08, recipe.hsl.orangeSaturation + 0.015 + warmEvidence * 0.025)
             recipe.highlightAmount = min(recipe.highlightAmount, 0.66 - recoverableHighlights * 0.32)
             recipe.highlightWarmAmount = min(recipe.highlightWarmAmount, 0.18)
+            recipe.shadowCoolAmount = min(recipe.shadowCoolAmount, 0.06)
+            recipe.midtoneWarmAmount = min(recipe.midtoneWarmAmount, 0.12)
+            recipe.colorGradeIntensity = min(recipe.colorGradeIntensity, 0.24)
         case .commercialPortrait, .environmentalPortrait:
             recipe.skinTextureProtection = max(recipe.skinTextureProtection, 0.68)
             recipe.faceExposureEV = max(recipe.faceExposureEV, min(0.2, max(0, -(analysis.faceToBackgroundLuminanceDelta ?? 0)) * 0.75))
             recipe.shadowCoolAmount = min(recipe.shadowCoolAmount, 0.055)
             recipe.sharpeningAmount = min(recipe.sharpeningAmount, 0.1)
             recipe.localContrastAmount = min(recipe.localContrastAmount, 0.09)
+            recipe.midtoneWarmAmount = min(recipe.midtoneWarmAmount, 0.12)
+            recipe.highlightWarmAmount = min(recipe.highlightWarmAmount, 0.18)
+            recipe.colorGradeIntensity = min(recipe.colorGradeIntensity, 0.22)
         case .interiorAtmosphere:
             recipe.colorGradeIntensity = min(recipe.colorGradeIntensity, analysis.mixedLightScore > 0.18 ? 0.16 : 0.22)
             recipe.shadowCoolAmount = min(recipe.shadowCoolAmount, 0.035)
             recipe.hsl.cyanSaturation = min(recipe.hsl.cyanSaturation, -0.035)
             recipe.hsl.blueSaturation = min(recipe.hsl.blueSaturation, -0.025)
             recipe.shadowAmount = max(recipe.shadowAmount, min(0.3, recoverableShadows * 0.55))
+            recipe.midtoneWarmAmount = min(recipe.midtoneWarmAmount, 0.1)
+            recipe.highlightWarmAmount = min(recipe.highlightWarmAmount, 0.15)
         case .urbanArchitecture:
             let safeDetail = max(0, analysis.detailScore - analysis.noiseEstimate)
             recipe.localContrastAmount = min(0.12, max(recipe.localContrastAmount, 0.045 + safeDetail * 0.16))
@@ -120,6 +131,10 @@ final class PhotographyDecisionEngine {
                 recipe.halationIntensity = min(recipe.halationIntensity, 0.001)
                 recipe.highlightGlowThreshold = max(recipe.highlightGlowThreshold, 0.965)
             }
+            recipe.colorGradeIntensity = min(recipe.colorGradeIntensity, 0.2)
+            recipe.shadowCoolAmount = min(recipe.shadowCoolAmount, 0.06)
+            recipe.midtoneWarmAmount = min(recipe.midtoneWarmAmount, 0.1)
+            recipe.highlightWarmAmount = min(recipe.highlightWarmAmount, 0.14)
         case .professionalLandscape:
             if analysis.skyMask?.isValid == true {
                 recipe.skyExposureEV = min(recipe.skyExposureEV, -min(0.18, recoverableHighlights * 0.8))
@@ -128,6 +143,10 @@ final class PhotographyDecisionEngine {
             }
             recipe.hsl.greenSaturation = max(-0.08, min(recipe.hsl.greenSaturation, analysis.averageSaturation > 0.38 ? -0.04 : 0.02))
             recipe.hsl.blueSaturation = max(-0.07, min(recipe.hsl.blueSaturation, analysis.averageSaturation > 0.34 ? -0.035 : 0.025))
+            recipe.colorGradeIntensity = min(recipe.colorGradeIntensity, 0.18)
+            recipe.shadowCoolAmount = min(recipe.shadowCoolAmount, 0.07)
+            recipe.midtoneWarmAmount = min(recipe.midtoneWarmAmount, 0.08)
+            recipe.highlightWarmAmount = min(recipe.highlightWarmAmount, 0.12)
             if context.sceneFacets.contains(.forest) || context.sceneFacets.contains(.countryRoad) {
                 let naturalWarmth = min(1, max(0, (analysis.redAverage - analysis.blueAverage + 0.04) * 4))
                 recipe.hsl.yellowSaturation = min(0.07, -0.015 + naturalWarmth * 0.055)
@@ -138,10 +157,15 @@ final class PhotographyDecisionEngine {
             recipe.localContrastAmount = min(0.11, max(recipe.localContrastAmount, 0.055))
             recipe.sharpeningAmount = min(0.115, max(recipe.sharpeningAmount, 0.065))
             recipe.saturation = min(recipe.saturation, 1.01)
+            recipe.colorGradeIntensity = min(recipe.colorGradeIntensity, 0.18)
+            recipe.shadowCoolAmount = min(recipe.shadowCoolAmount, 0.04)
+            recipe.midtoneWarmAmount = min(recipe.midtoneWarmAmount, 0.1)
+            recipe.highlightWarmAmount = min(recipe.highlightWarmAmount, 0.14)
         case .lifestyle, .naturalDocumentary:
-            recipe.colorGradeIntensity = min(recipe.colorGradeIntensity, 0.2)
-            recipe.shadowCoolAmount = min(recipe.shadowCoolAmount, 0.06)
-            recipe.highlightWarmAmount = min(recipe.highlightWarmAmount, 0.1)
+            recipe.colorGradeIntensity = min(recipe.colorGradeIntensity, 0.14)
+            recipe.shadowCoolAmount = min(recipe.shadowCoolAmount, 0.035)
+            recipe.midtoneWarmAmount = min(recipe.midtoneWarmAmount, 0.07)
+            recipe.highlightWarmAmount = min(recipe.highlightWarmAmount, 0.09)
         }
 
         actions.append(PhotographyAction(
@@ -529,20 +553,30 @@ final class PhotographyDecisionEngine {
         recipe: inout AutomaticEditingRecipe,
         actions: inout [PhotographyAction]
     ) {
-        guard analysis.skyMask != nil else { return }
+        guard analysis.skyMask?.isValid == true else { return }
+
+        let context = analysis.photographyContext
+        let recoverableHighlights = max(0, analysis.highlightRatio - analysis.whiteRatio)
+        let recoveryStrength = min(1, max(0, recoverableHighlights * 4 + max(0, analysis.contrastRange - 0.42)))
+        let saturationHeadroom = min(1, max(0, (0.34 - analysis.averageSaturation) * 4))
 
         switch strategy {
         case .landscape, .outdoor, .brightOutdoor, .highContrast:
-            recipe.skyExposureEV = problems.contains(.clippedHighlights) ? -0.12 : -0.04
-            recipe.skyHighlightAmount = problems.contains(.clippedHighlights) ? 0.52 : 0.72
-            recipe.skySaturation = problems.contains(.oversaturated) ? 0.98 : 1.035
+            recipe.skyExposureEV = -(0.025 + 0.105 * recoveryStrength)
+            recipe.skyHighlightAmount = 0.78 - 0.26 * recoveryStrength
+            recipe.skySaturation = 1 + 0.035 * saturationHeadroom
+            if context.lightingConditions.contains(.overcast) {
+                recipe.skyExposureEV = max(recipe.skyExposureEV, -0.055)
+                recipe.skySaturation = min(recipe.skySaturation, 0.995)
+            }
+            if problems.contains(.oversaturated) { recipe.skySaturation = min(recipe.skySaturation, 0.98) }
         case .sunset:
-            recipe.skyExposureEV = -0.08
-            recipe.skyHighlightAmount = 0.5
-            recipe.skySaturation = problems.contains(.oversaturated) ? 0.98 : 1.025
+            recipe.skyExposureEV = -(0.045 + 0.085 * recoveryStrength)
+            recipe.skyHighlightAmount = 0.68 - 0.18 * recoveryStrength
+            recipe.skySaturation = problems.contains(.oversaturated) ? 0.98 : 1 + 0.025 * saturationHeadroom
         case .backlitPortrait:
-            recipe.skyExposureEV = -0.09
-            recipe.skyHighlightAmount = 0.54
+            recipe.skyExposureEV = -(0.055 + 0.075 * recoveryStrength)
+            recipe.skyHighlightAmount = 0.68 - 0.16 * recoveryStrength
             recipe.skySaturation = 1.0
         default:
             return

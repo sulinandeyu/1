@@ -26,16 +26,32 @@ JPEG export share `CoreImageRenderer.processImage`; the original is never overwr
 - Noise/detail proxies, scene labels, spatial light zones, bright-source connected components.
 - Quality checks for geometry, black coverage, highlight spread, color cast, noise amplification,
   over-sharpening and expanded white clipping.
+- Structured scene facets and lighting now select the primary strategy before the legacy single
+  `SemanticScene` fallback; generic `outdoor` no longer masks coast or architecture evidence.
+- Analysis, initial recipe, renderer input and final post-quality recipe now have one continuous
+  log trace. The diagnostics recipe is the recipe that actually produced the final JPEG.
+
+## 2026-10-22 scene-adaptation repair (working tree)
+
+- Root cause, three real screenshot-pair measurements, code evidence and phone acceptance steps
+  are recorded in `docs/SCENE_ADAPTATION_AUDIT.md`.
+- The shared cinematic grade is now bounded by photographic context instead of dominating every
+  standard scene with the same cool-shadow/warm-highlight baseline.
+- Sky exposure/highlight/saturation are continuous functions of measured headroom, contrast and
+  saturation; overcast evidence prevents automatic blue enhancement.
+- A standalone Swift decision-core test package covers generic-label precedence, semantic recipe
+  divergence and overcast-versus-clear sky behavior. CI runs it before the iOS build.
+- Local Windows validation is limited to source/static checks. Xcode/Core Image and original-file
+  visual acceptance remain pending until the branch runs on macOS and the app re-tests original
+  JPEG/HEIC files.
 
 ## Important limitations
 
-- Scene understanding is still flattened into one `SemanticScene`/`SceneStrategy`; Vision labels
-  are retained but not modeled as a structured multi-label context.
-- Lighting condition, direction and photographic style are inferred indirectly inside decision
-  rules instead of represented as first-class data.
 - Reliable masks exist for person, face, skin capture, sky and saliency. There are no verified
   semantic masks for hair, road, water, vegetation or buildings.
-- Quality validation performs one safe fallback, not bounded parameter-specific reprocessing.
-- The repository has finished reference images but no matching unedited originals. Reference
-  metrics are real; end-to-end photographic acceptance remains a phone test.
+- The primary strategy remains a compatibility enum, but it is now selected from multi-label
+  facets and lighting; recipes still need more original-file calibration across all scene types.
+- Quality validation permits one bounded issue-specific correction, not iterative aesthetic search.
+- The repository has finished references but no committed matching unedited originals. Recovered
+  user attachments are App screenshots, so end-to-end photographic acceptance remains a phone test.
 
