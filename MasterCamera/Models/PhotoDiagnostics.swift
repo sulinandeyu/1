@@ -200,9 +200,11 @@ struct PhotoDiagnosticSection: Identifiable, Equatable, Sendable {
                 PhotoDiagnosticItem(
                     label: "分区 HSL",
                     value: String(
-                        format: "橙 S%+.2f/L%+.2f · 绿 S%+.2f/L%+.2f · 青 S%+.2f/L%+.2f · 蓝 S%+.2f/L%+.2f",
+                        format: "橙 S%+.2f/L%+.2f · 黄 S%+.2f/L%+.2f · 绿 S%+.2f/L%+.2f · 青 S%+.2f/L%+.2f · 蓝 S%+.2f/L%+.2f",
                         decision.recipe.hsl.orangeSaturation,
                         decision.recipe.hsl.orangeLuminance,
+                        decision.recipe.hsl.yellowSaturation,
+                        decision.recipe.hsl.yellowLuminance,
                         decision.recipe.hsl.greenSaturation,
                         decision.recipe.hsl.greenLuminance,
                         decision.recipe.hsl.cyanSaturation,

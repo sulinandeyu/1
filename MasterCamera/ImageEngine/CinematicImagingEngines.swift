@@ -110,18 +110,21 @@ final class ProfessionalHSLProcessor {
                     )
                     var hsv = rgbToHSV(rgb)
                     let orange = hueWeight(hsv.x, center: 0.075, width: 0.095)
+                    let yellow = hueWeight(hsv.x, center: 0.155, width: 0.09)
                     let green = hueWeight(hsv.x, center: 0.33, width: 0.13)
                     let cyan = hueWeight(hsv.x, center: 0.50, width: 0.10)
                     let blue = hueWeight(hsv.x, center: 0.64, width: 0.13)
                     let chromaGuard = min(1, hsv.y * 3.2)
                     let saturationDelta = (
                         orange * adjustment.orangeSaturation +
+                        yellow * adjustment.yellowSaturation +
                         green * adjustment.greenSaturation +
                         cyan * adjustment.cyanSaturation +
                         blue * adjustment.blueSaturation
                     ) * chromaGuard
                     let luminanceDelta = (
                         orange * adjustment.orangeLuminance +
+                        yellow * adjustment.yellowLuminance +
                         green * adjustment.greenLuminance +
                         cyan * adjustment.cyanLuminance +
                         blue * adjustment.blueLuminance

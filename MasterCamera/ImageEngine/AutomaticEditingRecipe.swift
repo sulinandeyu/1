@@ -34,6 +34,8 @@ enum CinematicToneStyle: String, Equatable, Sendable {
 struct ProfessionalHSLAdjustment: Equatable, Sendable {
     var orangeSaturation: Float
     var orangeLuminance: Float
+    var yellowSaturation: Float
+    var yellowLuminance: Float
     var greenSaturation: Float
     var greenLuminance: Float
     var cyanSaturation: Float
@@ -43,6 +45,7 @@ struct ProfessionalHSLAdjustment: Equatable, Sendable {
 
     static let neutral = ProfessionalHSLAdjustment(
         orangeSaturation: 0, orangeLuminance: 0,
+        yellowSaturation: 0, yellowLuminance: 0,
         greenSaturation: 0, greenLuminance: 0,
         cyanSaturation: 0, cyanLuminance: 0,
         blueSaturation: 0, blueLuminance: 0
@@ -52,6 +55,8 @@ struct ProfessionalHSLAdjustment: Equatable, Sendable {
         ProfessionalHSLAdjustment(
             orangeSaturation: orangeSaturation.clamped(to: -0.18...0.18),
             orangeLuminance: orangeLuminance.clamped(to: -0.08...0.08),
+            yellowSaturation: yellowSaturation.clamped(to: -0.18...0.18),
+            yellowLuminance: yellowLuminance.clamped(to: -0.08...0.08),
             greenSaturation: greenSaturation.clamped(to: -0.2...0.2),
             greenLuminance: greenLuminance.clamped(to: -0.08...0.08),
             cyanSaturation: cyanSaturation.clamped(to: -0.2...0.16),

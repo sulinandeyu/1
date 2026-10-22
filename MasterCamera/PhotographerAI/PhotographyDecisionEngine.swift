@@ -128,6 +128,12 @@ final class PhotographyDecisionEngine {
             }
             recipe.hsl.greenSaturation = max(-0.08, min(recipe.hsl.greenSaturation, analysis.averageSaturation > 0.38 ? -0.04 : 0.02))
             recipe.hsl.blueSaturation = max(-0.07, min(recipe.hsl.blueSaturation, analysis.averageSaturation > 0.34 ? -0.035 : 0.025))
+            if context.sceneFacets.contains(.forest) || context.sceneFacets.contains(.countryRoad) {
+                let naturalWarmth = min(1, max(0, (analysis.redAverage - analysis.blueAverage + 0.04) * 4))
+                recipe.hsl.yellowSaturation = min(0.07, -0.015 + naturalWarmth * 0.055)
+                recipe.hsl.yellowLuminance = min(0.035, naturalWarmth * 0.025)
+                recipe.hsl.orangeSaturation = min(0.065, recipe.hsl.orangeSaturation + naturalWarmth * 0.025)
+            }
         case .stillLife:
             recipe.localContrastAmount = min(0.11, max(recipe.localContrastAmount, 0.055))
             recipe.sharpeningAmount = min(0.115, max(recipe.sharpeningAmount, 0.065))
