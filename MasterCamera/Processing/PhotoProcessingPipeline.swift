@@ -4,7 +4,7 @@ import Darwin
 final class PhotoProcessingPipeline {
     private let analyzer: PhotoAnalyzer
     private let problemDetector: PhotoProblemDetector
-    private let decisionEngine: PhotographyDecisionEngine
+    private let photographyDirector: PhotographyDirector
     private let renderer: CoreImageRenderer
     private let qualityService: QualityCheckService
     private let diagnosticsService: ImageProcessingDiagnosticsService
@@ -12,14 +12,14 @@ final class PhotoProcessingPipeline {
     init(
         analyzer: PhotoAnalyzer = PhotoAnalyzer(),
         problemDetector: PhotoProblemDetector = PhotoProblemDetector(),
-        decisionEngine: PhotographyDecisionEngine = PhotographyDecisionEngine(),
+        photographyDirector: PhotographyDirector = PhotographyDirector(),
         renderer: CoreImageRenderer = CoreImageRenderer(),
         qualityService: QualityCheckService = QualityCheckService(),
         diagnosticsService: ImageProcessingDiagnosticsService = ImageProcessingDiagnosticsService()
     ) {
         self.analyzer = analyzer
         self.problemDetector = problemDetector
-        self.decisionEngine = decisionEngine
+        self.photographyDirector = photographyDirector
         self.renderer = renderer
         self.qualityService = qualityService
         self.diagnosticsService = diagnosticsService
@@ -42,10 +42,10 @@ final class PhotoProcessingPipeline {
         let decisionStart = ProcessInfo.processInfo.systemUptime
         let problemReport = problemDetector.detect(in: analysis)
         // 3–4. 判断摄影风格并制定处理策略
-        let decision = decisionEngine.makeDecision(for: analysis, problems: problemReport)
+        let decision = photographyDirector.direct(analysis: analysis, problems: problemReport)
         let decisionDuration = ProcessInfo.processInfo.systemUptime - decisionStart
         AppLogger.imageEngine.info(
-            "决策完成 \(Self.milliseconds(decisionDuration))ms：策略=\(decision.sceneStrategy.rawValue)，问题=[\(problemReport.problems.map { $0.kind.rawValue }.joined(separator: ","), privacy: .public)]，配方=\(decision.recipe.traceSummary, privacy: .public)"
+            "摄影总监决策完成 \(Self.milliseconds(decisionDuration))ms：策略=\(decision.sceneStrategy.rawValue)，目标=\(decision.aestheticTarget.rawValue)，区域=\(decision.treatmentPlan.regionalTreatments.map { $0.region.rawValue }.joined(separator: ","), privacy: .public)，人物保护=\(decision.treatmentPlan.portraitProtection.isActive)，问题=[\(problemReport.problems.map { $0.kind.rawValue }.joined(separator: ","), privacy: .public)]，配方=\(decision.recipe.traceSummary, privacy: .public)"
         )
         // 5. 使用人物、主体和人脸蒙版执行分区域及全局处理
         let renderStart = ProcessInfo.processInfo.systemUptime
@@ -59,7 +59,8 @@ final class PhotoProcessingPipeline {
         let qualityStart = ProcessInfo.processInfo.systemUptime
         let initialQualityCheck = try qualityService.check(
             originalData: photo.originalImageData,
-            editedData: initialEditedData
+            editedData: initialEditedData,
+            sourceAnalysis: analysis
         )
         let finalEdit = try chooseFinalEdit(
             originalData: photo.originalImageData,
@@ -84,7 +85,7 @@ final class PhotoProcessingPipeline {
                 detail: "\(analysis.semanticScene.rawValue) · \(analysis.semanticLabels.count) 个语义标签"
             ),
             ProcessingStageRecord(
-                name: "问题诊断与配方",
+                name: "问题诊断与摄影总监方案",
                 durationMilliseconds: Self.milliseconds(decisionDuration),
                 executed: true,
                 detail: "\(problemReport.problems.count) 个问题 · \(decision.sceneStrategy.rawValue)"
@@ -185,7 +186,11 @@ final class PhotoProcessingPipeline {
                 analysis: analysis
             )
             let correctiveQualityCheck = try qualityService
-                .check(originalData: originalData, editedData: correctiveData)
+                .check(
+                    originalData: originalData,
+                    editedData: correctiveData,
+                    sourceAnalysis: analysis
+                )
                 .applyingFallback()
 
             if correctiveQualityCheck.status.isBetter(than: initialQualityCheck.status) {
@@ -265,6 +270,18 @@ final class PhotoProcessingPipeline {
             recipe.midtoneWarmAmount = min(recipe.midtoneWarmAmount, 0.04)
             recipe.highlightWarmAmount = min(recipe.highlightWarmAmount, 0.05)
             recipe.colorContrast = min(recipe.colorContrast, 0.04)
+        }
+
+        if !set.isDisjoint(with: [.portraitRegionOverAltered, .portraitTextureAltered]) {
+            recipe.faceExposureEV = 0
+            recipe.subjectExposureEV = min(recipe.subjectExposureEV, 0.08)
+            recipe.hsl.orangeLuminance = 0
+            recipe.hsl.orangeSaturation = min(max(recipe.hsl.orangeSaturation, -0.01), 0.01)
+            recipe.colorGradeIntensity = min(recipe.colorGradeIntensity, 0.12)
+            recipe.noiseReductionAmount = min(recipe.noiseReductionAmount, 0.012)
+            recipe.sharpeningAmount = min(recipe.sharpeningAmount, 0.055)
+            recipe.localContrastAmount = min(recipe.localContrastAmount, 0.045)
+            recipe.skinTextureProtection = max(recipe.skinTextureProtection, 0.76)
         }
 
         if set.contains(.amplifiedNoise) {

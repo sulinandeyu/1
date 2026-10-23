@@ -124,6 +124,20 @@ struct PhotoDiagnosticSection: Identifiable, Equatable, Sendable {
                     value: "\(decision.context.style.rawValue)：\(decision.context.styleReason)"
                 ),
                 PhotoDiagnosticItem(label: "审美目标", value: decision.aestheticTarget.title),
+                PhotoDiagnosticItem(label: "最终摄影观感", value: decision.treatmentPlan.finalLook),
+                PhotoDiagnosticItem(label: "光线设计", value: decision.treatmentPlan.lightingDesign),
+                PhotoDiagnosticItem(
+                    label: "局部精修区域",
+                    value: decision.treatmentPlan.regionalTreatments
+                        .map { "\($0.region.rawValue)：\($0.objective)" }
+                        .joined(separator: "；")
+                ),
+                PhotoDiagnosticItem(
+                    label: "人物保护",
+                    value: decision.treatmentPlan.portraitProtection.isActive
+                        ? "严格：禁用人脸专属提亮、几何修改和生成式修复，保留皮肤纹理"
+                        : "当前照片未检测到人物保护触发条件"
+                ),
                 PhotoDiagnosticItem(
                     label: "电影模式",
                     value: "\(decision.recipe.cinematicIntensity.title) · \(decision.recipe.cinematicToneStyle.rawValue)"

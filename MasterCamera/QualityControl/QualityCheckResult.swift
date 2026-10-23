@@ -67,6 +67,8 @@ enum QualityIssue: String, Equatable, Hashable, Sendable {
     case amplifiedNoise
     case overprocessedDetail
     case expandedPureWhite
+    case portraitRegionOverAltered
+    case portraitTextureAltered
 
     var title: String {
         switch self {
@@ -100,6 +102,10 @@ enum QualityIssue: String, Equatable, Hashable, Sendable {
             return "细节增强过硬"
         case .expandedPureWhite:
             return "纯白溢出区域扩大"
+        case .portraitRegionOverAltered:
+            return "人物面部被局部过度改变"
+        case .portraitTextureAltered:
+            return "人物皮肤纹理变化异常"
         }
     }
 }

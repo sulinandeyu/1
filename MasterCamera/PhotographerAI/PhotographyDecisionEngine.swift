@@ -54,6 +54,7 @@ final class PhotographyDecisionEngine {
         )
         applyProblemSafetyLimits(problems: problems, recipe: &recipe)
         reconcileQualitySignals(analysis: analysis, recipe: &recipe, actions: &actions)
+        enforcePortraitProtection(analysis: analysis, recipe: &recipe, actions: &actions)
 
         if actions.isEmpty {
             actions.append(
@@ -64,13 +65,97 @@ final class PhotographyDecisionEngine {
             )
         }
 
+        let finalRecipe = recipe.clamped()
         return PhotographyDecision(
             sceneStrategy: strategy,
             context: context,
             aestheticTarget: aestheticTarget(for: strategy),
             intent: intent(for: strategy),
             actions: actions,
-            recipe: recipe.clamped()
+            treatmentPlan: treatmentPlan(
+                analysis: analysis,
+                strategy: strategy,
+                context: context,
+                recipe: finalRecipe
+            ),
+            recipe: finalRecipe
+        )
+    }
+
+    /// 人物保护必须最后执行，确保任何场景、风格或问题修正规则都不能重新开启
+    /// 人脸专属提亮、过强皮肤细节处理或疑似美颜式的橙色明度提升。
+    private func enforcePortraitProtection(
+        analysis: PhotoAnalysis,
+        recipe: inout AutomaticEditingRecipe,
+        actions: inout [PhotographyAction]
+    ) {
+        guard analysis.faceCount > 0 else { return }
+
+        recipe.faceExposureEV = 0
+        recipe.subjectExposureEV = analysis.personMask?.isValid == true
+            ? min(recipe.subjectExposureEV, 0.16)
+            : 0
+        recipe.skinTextureProtection = max(recipe.skinTextureProtection, 0.72)
+        recipe.noiseReductionAmount = min(recipe.noiseReductionAmount, 0.025)
+        recipe.sharpeningAmount = min(recipe.sharpeningAmount, 0.085)
+        recipe.localContrastAmount = min(recipe.localContrastAmount, 0.07)
+        recipe.hsl.orangeLuminance = 0
+        recipe.hsl.orangeSaturation = min(max(recipe.hsl.orangeSaturation, -0.02), 0.02)
+
+        actions.append(
+            PhotographyAction(
+                title: "执行最高优先级人物保护",
+                reason: "禁止人脸专属提亮、几何变形、生成式修复和磨皮；只允许整个人物与环境的摄影光影关系调整，并保留真实皮肤纹理。"
+            )
+        )
+    }
+
+    private func treatmentPlan(
+        analysis: PhotoAnalysis,
+        strategy: SceneStrategy,
+        context: PhotographyContext,
+        recipe: AutomaticEditingRecipe
+    ) -> PhotographyTreatmentPlan {
+        var regions = [
+            RegionalTreatment(
+                region: .global,
+                objective: "完成曝光、动态范围、白平衡、曲线和场景化色彩关系的整体制作。"
+            )
+        ]
+
+        if analysis.skyMask?.isValid == true,
+           abs(recipe.skyExposureEV) > 0.001
+                || recipe.skyHighlightAmount < 0.999
+                || abs(recipe.skySaturation - 1) > 0.001 {
+            regions.append(RegionalTreatment(
+                region: .sky,
+                objective: "只在可靠天空蒙版内恢复高光、云层和色彩层次。"
+            ))
+        }
+        if analysis.faceCount > 0, analysis.personMask?.isValid == true {
+            regions.append(RegionalTreatment(
+                region: .person,
+                objective: "以整个人物蒙版协调人物与环境明暗，不单独改脸、不改变外貌。"
+            ))
+            if recipe.backgroundSeparation > 0.001 {
+                regions.append(RegionalTreatment(
+                    region: .background,
+                    objective: "在人物外区域建立空间层次，不对人物区域做变相美颜。"
+                ))
+            }
+        } else if analysis.salientSubjectMask?.isValid == true {
+            regions.append(RegionalTreatment(
+                region: .subject,
+                objective: "围绕显著主体进行克制的局部光影与空间层次调整。"
+            ))
+        }
+
+        let lighting = context.lightingConditions.map(\.rawValue).joined(separator: ",")
+        return PhotographyTreatmentPlan(
+            finalLook: intent(for: strategy),
+            lightingDesign: "\(context.lightDirection.rawValue) · \(lighting.isEmpty ? "unclassified" : lighting)",
+            regionalTreatments: regions,
+            portraitProtection: analysis.faceCount > 0 ? .strict : .inactive
         )
     }
 
@@ -107,7 +192,6 @@ final class PhotographyDecisionEngine {
             recipe.colorGradeIntensity = min(recipe.colorGradeIntensity, 0.24)
         case .commercialPortrait, .environmentalPortrait:
             recipe.skinTextureProtection = max(recipe.skinTextureProtection, 0.68)
-            recipe.faceExposureEV = max(recipe.faceExposureEV, min(0.2, max(0, -(analysis.faceToBackgroundLuminanceDelta ?? 0)) * 0.75))
             recipe.shadowCoolAmount = min(recipe.shadowCoolAmount, 0.055)
             recipe.sharpeningAmount = min(recipe.sharpeningAmount, 0.1)
             recipe.localContrastAmount = min(recipe.localContrastAmount, 0.09)
@@ -616,11 +700,9 @@ final class PhotographyDecisionEngine {
                 recipe.subjectExposureEV = analysis.personMask == nil
                     ? 0.0
                     : min(max(correction * 0.36, 0.03), 0.09)
-                recipe.faceExposureEV = correction
             } else if analysis.faceAverageLuminance == nil,
                       analysis.averageLuminance < 0.4 {
                 recipe.subjectExposureEV = analysis.personMask == nil ? 0.0 : 0.04
-                recipe.faceExposureEV = 0.08
             }
             actions.append(
                 PhotographyAction(
@@ -640,12 +722,10 @@ final class PhotographyDecisionEngine {
             recipe.skinTextureProtection = 0.62
             let faceLuminance = analysis.faceAverageLuminance ?? analysis.averageLuminance
             let backgroundLuminance = analysis.backgroundAverageLuminance ?? analysis.averageLuminance
-            let faceDeficit = max(0, 0.48 - faceLuminance)
             let backgroundSeparation = max(0, backgroundLuminance - faceLuminance)
             recipe.subjectExposureEV = analysis.personMask == nil
                 ? 0.0
                 : min(max(0.1 + (backgroundSeparation * 0.42), 0.1), 0.26)
-            recipe.faceExposureEV = min(max(0.16 + (faceDeficit * 0.9), 0.16), 0.4)
             recipe.toneCurveAmount = max(recipe.toneCurveAmount, 0.48)
             recipe.toneCurveStyle = .softHighlights
             recipe.colorGradeIntensity = max(recipe.colorGradeIntensity, 0.42)
@@ -653,8 +733,8 @@ final class PhotographyDecisionEngine {
             recipe.shadowCoolAmount = max(recipe.shadowCoolAmount, 0.12)
             actions.append(
                 PhotographyAction(
-                    title: "保天空并单独补亮人物",
-                    reason: "分区测光确认人脸暗于背景；根据人脸亮度差动态计算补光，同时压住背景高光。"
+                    title: "保天空并协调人物与环境光比",
+                    reason: "分区测光确认人物暗于背景；只在可靠人物蒙版内调整整个人物，同时压住背景高光，不单独提亮人脸。"
                 )
             )
         case .landscape:
@@ -942,5 +1022,22 @@ final class PhotographyDecisionEngine {
         }
     }
 
+}
+
+/// 系统级摄影总监入口。上层管线只向总监提交分析与问题证据，
+/// 总监返回已经过人物保护硬约束的、可直接执行的摄影制作决策。
+final class PhotographyDirector {
+    private let decisionEngine: PhotographyDecisionEngine
+
+    init(decisionEngine: PhotographyDecisionEngine = PhotographyDecisionEngine()) {
+        self.decisionEngine = decisionEngine
+    }
+
+    func direct(
+        analysis: PhotoAnalysis,
+        problems: PhotoProblemReport
+    ) -> PhotographyDecision {
+        decisionEngine.makeDecision(for: analysis, problems: problems)
+    }
 }
 

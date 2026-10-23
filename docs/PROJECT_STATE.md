@@ -10,7 +10,7 @@
 ## Effective capture-to-output chain
 
 `CameraManager` → `CameraViewModel` → `PhotoProcessingPipeline` → `PhotoAnalyzer` →
-`PhotoProblemDetector` → `PhotographyDecisionEngine` → `CoreImageRenderer` →
+`PhotoProblemDetector` → `PhotographyDirector`/`PhotographyDecisionEngine` → `CoreImageRenderer` →
 `QualityCheckService` → diagnostics/stage previews → user-confirmed save.
 
 Every renderer parameter listed in the recipe is connected to a pixel operation. Preview and
@@ -30,6 +30,12 @@ JPEG export share `CoreImageRenderer.processImage`; the original is never overwr
   `SemanticScene` fallback; generic `outdoor` no longer masks coast or architecture evidence.
 - Analysis, initial recipe, renderer input and final post-quality recipe now have one continuous
   log trace. The diagnostics recipe is the recipe that actually produced the final JPEG.
+- The director now emits an auditable final-look, lighting and regional-treatment plan while the
+  connected recipe remains the executable pixel contract.
+- Human protection is a final decision guardrail: face-only relighting is disabled, person
+  relighting requires a valid person mask, and portrait detail/color changes are bounded.
+- Quality control now compares face-region luminance/chroma and texture-energy changes against the
+  rest of the image; unsafe portrait edits enter one bounded correction or are rejected.
 
 ## 2026-10-22 scene-adaptation repair (working tree)
 
@@ -54,4 +60,9 @@ JPEG export share `CoreImageRenderer.processImage`; the original is never overwr
 - Quality validation permits one bounded issue-specific correction, not iterative aesthetic search.
 - The repository has finished references but no committed matching unedited originals. Recovered
   user attachments are App screenshots, so end-to-end photographic acceptance remains a phone test.
+- There is no generative retouch model in the app. Current output is deterministic on-device Core
+  Image/Vision/Core ML processing; non-person AI restoration remains a future, separately gated phase.
+
+The 2026-10-24 product-position audit and staged implementation plan are recorded in
+`docs/AI_AUTONOMOUS_PHOTOGRAPHER_AUDIT.md`.
 

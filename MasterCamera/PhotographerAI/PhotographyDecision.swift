@@ -6,6 +6,7 @@ struct PhotographyDecision: Equatable, Sendable {
     let aestheticTarget: AestheticTarget
     let intent: String
     let actions: [PhotographyAction]
+    let treatmentPlan: PhotographyTreatmentPlan
     let recipe: AutomaticEditingRecipe
 
     var summaryText: String {
@@ -20,9 +21,57 @@ struct PhotographyDecision: Equatable, Sendable {
             aestheticTarget: aestheticTarget,
             intent: intent,
             actions: actions,
+            treatmentPlan: treatmentPlan,
             recipe: recipe
         )
     }
+}
+
+/// 摄影总监给渲染链路的可审计制作计划。它不是提示词或独立 JSON：
+/// `recipe` 仍是实际执行的像素参数，而本计划记录每个参数服务的摄影目标和硬保护边界。
+struct PhotographyTreatmentPlan: Equatable, Sendable {
+    let finalLook: String
+    let lightingDesign: String
+    let regionalTreatments: [RegionalTreatment]
+    let portraitProtection: PortraitProtectionPolicy
+}
+
+struct RegionalTreatment: Equatable, Sendable {
+    let region: TreatmentRegion
+    let objective: String
+}
+
+enum TreatmentRegion: String, Equatable, Sendable {
+    case global
+    case sky
+    case person
+    case background
+    case subject
+}
+
+/// 人物保护是决策层的硬约束，不由某个风格或场景配方覆盖。
+struct PortraitProtectionPolicy: Equatable, Sendable {
+    let isActive: Bool
+    let allowsFaceSpecificRelighting: Bool
+    let allowsGeometryChanges: Bool
+    let allowsGenerativeChanges: Bool
+    let preservesSkinTexture: Bool
+
+    static let inactive = PortraitProtectionPolicy(
+        isActive: false,
+        allowsFaceSpecificRelighting: false,
+        allowsGeometryChanges: false,
+        allowsGenerativeChanges: false,
+        preservesSkinTexture: false
+    )
+
+    static let strict = PortraitProtectionPolicy(
+        isActive: true,
+        allowsFaceSpecificRelighting: false,
+        allowsGeometryChanges: false,
+        allowsGenerativeChanges: false,
+        preservesSkinTexture: true
+    )
 }
 
 enum AestheticTarget: String, Equatable, Sendable {
