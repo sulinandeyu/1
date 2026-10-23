@@ -9,6 +9,9 @@ enum PhotoLibraryManager {
         guard !photo.originalImageData.isEmpty, !photo.editedImageData.isEmpty else {
             throw PhotoLibraryError.invalidImageData
         }
+        guard photo.hasCompletedProcessing else {
+            throw PhotoLibraryError.processingIncomplete
+        }
 
         let status = PHPhotoLibrary.authorizationStatus(for: .addOnly)
         let authorized: Bool
@@ -53,12 +56,15 @@ enum PhotoLibraryManager {
 
 enum PhotoLibraryError: LocalizedError {
     case invalidImageData
+    case processingIncomplete
     case permissionDenied
 
     var errorDescription: String? {
         switch self {
         case .invalidImageData:
             return "无法解码拍摄的图片。"
+        case .processingIncomplete:
+            return "AI 后期尚未完成或未通过质量检查，已阻止把原图保存为 AI 成片。"
         case .permissionDenied:
             return "需要相册写入权限才能保存照片。"
         }

@@ -82,6 +82,18 @@ final class QualityCheckService {
             issues.append(.possibleRenderFallback)
         }
 
+        let processingImpact = compareProcessingImpact(
+            original: originalImage,
+            edited: editedImage
+        )
+        let hasPortrait = sourceAnalysis?.faceRegions.isEmpty == false
+        let minimumMeanDifference: Float = hasPortrait ? 0.004 : 0.006
+        let minimumChangedPixelRatio: Float = hasPortrait ? 0.12 : 0.20
+        if processingImpact.normalizedMeanAbsoluteRGBDifference < minimumMeanDifference,
+           processingImpact.changedPixelRatio < minimumChangedPixelRatio {
+            issues.append(.insufficientProcessingImpact)
+        }
+
         let originalCanvas = try canvasStatistics(for: originalImage)
         let editedCanvas = try canvasStatistics(for: editedImage)
         if editedCanvas.nearlyBlackTileRatio > 0.45,
@@ -116,7 +128,8 @@ final class QualityCheckService {
             status: status(for: issues),
             issues: issues,
             measuredAnalysis: editedAnalysis,
-            fallbackApplied: false
+            fallbackApplied: false,
+            processingImpact: processingImpact
         )
     }
 
@@ -129,6 +142,7 @@ final class QualityCheckService {
             .tooDark,
             .tooBright,
             .possibleRenderFallback,
+            .insufficientProcessingImpact,
             .canvasMismatch,
             .abnormalBlackCoverage,
             .excessiveHighlightSpread,
@@ -145,6 +159,41 @@ final class QualityCheckService {
         }
 
         return .warning
+    }
+
+    private func compareProcessingImpact(
+        original: CIImage,
+        edited: CIImage
+    ) -> ProcessingImpactMetrics {
+        let width = 96
+        let height = max(1, Int((CGFloat(width) * original.extent.height / original.extent.width).rounded()))
+        let originalPixels = rgbaPixels(from: original, width: width, height: height)
+        let editedPixels = rgbaPixels(from: edited, width: width, height: height)
+        guard originalPixels.count == editedPixels.count, !originalPixels.isEmpty else {
+            return ProcessingImpactMetrics(
+                normalizedMeanAbsoluteRGBDifference: 0,
+                changedPixelRatio: 0
+            )
+        }
+
+        var totalDifference: Float = 0
+        var changedPixels = 0
+        for index in stride(from: 0, to: originalPixels.count, by: 4) {
+            let difference = (
+                abs(Float(originalPixels[index]) - Float(editedPixels[index]))
+                    + abs(Float(originalPixels[index + 1]) - Float(editedPixels[index + 1]))
+                    + abs(Float(originalPixels[index + 2]) - Float(editedPixels[index + 2]))
+            ) / (3 * 255)
+            totalDifference += difference
+            if difference > (3.0 / 255.0) {
+                changedPixels += 1
+            }
+        }
+        let pixelCount = Float(originalPixels.count / 4)
+        return ProcessingImpactMetrics(
+            normalizedMeanAbsoluteRGBDifference: totalDifference / pixelCount,
+            changedPixelRatio: Float(changedPixels) / pixelCount
+        )
     }
 
     private func portraitIntegrity(

@@ -254,23 +254,23 @@ final class CinematicColorGradingEngine {
 
         var output = image
         if recipe.shadowCoolAmount > 0.001 {
-            let amount = CGFloat(intensity * recipe.shadowCoolAmount * 0.72)
+            let amount = CGFloat(intensity * recipe.shadowCoolAmount)
             let cool = output.applyingFilter("CIColorMatrix", parameters: [
-                    "inputBiasVector": CIVector(x: -0.009 * amount, y: 0.002 * amount, z: 0.014 * amount, w: 0)
+                    "inputBiasVector": CIVector(x: -0.045 * amount, y: 0.008 * amount, z: 0.065 * amount, w: 0)
             ])
             output = blend(cool, over: output, mask: shadowMask)
         }
         if recipe.midtoneWarmAmount > 0.001 {
-            let amount = CGFloat(intensity * recipe.midtoneWarmAmount * 0.76)
+            let amount = CGFloat(intensity * recipe.midtoneWarmAmount)
             let warm = output.applyingFilter("CIColorMatrix", parameters: [
-                "inputBiasVector": CIVector(x: 0.018 * amount, y: 0.004 * amount, z: -0.013 * amount, w: 0)
+                "inputBiasVector": CIVector(x: 0.06 * amount, y: 0.012 * amount, z: -0.045 * amount, w: 0)
             ])
             output = blend(warm, over: output, mask: midtoneMask)
         }
         if recipe.highlightWarmAmount > 0.001 {
-            let amount = CGFloat(intensity * recipe.highlightWarmAmount * 0.78)
+            let amount = CGFloat(intensity * recipe.highlightWarmAmount)
             let warm = output.applyingFilter("CIColorMatrix", parameters: [
-                "inputBiasVector": CIVector(x: 0.022 * amount, y: 0.007 * amount, z: -0.015 * amount, w: 0)
+                "inputBiasVector": CIVector(x: 0.07 * amount, y: 0.018 * amount, z: -0.05 * amount, w: 0)
             ])
             output = blend(warm, over: output, mask: highlightMask)
         }

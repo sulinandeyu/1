@@ -29,7 +29,10 @@ struct CapturedPhoto: Identifiable, Equatable, Sendable {
         processingStagePreviews: [ProcessingStagePreview] = []
     ) {
         self.originalImageData = originalImageData
-        self.editedImageData = editedImageData ?? originalImageData
+        // A newly captured/imported photo has no AI result yet. Keeping this empty is
+        // intentional: copying the original bytes here made an unprocessed capture look
+        // like a valid edited deliverable to every downstream caller.
+        self.editedImageData = editedImageData ?? Data()
         self.capturedAt = capturedAt
         self.skinMask = skinMask
         self.analysis = analysis
@@ -46,7 +49,16 @@ struct CapturedPhoto: Identifiable, Equatable, Sendable {
     }
 
     var editedImage: UIImage? {
-        UIImage(data: editedImageData)
+        guard !editedImageData.isEmpty else { return nil }
+        return UIImage(data: editedImageData)
+    }
+
+    var hasCompletedProcessing: Bool {
+        guard let qualityCheck else { return false }
+        return !editedImageData.isEmpty
+            && analysis != nil
+            && decision != nil
+            && qualityCheck.status != .failed
     }
 
     var differenceImage: UIImage? {

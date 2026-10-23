@@ -74,7 +74,7 @@ final class PhotoProcessingPipeline {
         let totalDuration = ProcessInfo.processInfo.systemUptime - totalStart
         let finishingMemory = Self.memoryFootprint()
         AppLogger.imageEngine.info(
-            "处理完成：渲染=\(Self.milliseconds(renderDuration))ms，质检/回退=\(Self.milliseconds(qualityDuration))ms，总计=\(Self.milliseconds(totalDuration))ms，状态=\(finalEdit.qualityCheck.status.rawValue)，安全回退=\(finalEdit.qualityCheck.fallbackApplied)，最终配方=\(finalEdit.recipe.traceSummary, privacy: .public)"
+            "处理完成：渲染=\(Self.milliseconds(renderDuration))ms，质检/回退=\(Self.milliseconds(qualityDuration))ms，总计=\(Self.milliseconds(totalDuration))ms，状态=\(finalEdit.qualityCheck.status.rawValue)，安全回退=\(finalEdit.qualityCheck.fallbackApplied)，RGB_MAE=\(finalEdit.qualityCheck.processingImpact.normalizedMeanAbsoluteRGBDifference)，变化像素=\(finalEdit.qualityCheck.processingImpact.changedPixelRatio)，最终配方=\(finalEdit.recipe.traceSummary, privacy: .public)"
         )
 
         let stageRecords = [
@@ -221,12 +221,25 @@ final class PhotoProcessingPipeline {
         from original: AutomaticEditingRecipe,
         issues: [QualityIssue]
     ) -> AutomaticEditingRecipe {
-        if issues.contains(.canvasMismatch) || issues.contains(.possibleRenderFallback) {
+        if issues.contains(.canvasMismatch) {
             return .safeFallback
         }
 
         var recipe = original
         let set = Set(issues)
+
+        if !set.isDisjoint(with: [.possibleRenderFallback, .insufficientProcessingImpact]) {
+            // The first render completed but did not visibly move decoded pixels. Keep the
+            // scene recipe and strengthen only the photographic controls that are already
+            // selected instead of replacing it with one shared fallback preset.
+            recipe.toneCurveAmount = max(recipe.toneCurveAmount, 0.42)
+            recipe.localContrastAmount = max(recipe.localContrastAmount, 0.065)
+            recipe.vibrance = max(recipe.vibrance, 0.085)
+            recipe.contrast = max(recipe.contrast, 1.025)
+            recipe.shadowZoneExposureEV = max(recipe.shadowZoneExposureEV, 0.055)
+            recipe.highlightZoneExposureEV = min(recipe.highlightZoneExposureEV, -0.055)
+            recipe.luminanceMaskStrength = max(recipe.luminanceMaskStrength, 0.42)
+        }
 
         if !set.isDisjoint(with: [.tooDark, .crushedShadows, .abnormalBlackCoverage]) {
             recipe.exposureEV = max(recipe.exposureEV, 0.04)

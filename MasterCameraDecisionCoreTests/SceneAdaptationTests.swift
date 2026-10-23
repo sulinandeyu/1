@@ -113,6 +113,25 @@ final class SceneAdaptationTests: XCTestCase {
         XCTAssertNotEqual(autumnNightPath.recipe.hsl, warmBedroom.recipe.hsl)
     }
 
+    func testNightCountryRoadKeepsLandscapeFacetTreatment() {
+        let autumnNightPath = decision(for: fixture(
+            luminance: 0.139,
+            contrast: 0.424,
+            saturation: 0.534,
+            red: 0.159,
+            green: 0.138,
+            blue: 0.091,
+            labels: ["night", "trail", "tree", "outdoor"]
+        ))
+
+        XCTAssertEqual(autumnNightPath.sceneStrategy, .night)
+        XCTAssertEqual(autumnNightPath.context.style, .professionalLandscape)
+        XCTAssertTrue(autumnNightPath.context.sceneFacets.contains(.countryRoad))
+        XCTAssertTrue(autumnNightPath.context.sceneFacets.contains(.forest))
+        XCTAssertGreaterThan(autumnNightPath.recipe.hsl.yellowSaturation, -0.015)
+        XCTAssertGreaterThan(autumnNightPath.recipe.hsl.orangeSaturation, 0)
+    }
+
     private func decision(for analysis: PhotoAnalysis) -> PhotographyDecision {
         engine.makeDecision(for: analysis, problems: detector.detect(in: analysis))
     }

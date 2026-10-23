@@ -407,7 +407,7 @@ struct PhotographyContext: Equatable, Sendable {
             style = .interiorAtmosphere; reason = "室内空间与混合光决定观感，控制灯具高光并保留材质。"
         } else if facets.contains(.architecture) || facets.contains(.city) || facets.contains(.street) {
             style = .urbanArchitecture; reason = "城市结构、道路和点光源需要独立的高光与结构层次控制。"
-        } else if facets.contains(.nature) || facets.contains(.sky) || facets.contains(.water) || facets.contains(.mountain) {
+        } else if !facets.isDisjoint(with: [.nature, .sky, .water, .coast, .mountain, .forest, .countryRoad]) {
             style = .professionalLandscape; reason = "自然场景以天空、远近层次和可信色彩为主要约束。"
         } else if facets.contains(.stillLife) || facets.contains(.food) {
             style = .stillLife; reason = "静物需要保护材质、反光和主体颜色，避免统一风格覆盖。"

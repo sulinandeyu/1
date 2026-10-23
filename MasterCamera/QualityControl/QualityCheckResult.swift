@@ -5,6 +5,7 @@ struct QualityCheckResult: Equatable, Sendable {
     let issues: [QualityIssue]
     let measuredAnalysis: PhotoAnalysis
     let fallbackApplied: Bool
+    let processingImpact: ProcessingImpactMetrics
 
     var passed: Bool {
         status == .passed
@@ -25,9 +26,15 @@ struct QualityCheckResult: Equatable, Sendable {
             status: status,
             issues: issues,
             measuredAnalysis: measuredAnalysis,
-            fallbackApplied: true
+            fallbackApplied: true,
+            processingImpact: processingImpact
         )
     }
+}
+
+struct ProcessingImpactMetrics: Equatable, Sendable {
+    let normalizedMeanAbsoluteRGBDifference: Float
+    let changedPixelRatio: Float
 }
 
 enum QualityStatus: String, Equatable, Sendable {
@@ -60,6 +67,7 @@ enum QualityIssue: String, Equatable, Hashable, Sendable {
     case crushedShadows
     case oversaturated
     case possibleRenderFallback
+    case insufficientProcessingImpact
     case canvasMismatch
     case abnormalBlackCoverage
     case excessiveHighlightSpread
@@ -88,6 +96,8 @@ enum QualityIssue: String, Equatable, Hashable, Sendable {
             return "色彩过饱和"
         case .possibleRenderFallback:
             return "成片未变化"
+        case .insufficientProcessingImpact:
+            return "后期处理视觉影响过小"
         case .canvasMismatch:
             return "输出画布异常"
         case .abnormalBlackCoverage:
