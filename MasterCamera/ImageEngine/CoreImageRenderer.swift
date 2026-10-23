@@ -55,7 +55,7 @@ final class CoreImageRenderer {
         analysis: PhotoAnalysis? = nil
     ) throws -> Data {
         AppLogger.imageEngine.info(
-            "渲染器收到配方：\(recipe.traceSummary, privacy: .public)；局部蒙版 person=\(analysis?.personMask?.isValid == true)，subject=\(analysis?.salientSubjectMask?.isValid == true)，sky=\(analysis?.skyMask?.isValid == true)"
+            "渲染器收到配方：\(recipe.traceSummary, privacy: .public)；局部蒙版 person=\(analysis?.personMask?.isValid == true)，subject=\(analysis?.salientSubjectMask?.isValid == true)，sky=\(analysis?.skyMask?.isValid == true)，ground=\(analysis?.groundMask?.isValid == true)，vegetation=\(analysis?.vegetationMask?.isValid == true)，water=\(analysis?.waterMask?.isValid == true)，architecture=\(analysis?.architectureMask?.isValid == true)"
         )
         let result = try processImage(data: data, recipe: recipe, analysis: analysis)
         let finished = result.finalImage
@@ -277,6 +277,10 @@ final class CoreImageRenderer {
         if recipe.luminanceMaskStrength > 0.001 { modules.append("亮度蒙版高光/阴影") }
         if recipe.colorGradeIntensity > 0.001 { modules.append("阴影/中间调/高光电影分级") }
         if recipe.subjectExposureEV > 0.001 || recipe.faceExposureEV > 0.001 { modules.append("主体/人脸补光") }
+        if analysis?.groundMask?.isValid == true { modules.append("地面/道路蒙版") }
+        if analysis?.vegetationMask?.isValid == true { modules.append("植被蒙版") }
+        if analysis?.waterMask?.isValid == true { modules.append("水面蒙版") }
+        if analysis?.architectureMask?.isValid == true { modules.append("建筑蒙版") }
         if analysis?.skyMask != nil,
            recipe.skyExposureEV < -0.001 || recipe.skyHighlightAmount < 0.999 {
             modules.append("天空保护")

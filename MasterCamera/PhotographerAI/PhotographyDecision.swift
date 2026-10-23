@@ -47,6 +47,10 @@ enum TreatmentRegion: String, Equatable, Sendable {
     case person
     case background
     case subject
+    case ground
+    case vegetation
+    case water
+    case architecture
 }
 
 /// 人物保护是决策层的硬约束，不由某个风格或场景配方覆盖。

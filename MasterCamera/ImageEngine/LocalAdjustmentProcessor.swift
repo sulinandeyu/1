@@ -9,8 +9,13 @@ final class LocalAdjustmentProcessor {
         analysis: PhotoAnalysis?,
         recipe: AutomaticEditingRecipe
     ) -> CIImage {
-        let subjectAdjusted = applySubjectRelighting(
+        let regionAdjusted = applySemanticRegions(
             to: image,
+            analysis: analysis,
+            recipe: recipe
+        )
+        let subjectAdjusted = applySubjectRelighting(
+            to: regionAdjusted,
             analysis: analysis,
             recipe: recipe
         )
@@ -20,6 +25,74 @@ final class LocalAdjustmentProcessor {
             analysis: analysis,
             recipe: recipe
         )
+    }
+
+    private func applySemanticRegions(
+        to image: CIImage,
+        analysis: PhotoAnalysis?,
+        recipe: AutomaticEditingRecipe
+    ) -> CIImage {
+        guard let analysis else { return image }
+        // Region masks from a general scene model may overlap hair or skin. If a photo
+        // contains a face but Vision cannot provide a reliable whole-person exclusion
+        // mask, disable these local scene edits instead of risking a disguised beauty edit.
+        if analysis.faceCount > 0, analysis.personMask?.isValid != true {
+            return image
+        }
+        let facets = Set(analysis.photographyContext.sceneFacets)
+        var output = image
+
+        if !facets.isDisjoint(with: [.forest, .countryRoad, .nature]),
+           let mask = protectedRegionMask(from: analysis.vegetationMask, analysis: analysis, extent: image.extent) {
+            let saturationDelta = min(0.10, max(-0.08,
+                (recipe.hsl.greenSaturation + recipe.hsl.yellowSaturation) * 0.7
+            ))
+            output = blendColorControls(
+                image: output,
+                saturation: 1 + saturationDelta,
+                brightness: max(-0.01, min(0.012, recipe.hsl.yellowLuminance * 0.18)),
+                contrast: 1 + min(0.035, recipe.localContrastAmount * 0.22),
+                mask: mask
+            )
+        }
+
+        if !facets.isDisjoint(with: [.water, .coast]),
+           let mask = protectedRegionMask(from: analysis.waterMask, analysis: analysis, extent: image.extent) {
+            let saturationDelta = min(0.08, max(-0.08,
+                (recipe.hsl.cyanSaturation + recipe.hsl.blueSaturation) * 0.65
+            ))
+            output = blendColorControls(
+                image: output,
+                saturation: 1 + saturationDelta,
+                brightness: max(-0.012, min(0.008, recipe.hsl.blueLuminance * 0.16)),
+                contrast: 1 + min(0.03, recipe.localContrastAmount * 0.18),
+                mask: mask
+            )
+        }
+
+        if !facets.isDisjoint(with: [.architecture, .city, .street, .interior, .workspace]),
+           let mask = protectedRegionMask(from: analysis.architectureMask, analysis: analysis, extent: image.extent) {
+            output = blendColorControls(
+                image: output,
+                saturation: 1,
+                brightness: 0,
+                contrast: 1 + min(0.04, recipe.localContrastAmount * 0.28),
+                mask: mask
+            )
+        }
+
+        if analysis.groundMask?.isValid == true,
+           let mask = protectedRegionMask(from: analysis.groundMask, analysis: analysis, extent: image.extent) {
+            let adjusted = applyExposure(
+                to: output.applyingFilter("CIColorControls", parameters: [
+                    kCIInputContrastKey: 1 + min(0.025, recipe.localContrastAmount * 0.16)
+                ]),
+                ev: min(0.055, recipe.shadowZoneExposureEV * 0.28)
+            )
+            output = blend(adjusted, over: output, mask: mask)
+        }
+
+        return output.cropped(to: image.extent)
     }
 
     private func applySubjectRelighting(
@@ -120,6 +193,49 @@ final class LocalAdjustmentProcessor {
         blur.setValue(scaled.clampedToExtent(), forKey: kCIInputImageKey)
         blur.setValue(radius, forKey: kCIInputRadiusKey)
         return blur.outputImage?.cropped(to: extent) ?? scaled.cropped(to: extent)
+    }
+
+    private func protectedRegionMask(
+        from photoMask: NormalizedPhotoMask?,
+        analysis: PhotoAnalysis,
+        extent: CGRect
+    ) -> CIImage? {
+        guard let photoMask, var mask = makePixelMask(from: photoMask, extent: extent) else {
+            return nil
+        }
+        if let person = analysis.personMask,
+           let personMask = makePixelMask(from: person, extent: extent) {
+            mask = multiply(mask, by: personMask.applyingFilter("CIColorInvert"))
+        }
+        return mask.cropped(to: extent)
+    }
+
+    private func blendColorControls(
+        image: CIImage,
+        saturation: Float,
+        brightness: Float,
+        contrast: Float,
+        mask: CIImage
+    ) -> CIImage {
+        let adjusted = image.applyingFilter("CIColorControls", parameters: [
+            kCIInputSaturationKey: saturation,
+            kCIInputBrightnessKey: brightness,
+            kCIInputContrastKey: contrast
+        ])
+        return blend(adjusted, over: image, mask: mask)
+    }
+
+    private func blend(_ foreground: CIImage, over background: CIImage, mask: CIImage) -> CIImage {
+        foreground.applyingFilter("CIBlendWithMask", parameters: [
+            kCIInputBackgroundImageKey: background,
+            kCIInputMaskImageKey: mask
+        ]).cropped(to: background.extent)
+    }
+
+    private func multiply(_ foreground: CIImage, by background: CIImage) -> CIImage {
+        foreground.applyingFilter("CIMultiplyCompositing", parameters: [
+            kCIInputBackgroundImageKey: background
+        ]).cropped(to: foreground.extent)
     }
 
     private func makeMask(

@@ -132,6 +132,33 @@ final class PhotographyDecisionEngine {
                 objective: "只在可靠天空蒙版内恢复高光、云层和色彩层次。"
             ))
         }
+        if analysis.groundMask?.isValid == true {
+            regions.append(RegionalTreatment(
+                region: .ground,
+                objective: "在道路与地面蒙版内恢复可用阴影并建立材质层次。"
+            ))
+        }
+        if analysis.vegetationMask?.isValid == true,
+           !Set(context.sceneFacets).isDisjoint(with: [.forest, .countryRoad, .nature]) {
+            regions.append(RegionalTreatment(
+                region: .vegetation,
+                objective: "在植被蒙版内按当前配方调整绿黄关系，不用全图增绿或增黄。"
+            ))
+        }
+        if analysis.waterMask?.isValid == true,
+           !Set(context.sceneFacets).isDisjoint(with: [.water, .coast]) {
+            regions.append(RegionalTreatment(
+                region: .water,
+                objective: "在水面蒙版内控制色彩与局部对比，保留真实反射。"
+            ))
+        }
+        if analysis.architectureMask?.isValid == true,
+           !Set(context.sceneFacets).isDisjoint(with: [.architecture, .city, .street, .interior, .workspace]) {
+            regions.append(RegionalTreatment(
+                region: .architecture,
+                objective: "在建筑与室内结构蒙版内增强线条和材质，不影响人物。"
+            ))
+        }
         if analysis.faceCount > 0, analysis.personMask?.isValid == true {
             regions.append(RegionalTreatment(
                 region: .person,

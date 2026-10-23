@@ -30,6 +30,10 @@ struct PhotoAnalysis: Equatable, Sendable {
     let skinMask: NormalizedPhotoMask?
     let skyMask: NormalizedPhotoMask?
     let skyCoverage: Float
+    let groundMask: NormalizedPhotoMask?
+    let vegetationMask: NormalizedPhotoMask?
+    let waterMask: NormalizedPhotoMask?
+    let architectureMask: NormalizedPhotoMask?
     let semanticLabels: [SceneLabel]
 
     var exposureProfile: ExposureProfile {
@@ -162,7 +166,7 @@ struct PhotoAnalysis: Equatable, Sendable {
         }.joined(separator: ",")
         let context = photographyContext
         return String(
-            format: "semantic=%@ labels=[%@] facets=[%@] lighting=[%@] style=%@ luma=%.3f contrast=%.3f shadow=%.3f highlight=%.3f saturation=%.3f rgb=%.3f/%.3f/%.3f masks=person:%@,subject:%@,skin:%@,sky:%@(%.3f)",
+            format: "semantic=%@ labels=[%@] facets=[%@] lighting=[%@] style=%@ luma=%.3f contrast=%.3f shadow=%.3f highlight=%.3f saturation=%.3f rgb=%.3f/%.3f/%.3f masks=person:%@,subject:%@,skin:%@,sky:%@(%.3f),ground:%@,vegetation:%@,water:%@,architecture:%@",
             semanticScene.rawValue,
             labels,
             context.sceneFacets.map(\.rawValue).joined(separator: ","),
@@ -180,7 +184,11 @@ struct PhotoAnalysis: Equatable, Sendable {
             salientSubjectMask?.isValid == true ? "yes" : "no",
             skinMask?.isValid == true ? "yes" : "no",
             skyMask?.isValid == true ? "yes" : "no",
-            skyCoverage
+            skyCoverage,
+            groundMask?.isValid == true ? "yes" : "no",
+            vegetationMask?.isValid == true ? "yes" : "no",
+            waterMask?.isValid == true ? "yes" : "no",
+            architectureMask?.isValid == true ? "yes" : "no"
         )
     }
 
@@ -213,6 +221,10 @@ struct PhotoAnalysis: Equatable, Sendable {
         skinMask: nil,
         skyMask: nil,
         skyCoverage: 0,
+        groundMask: nil,
+        vegetationMask: nil,
+        waterMask: nil,
+        architectureMask: nil,
         semanticLabels: []
     )
 }

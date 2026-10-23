@@ -88,6 +88,10 @@ final class PhotoAnalyzer {
             skinMask: capturedSkinMask?.isValid == true ? capturedSkinMask : nil,
             skyMask: skySegmentation?.mask,
             skyCoverage: skySegmentation?.coverage ?? 0,
+            groundMask: skySegmentation?.groundMask,
+            vegetationMask: skySegmentation?.vegetationMask,
+            waterMask: skySegmentation?.waterMask,
+            architectureMask: skySegmentation?.architectureMask,
             semanticLabels: semanticLabels
         )
     }

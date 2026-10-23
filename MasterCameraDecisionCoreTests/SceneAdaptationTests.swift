@@ -114,6 +114,7 @@ final class SceneAdaptationTests: XCTestCase {
     }
 
     func testNightCountryRoadKeepsLandscapeFacetTreatment() {
+        let regionMask = NormalizedPhotoMask(width: 1, height: 1, pixels: Data([255]))
         let autumnNightPath = decision(for: fixture(
             luminance: 0.139,
             contrast: 0.424,
@@ -121,7 +122,9 @@ final class SceneAdaptationTests: XCTestCase {
             red: 0.159,
             green: 0.138,
             blue: 0.091,
-            labels: ["night", "trail", "tree", "outdoor"]
+            labels: ["night", "trail", "tree", "outdoor"],
+            groundMask: regionMask,
+            vegetationMask: regionMask
         ))
 
         XCTAssertEqual(autumnNightPath.sceneStrategy, .night)
@@ -130,6 +133,8 @@ final class SceneAdaptationTests: XCTestCase {
         XCTAssertTrue(autumnNightPath.context.sceneFacets.contains(.forest))
         XCTAssertGreaterThan(autumnNightPath.recipe.hsl.yellowSaturation, -0.015)
         XCTAssertGreaterThan(autumnNightPath.recipe.hsl.orangeSaturation, 0)
+        XCTAssertTrue(autumnNightPath.treatmentPlan.regionalTreatments.contains { $0.region == .ground })
+        XCTAssertTrue(autumnNightPath.treatmentPlan.regionalTreatments.contains { $0.region == .vegetation })
     }
 
     private func decision(for analysis: PhotoAnalysis) -> PhotographyDecision {
@@ -149,7 +154,11 @@ final class SceneAdaptationTests: XCTestCase {
         faceCount: Int = 0,
         faceLuminance: Float? = nil,
         backgroundLuminance: Float? = nil,
-        personMask: NormalizedPhotoMask? = nil
+        personMask: NormalizedPhotoMask? = nil,
+        groundMask: NormalizedPhotoMask? = nil,
+        vegetationMask: NormalizedPhotoMask? = nil,
+        waterMask: NormalizedPhotoMask? = nil,
+        architectureMask: NormalizedPhotoMask? = nil
     ) -> PhotoAnalysis {
         PhotoAnalysis(
             averageLuminance: luminance,
@@ -182,6 +191,10 @@ final class SceneAdaptationTests: XCTestCase {
             skinMask: nil,
             skyMask: skyMask,
             skyCoverage: skyCoverage ?? (skyMask == nil ? 0 : 0.38),
+            groundMask: groundMask,
+            vegetationMask: vegetationMask,
+            waterMask: waterMask,
+            architectureMask: architectureMask,
             semanticLabels: labels.map { SceneLabel(identifier: $0, confidence: 0.8) }
         )
     }
