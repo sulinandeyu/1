@@ -145,3 +145,15 @@ architecture and diverse people; report improvements and regressions by scene, n
   because it is a richer prompt.
 - Final photographic acceptance still requires original camera files and iPhone/TestFlight visual
   review; reference images alone cannot establish the before/after result.
+
+## Phase 1 validation record
+
+- Seven supplied real reference JPEGs were decoded locally and measured for luminance, shadow
+  coverage, saturation and RGB balance. No image was uploaded or committed to the repository.
+- Decision-core contracts passed on macOS in GitHub Actions `iOS Build #39`, including independent
+  night-path/workspace plans and strict portrait protection.
+- The full iOS Simulator build passed in the same run at commit `4feb64c`.
+- Pixel-level aesthetic acceptance is intentionally not marked complete: the supplied files are
+  finished references, not unedited MasterCamera inputs, and the Windows host cannot execute the
+  Core Image iOS pipeline. That acceptance requires a new TestFlight build plus matched original
+  files captured/imported on device.
