@@ -62,6 +62,14 @@ struct PhotoDiagnosticSection: Identifiable, Equatable, Sendable {
                 ),
                 PhotoDiagnosticItem(label: "空间光比", value: analysis.spatialLuminanceVariance.percentText),
                 PhotoDiagnosticItem(label: "色彩倾向", value: analysis.colorCast.title),
+                PhotoDiagnosticItem(
+                    label: "场景识别状态",
+                    value: "\(analysis.sceneRecognitionDiagnostics.status.rawValue) · 最高置信度 \(analysis.sceneRecognitionDiagnostics.topConfidence.percentText) · \(analysis.sceneRecognitionDiagnostics.reason ?? "可靠识别")"
+                ),
+                PhotoDiagnosticItem(
+                    label: "局部分割状态",
+                    value: "\(analysis.segmentationDiagnostics.status.rawValue) · \(analysis.segmentationDiagnostics.reason ?? "模型输出包含可用区域")"
+                ),
                 PhotoDiagnosticItem(label: "人脸", value: analysis.faceCount.faceCountText),
                 PhotoDiagnosticItem(
                     label: "人脸测光",
@@ -83,6 +91,17 @@ struct PhotoDiagnosticSection: Identifiable, Equatable, Sendable {
                     value: analysis.skyMask == nil
                         ? "未检测到"
                         : "\(analysis.skyMask.maskSummary) · 占画面 \(analysis.skyCoverage.percentText)"
+                ),
+                PhotoDiagnosticItem(
+                    label: "区域覆盖率",
+                    value: String(
+                        format: "天空 %.1f%% · 地面 %.1f%% · 植被 %.1f%% · 水面 %.1f%% · 建筑 %.1f%%",
+                        analysis.segmentationDiagnostics.skyCoverage * 100,
+                        analysis.segmentationDiagnostics.groundCoverage * 100,
+                        analysis.segmentationDiagnostics.vegetationCoverage * 100,
+                        analysis.segmentationDiagnostics.waterCoverage * 100,
+                        analysis.segmentationDiagnostics.architectureCoverage * 100
+                    )
                 ),
                 PhotoDiagnosticItem(label: "语义标签", value: analysis.semanticLabels.labelSummary)
             ]
@@ -349,6 +368,10 @@ struct PhotoDiagnosticSection: Identifiable, Equatable, Sendable {
                 PhotoDiagnosticItem(
                     label: "执行模块",
                     value: diagnostics.executedModules.joined(separator: " → ")
+                ),
+                PhotoDiagnosticItem(
+                    label: "局部执行回执",
+                    value: diagnostics.regionalExecutionDetails.joined(separator: "；")
                 ),
                 PhotoDiagnosticItem(
                     label: "降级原因",

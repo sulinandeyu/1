@@ -35,6 +35,8 @@ struct PhotoAnalysis: Equatable, Sendable {
     let waterMask: NormalizedPhotoMask?
     let architectureMask: NormalizedPhotoMask?
     let semanticLabels: [SceneLabel]
+    var sceneRecognitionDiagnostics: SceneRecognitionDiagnostics = .notEvaluated
+    var segmentationDiagnostics: SceneSegmentationDiagnostics = .notEvaluated
 
     var exposureProfile: ExposureProfile {
         if averageLuminance < 0.32 {
@@ -166,8 +168,11 @@ struct PhotoAnalysis: Equatable, Sendable {
         }.joined(separator: ",")
         let context = photographyContext
         return String(
-            format: "semantic=%@ labels=[%@] facets=[%@] lighting=[%@] style=%@ luma=%.3f contrast=%.3f shadow=%.3f highlight=%.3f saturation=%.3f rgb=%.3f/%.3f/%.3f masks=person:%@,subject:%@,skin:%@,sky:%@(%.3f),ground:%@,vegetation:%@,water:%@,architecture:%@",
+            format: "semantic=%@ recognition=%@/%.3f segmentation=%@ labels=[%@] facets=[%@] lighting=[%@] style=%@ luma=%.3f contrast=%.3f shadow=%.3f highlight=%.3f saturation=%.3f rgb=%.3f/%.3f/%.3f masks=person:%@,subject:%@,skin:%@,sky:%@(%.3f),ground:%@,vegetation:%@,water:%@,architecture:%@",
             semanticScene.rawValue,
+            sceneRecognitionDiagnostics.status.rawValue,
+            sceneRecognitionDiagnostics.topConfidence,
+            segmentationDiagnostics.status.rawValue,
             labels,
             context.sceneFacets.map(\.rawValue).joined(separator: ","),
             context.lightingConditions.map(\.rawValue).joined(separator: ","),
@@ -237,11 +242,67 @@ struct NormalizedPhotoMask: Equatable, Sendable {
     var isValid: Bool {
         width > 0 && height > 0 && pixels.count == width * height
     }
+
+    var activeCoverage: Float {
+        guard isValid, !pixels.isEmpty else { return 0 }
+        let active = pixels.reduce(into: 0) { count, value in
+            if value >= 32 { count += 1 }
+        }
+        return Float(active) / Float(pixels.count)
+    }
 }
 
 struct SceneLabel: Equatable, Sendable {
     let identifier: String
     let confidence: Float
+}
+
+enum SceneRecognitionStatus: String, Equatable, Sendable {
+    case recognized
+    case uncertain
+    case failed
+    case notEvaluated
+}
+
+struct SceneRecognitionDiagnostics: Equatable, Sendable {
+    let status: SceneRecognitionStatus
+    let topConfidence: Float
+    let acceptedLabelCount: Int
+    let reason: String?
+
+    static let notEvaluated = SceneRecognitionDiagnostics(
+        status: .notEvaluated,
+        topConfidence: 0,
+        acceptedLabelCount: 0,
+        reason: "未请求场景识别"
+    )
+}
+
+enum SceneSegmentationStatus: String, Equatable, Sendable {
+    case available
+    case noUsableRegion
+    case failed
+    case notEvaluated
+}
+
+struct SceneSegmentationDiagnostics: Equatable, Sendable {
+    let status: SceneSegmentationStatus
+    let reason: String?
+    let skyCoverage: Float
+    let groundCoverage: Float
+    let vegetationCoverage: Float
+    let waterCoverage: Float
+    let architectureCoverage: Float
+
+    static let notEvaluated = SceneSegmentationDiagnostics(
+        status: .notEvaluated,
+        reason: "未请求场景分割",
+        skyCoverage: 0,
+        groundCoverage: 0,
+        vegetationCoverage: 0,
+        waterCoverage: 0,
+        architectureCoverage: 0
+    )
 }
 
 enum SemanticScene: String, Equatable, Sendable {

@@ -10,14 +10,24 @@ final class SkyAdjustmentProcessor {
         recipe: AutomaticEditingRecipe
     ) -> CIImage {
         guard
+            analysis?.faceCount == 0 || analysis?.personMask?.isValid == true,
             let skyMask = analysis?.skyMask,
             skyMask.isValid,
+            skyMask.activeCoverage >= 0.004,
+            skyMask.activeCoverage <= 0.86,
             abs(recipe.skyExposureEV) > 0.001
                 || recipe.skyHighlightAmount < 0.999
                 || abs(recipe.skySaturation - 1.0) > 0.001,
-            let mask = makeMask(from: skyMask, extent: image.extent)
+            var mask = makeMask(from: skyMask, extent: image.extent)
         else {
             return image
+        }
+
+        if let personMask = analysis?.personMask,
+           let person = makeMask(from: personMask, extent: image.extent) {
+            mask = mask.applyingFilter("CIMultiplyCompositing", parameters: [
+                kCIInputBackgroundImageKey: person.applyingFilter("CIColorInvert")
+            ])
         }
 
         let exposed = applyExposure(to: image, amount: recipe.skyExposureEV)

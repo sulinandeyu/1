@@ -277,14 +277,8 @@ final class CoreImageRenderer {
         if recipe.luminanceMaskStrength > 0.001 { modules.append("亮度蒙版高光/阴影") }
         if recipe.colorGradeIntensity > 0.001 { modules.append("阴影/中间调/高光电影分级") }
         if recipe.subjectExposureEV > 0.001 || recipe.faceExposureEV > 0.001 { modules.append("主体/人脸补光") }
-        if analysis?.groundMask?.isValid == true { modules.append("地面/道路蒙版") }
-        if analysis?.vegetationMask?.isValid == true { modules.append("植被蒙版") }
-        if analysis?.waterMask?.isValid == true { modules.append("水面蒙版") }
-        if analysis?.architectureMask?.isValid == true { modules.append("建筑蒙版") }
-        if analysis?.skyMask != nil,
-           recipe.skyExposureEV < -0.001 || recipe.skyHighlightAmount < 0.999 {
-            modules.append("天空保护")
-        }
+        modules.append(contentsOf: regionalExecutionDetails(for: recipe, analysis: analysis)
+            .filter { $0.contains("已执行") })
         if recipe.backgroundSeparation > 0.001,
            analysis?.personMask != nil || analysis?.salientSubjectMask != nil {
             modules.append("主体/背景空间层次")
@@ -298,6 +292,16 @@ final class CoreImageRenderer {
         if recipe.bloomIntensity > 0.001 { modules.append("高光 Bloom") }
         if recipe.halationIntensity > 0.001 { modules.append("暖色 Halation") }
         return modules
+    }
+
+    func regionalExecutionDetails(
+        for recipe: AutomaticEditingRecipe,
+        analysis: PhotoAnalysis?
+    ) -> [String] {
+        localAdjustmentProcessor.regionalExecutionDetails(
+            analysis: analysis,
+            recipe: recipe
+        )
     }
 
     private func applyWhiteBalance(to image: CIImage, recipe: AutomaticEditingRecipe) -> CIImage {

@@ -43,56 +43,122 @@ final class LocalAdjustmentProcessor {
         var output = image
 
         if !facets.isDisjoint(with: [.forest, .countryRoad, .nature]),
+           isUsableRegionMask(analysis.vegetationMask),
            let mask = protectedRegionMask(from: analysis.vegetationMask, analysis: analysis, extent: image.extent) {
-            let saturationDelta = min(0.10, max(-0.08,
-                (recipe.hsl.greenSaturation + recipe.hsl.yellowSaturation) * 0.7
+            let recoverableShadow = max(0, analysis.shadowRatio - analysis.blackRatio)
+            let saturationDelta = min(0.14, max(-0.10,
+                (recipe.hsl.greenSaturation + recipe.hsl.yellowSaturation) * 0.85
             ))
             output = blendColorControls(
                 image: output,
                 saturation: 1 + saturationDelta,
-                brightness: max(-0.01, min(0.012, recipe.hsl.yellowLuminance * 0.18)),
-                contrast: 1 + min(0.035, recipe.localContrastAmount * 0.22),
+                brightness: max(-0.012, min(0.028, (recipe.hsl.yellowLuminance * 0.32) + (recoverableShadow * 0.025))),
+                contrast: 1 + min(0.055, recipe.localContrastAmount * 0.36),
                 mask: mask
             )
         }
 
         if !facets.isDisjoint(with: [.water, .coast]),
+           isUsableRegionMask(analysis.waterMask),
            let mask = protectedRegionMask(from: analysis.waterMask, analysis: analysis, extent: image.extent) {
-            let saturationDelta = min(0.08, max(-0.08,
-                (recipe.hsl.cyanSaturation + recipe.hsl.blueSaturation) * 0.65
+            let saturationDelta = min(0.10, max(-0.10,
+                (recipe.hsl.cyanSaturation + recipe.hsl.blueSaturation) * 0.78
             ))
             output = blendColorControls(
                 image: output,
                 saturation: 1 + saturationDelta,
-                brightness: max(-0.012, min(0.008, recipe.hsl.blueLuminance * 0.16)),
-                contrast: 1 + min(0.03, recipe.localContrastAmount * 0.18),
+                brightness: max(-0.018, min(0.018, recipe.hsl.blueLuminance * 0.3)),
+                contrast: 1 + min(0.045, recipe.localContrastAmount * 0.3),
                 mask: mask
             )
         }
 
         if !facets.isDisjoint(with: [.architecture, .city, .street, .interior, .workspace]),
+           isUsableRegionMask(analysis.architectureMask),
            let mask = protectedRegionMask(from: analysis.architectureMask, analysis: analysis, extent: image.extent) {
             output = blendColorControls(
                 image: output,
                 saturation: 1,
                 brightness: 0,
-                contrast: 1 + min(0.04, recipe.localContrastAmount * 0.28),
+                contrast: 1 + min(0.06, recipe.localContrastAmount * 0.42),
                 mask: mask
             )
         }
 
-        if analysis.groundMask?.isValid == true,
+        if isUsableRegionMask(analysis.groundMask),
            let mask = protectedRegionMask(from: analysis.groundMask, analysis: analysis, extent: image.extent) {
             let adjusted = applyExposure(
                 to: output.applyingFilter("CIColorControls", parameters: [
-                    kCIInputContrastKey: 1 + min(0.025, recipe.localContrastAmount * 0.16)
+                    kCIInputContrastKey: 1 + min(0.04, recipe.localContrastAmount * 0.28)
                 ]),
-                ev: min(0.055, recipe.shadowZoneExposureEV * 0.28)
+                ev: min(0.09, recipe.shadowZoneExposureEV * 0.5)
             )
             output = blend(adjusted, over: output, mask: mask)
         }
 
         return output.cropped(to: image.extent)
+    }
+
+    func regionalExecutionDetails(
+        analysis: PhotoAnalysis?,
+        recipe: AutomaticEditingRecipe
+    ) -> [String] {
+        guard let analysis else { return ["区域精修：跳过（无分析结果）"] }
+        let blocksSemanticRegions = analysis.faceCount > 0 && analysis.personMask?.isValid != true
+        let facets = Set(analysis.photographyContext.sceneFacets)
+        let semanticDetails = blocksSemanticRegions
+            ? ["植被：跳过（人物保护）", "水面：跳过（人物保护）", "建筑：跳过（人物保护）", "地面/道路：跳过（人物保护）"]
+            : [
+                executionDetail(
+                    name: "植被",
+                    mask: analysis.vegetationMask,
+                    sceneMatches: !facets.isDisjoint(with: [.forest, .countryRoad, .nature])
+                ),
+                executionDetail(
+                    name: "水面",
+                    mask: analysis.waterMask,
+                    sceneMatches: !facets.isDisjoint(with: [.water, .coast])
+                ),
+                executionDetail(
+                    name: "建筑",
+                    mask: analysis.architectureMask,
+                    sceneMatches: !facets.isDisjoint(with: [.architecture, .city, .street, .interior, .workspace])
+                ),
+                executionDetail(name: "地面/道路", mask: analysis.groundMask, sceneMatches: true)
+            ]
+        return semanticDetails + [skyExecutionDetail(analysis: analysis, recipe: recipe)]
+    }
+
+    private func executionDetail(
+        name: String,
+        mask: NormalizedPhotoMask?,
+        sceneMatches: Bool
+    ) -> String {
+        guard sceneMatches else { return "\(name)：跳过（场景语义不匹配）" }
+        guard let mask, mask.isValid else { return "\(name)：跳过（无有效蒙版）" }
+        guard isUsableRegionMask(mask) else {
+            return String(format: "%@：跳过（覆盖率 %.2f%% 不可靠）", name, mask.activeCoverage * 100)
+        }
+        return String(format: "%@：已执行（覆盖率 %.2f%%）", name, mask.activeCoverage * 100)
+    }
+
+    private func skyExecutionDetail(
+        analysis: PhotoAnalysis,
+        recipe: AutomaticEditingRecipe
+    ) -> String {
+        let requested = abs(recipe.skyExposureEV) > 0.001
+            || recipe.skyHighlightAmount < 0.999
+            || abs(recipe.skySaturation - 1) > 0.001
+        guard requested else { return "天空：跳过（配方未请求天空调整）" }
+        if analysis.faceCount > 0, analysis.personMask?.isValid != true {
+            return "天空：跳过（人物保护缺少可靠整人物蒙版）"
+        }
+        return executionDetail(name: "天空", mask: analysis.skyMask, sceneMatches: true)
+    }
+
+    private func isUsableRegionMask(_ mask: NormalizedPhotoMask?) -> Bool {
+        guard let mask, mask.isValid else { return false }
+        return mask.activeCoverage >= 0.004 && mask.activeCoverage <= 0.86
     }
 
     private func applySubjectRelighting(

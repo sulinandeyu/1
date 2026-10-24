@@ -77,6 +77,8 @@ enum QualityIssue: String, Equatable, Hashable, Sendable {
     case expandedPureWhite
     case portraitRegionOverAltered
     case portraitTextureAltered
+    case localMaskBoundaryArtifact
+    case missingExpectedSceneTreatment
 
     var title: String {
         switch self {
@@ -116,6 +118,10 @@ enum QualityIssue: String, Equatable, Hashable, Sendable {
             return "人物面部被局部过度改变"
         case .portraitTextureAltered:
             return "人物皮肤纹理变化异常"
+        case .localMaskBoundaryArtifact:
+            return "局部蒙版边界变化异常"
+        case .missingExpectedSceneTreatment:
+            return "计划中的场景局部处理未实际执行"
         }
     }
 }

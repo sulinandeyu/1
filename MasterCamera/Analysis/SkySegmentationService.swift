@@ -11,6 +11,11 @@ struct SkySegmentationResult: Equatable, Sendable {
     let architectureMask: NormalizedPhotoMask?
 }
 
+enum SceneSegmentationOutcome: Sendable {
+    case success(SkySegmentationResult)
+    case failure(String)
+}
+
 final class SkySegmentationService {
     private static let modelName = "DETRResnet50SemanticSegmentationF16P6"
     private static let inputName = "image"
@@ -28,23 +33,27 @@ final class SkySegmentationService {
     private var cachedModel: MLModel?
     private var didFailLoadingModel = false
 
-    func segmentSky(in data: Data) -> SkySegmentationResult? {
+    func segmentSky(in data: Data) -> SceneSegmentationOutcome {
+        guard let model = loadModel() else {
+            return .failure("Core ML 场景分割模型不可用")
+        }
         guard
-            let model = loadModel(),
             let image = CIImage(
                 data: data,
                 options: [.applyOrientationProperty: true]
             ),
             image.extent.width > 0,
-            image.extent.height > 0,
-            let pixelBuffer = makeInputPixelBuffer(from: image)
+            image.extent.height > 0
         else {
-            return nil
+            return .failure("场景分割无法解码输入图片")
+        }
+        guard let modelInput = makeInputPixelBuffer(from: image) else {
+            return .failure("场景分割无法创建模型输入")
         }
 
         do {
             let provider = try MLDictionaryFeatureProvider(dictionary: [
-                Self.inputName: MLFeatureValue(pixelBuffer: pixelBuffer)
+                Self.inputName: MLFeatureValue(pixelBuffer: modelInput.pixelBuffer)
             ])
             let output = try model.prediction(from: provider)
 
@@ -54,13 +63,19 @@ final class SkySegmentationService {
                     .multiArrayValue
             else {
                 AppLogger.imageEngine.error("天空分割模型没有返回语义预测。")
-                return nil
+                return .failure("Core ML 模型没有返回 semanticPredictions")
             }
 
-            return makeValidatedSkyMask(from: predictions)
+            guard let result = makeValidatedSkyMask(
+                from: predictions,
+                contentRect: modelInput.contentRect
+            ) else {
+                return .failure("Core ML 语义输出尺寸或内容无效")
+            }
+            return .success(result)
         } catch {
             AppLogger.imageEngine.error("天空语义分割失败：\(error.localizedDescription)")
-            return nil
+            return .failure("Core ML 推理失败：\(error.localizedDescription)")
         }
     }
 
@@ -93,7 +108,7 @@ final class SkySegmentationService {
         }
     }
 
-    private func makeInputPixelBuffer(from image: CIImage) -> CVPixelBuffer? {
+    private func makeInputPixelBuffer(from image: CIImage) -> SegmentationModelInput? {
         var pixelBuffer: CVPixelBuffer?
         let attributes: [CFString: Any] = [
             kCVPixelBufferIOSurfacePropertiesKey: [:],
@@ -119,16 +134,34 @@ final class SkySegmentationService {
                 y: -image.extent.minY
             )
         )
-        let scale = CGAffineTransform(
-            scaleX: CGFloat(Self.inputSize) / normalized.extent.width,
-            y: CGFloat(Self.inputSize) / normalized.extent.height
+        let uniformScale = min(
+            CGFloat(Self.inputSize) / normalized.extent.width,
+            CGFloat(Self.inputSize) / normalized.extent.height
         )
-        context.render(normalized.transformed(by: scale), to: pixelBuffer)
-        return pixelBuffer
+        let scaledSize = CGSize(
+            width: normalized.extent.width * uniformScale,
+            height: normalized.extent.height * uniformScale
+        )
+        let origin = CGPoint(
+            x: (CGFloat(Self.inputSize) - scaledSize.width) * 0.5,
+            y: (CGFloat(Self.inputSize) - scaledSize.height) * 0.5
+        )
+        let fitted = normalized
+            .transformed(by: CGAffineTransform(scaleX: uniformScale, y: uniformScale))
+            .transformed(by: CGAffineTransform(translationX: origin.x, y: origin.y))
+        let canvas = CIImage(color: CIColor(red: 0, green: 0, blue: 0, alpha: 1)).cropped(
+            to: CGRect(x: 0, y: 0, width: Self.inputSize, height: Self.inputSize)
+        )
+        let composed = fitted.composited(over: canvas)
+        context.render(composed, to: pixelBuffer)
+        let contentRect = CGRect(origin: origin, size: scaledSize).integral
+            .intersection(CGRect(x: 0, y: 0, width: Self.inputSize, height: Self.inputSize))
+        return SegmentationModelInput(pixelBuffer: pixelBuffer, contentRect: contentRect)
     }
 
     private func makeValidatedSkyMask(
-        from predictions: MLMultiArray
+        from predictions: MLMultiArray,
+        contentRect: CGRect
     ) -> SkySegmentationResult? {
         let expectedPixelCount = Self.inputSize * Self.inputSize
         guard predictions.count == expectedPixelCount else {
@@ -138,42 +171,52 @@ final class SkySegmentationService {
             return nil
         }
 
-        var pixels = [UInt8](repeating: 0, count: expectedPixelCount)
-        var groundPixels = [UInt8](repeating: 0, count: expectedPixelCount)
-        var vegetationPixels = [UInt8](repeating: 0, count: expectedPixelCount)
-        var waterPixels = [UInt8](repeating: 0, count: expectedPixelCount)
-        var architecturePixels = [UInt8](repeating: 0, count: expectedPixelCount)
+        let minX = max(0, Int(contentRect.minX.rounded(.down)))
+        let minY = max(0, Int(contentRect.minY.rounded(.down)))
+        let width = min(Self.inputSize - minX, Int(contentRect.width.rounded(.down)))
+        let height = min(Self.inputSize - minY, Int(contentRect.height.rounded(.down)))
+        guard width > 0, height > 0 else { return nil }
+        let contentPixelCount = width * height
+        var pixels = [UInt8](repeating: 0, count: contentPixelCount)
+        var groundPixels = [UInt8](repeating: 0, count: contentPixelCount)
+        var vegetationPixels = [UInt8](repeating: 0, count: contentPixelCount)
+        var waterPixels = [UInt8](repeating: 0, count: contentPixelCount)
+        var architecturePixels = [UInt8](repeating: 0, count: contentPixelCount)
         var activePixelCount = 0
         var topContactCount = 0
-        let topBandHeight = Self.inputSize / 10
+        let topBandHeight = max(1, height / 10)
 
-        for index in 0..<expectedPixelCount {
-            let classID = predictions[index].int32Value
-            if classID == Self.skyClassID {
-                pixels[index] = 255
-                activePixelCount += 1
-                if index / Self.inputSize < topBandHeight {
-                    topContactCount += 1
+        for y in 0..<height {
+            for x in 0..<width {
+                let outputIndex = (y * width) + x
+                let predictionIndex = ((minY + y) * Self.inputSize) + minX + x
+                let classID = predictions[predictionIndex].int32Value
+                if classID == Self.skyClassID {
+                    pixels[outputIndex] = 255
+                    activePixelCount += 1
+                    if y < topBandHeight {
+                        topContactCount += 1
+                    }
                 }
+                if Self.groundClassIDs.contains(classID) { groundPixels[outputIndex] = 255 }
+                if Self.vegetationClassIDs.contains(classID) { vegetationPixels[outputIndex] = 255 }
+                if Self.waterClassIDs.contains(classID) { waterPixels[outputIndex] = 255 }
+                if Self.architectureClassIDs.contains(classID) { architecturePixels[outputIndex] = 255 }
             }
-            if Self.groundClassIDs.contains(classID) { groundPixels[index] = 255 }
-            if Self.vegetationClassIDs.contains(classID) { vegetationPixels[index] = 255 }
-            if Self.waterClassIDs.contains(classID) { waterPixels[index] = 255 }
-            if Self.architectureClassIDs.contains(classID) { architecturePixels[index] = 255 }
         }
 
-        let coverage = Float(activePixelCount) / Float(expectedPixelCount)
-        let minimumSkyPixels = expectedPixelCount / 200
-        let maximumSkyPixels = Int(Float(expectedPixelCount) * 0.82)
-        let minimumTopContact = Self.inputSize
+        let coverage = Float(activePixelCount) / Float(contentPixelCount)
+        let minimumSkyPixels = contentPixelCount / 200
+        let maximumSkyPixels = Int(Float(contentPixelCount) * 0.82)
+        let minimumTopContact = width
 
         let skyIsValid = activePixelCount >= minimumSkyPixels
             && activePixelCount <= maximumSkyPixels
             && topContactCount >= minimumTopContact
         let skyMask = skyIsValid
             ? NormalizedPhotoMask(
-                width: Self.inputSize,
-                height: Self.inputSize,
+                width: width,
+                height: height,
                 pixels: Data(pixels)
             )
             : nil
@@ -181,26 +224,35 @@ final class SkySegmentationService {
         return SkySegmentationResult(
             mask: skyMask?.isValid == true ? skyMask : nil,
             coverage: skyMask?.isValid == true ? coverage : 0,
-            groundMask: validatedRegionMask(groundPixels),
-            vegetationMask: validatedRegionMask(vegetationPixels),
-            waterMask: validatedRegionMask(waterPixels),
-            architectureMask: validatedRegionMask(architecturePixels)
+            groundMask: validatedRegionMask(groundPixels, width: width, height: height),
+            vegetationMask: validatedRegionMask(vegetationPixels, width: width, height: height),
+            waterMask: validatedRegionMask(waterPixels, width: width, height: height),
+            architectureMask: validatedRegionMask(architecturePixels, width: width, height: height)
         )
     }
 
-    private func validatedRegionMask(_ pixels: [UInt8]) -> NormalizedPhotoMask? {
+    private func validatedRegionMask(
+        _ pixels: [UInt8],
+        width: Int,
+        height: Int
+    ) -> NormalizedPhotoMask? {
         let active = pixels.reduce(into: 0) { count, value in
             if value > 0 { count += 1 }
         }
-        let total = Self.inputSize * Self.inputSize
+        let total = width * height
         guard active >= total / 300, active <= Int(Float(total) * 0.9) else {
             return nil
         }
         let mask = NormalizedPhotoMask(
-            width: Self.inputSize,
-            height: Self.inputSize,
+            width: width,
+            height: height,
             pixels: Data(pixels)
         )
         return mask.isValid ? mask : nil
     }
+}
+
+private struct SegmentationModelInput {
+    let pixelBuffer: CVPixelBuffer
+    let contentRect: CGRect
 }

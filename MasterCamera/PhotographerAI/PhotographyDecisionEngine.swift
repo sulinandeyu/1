@@ -52,6 +52,11 @@ final class PhotographyDecisionEngine {
             recipe: &recipe,
             actions: &actions
         )
+        applyAnalysisReliabilityLimits(
+            analysis: analysis,
+            recipe: &recipe,
+            actions: &actions
+        )
         applyProblemSafetyLimits(problems: problems, recipe: &recipe)
         reconcileQualitySignals(analysis: analysis, recipe: &recipe, actions: &actions)
         enforcePortraitProtection(analysis: analysis, recipe: &recipe, actions: &actions)
@@ -80,6 +85,56 @@ final class PhotographyDecisionEngine {
             ),
             recipe: finalRecipe
         )
+    }
+
+    private func applyAnalysisReliabilityLimits(
+        analysis: PhotoAnalysis,
+        recipe: inout AutomaticEditingRecipe,
+        actions: inout [PhotographyAction]
+    ) {
+        switch analysis.sceneRecognitionDiagnostics.status {
+        case .failed:
+            // Keep metric-driven exposure/dynamic-range work, but remove semantic color
+            // assumptions when Vision did not produce a result at all.
+            recipe.hsl = .neutral
+            recipe.colorGradeIntensity = min(recipe.colorGradeIntensity, 0.12)
+            recipe.shadowCoolAmount = min(recipe.shadowCoolAmount, 0.025)
+            recipe.midtoneWarmAmount = min(recipe.midtoneWarmAmount, 0.04)
+            recipe.highlightWarmAmount = min(recipe.highlightWarmAmount, 0.05)
+            recipe.colorContrast = min(recipe.colorContrast, 0.05)
+            actions.append(PhotographyAction(
+                title: "场景识别失败：采用安全传统后期",
+                reason: analysis.sceneRecognitionDiagnostics.reason
+                    ?? "只执行实测曝光、动态范围、白平衡和亮度蒙版，不宣称已完成场景化调色。"
+            ))
+        case .uncertain:
+            recipe.colorGradeIntensity = min(recipe.colorGradeIntensity, 0.2)
+            recipe.shadowCoolAmount = min(recipe.shadowCoolAmount, 0.06)
+            recipe.midtoneWarmAmount = min(recipe.midtoneWarmAmount, 0.09)
+            recipe.highlightWarmAmount = min(recipe.highlightWarmAmount, 0.12)
+            recipe.colorContrast = min(recipe.colorContrast, 0.09)
+            actions.append(PhotographyAction(
+                title: "场景识别不确定：限制风格强度",
+                reason: analysis.sceneRecognitionDiagnostics.reason
+                    ?? "保留问题驱动的摄影调整，避免按低置信度标签强制套用色彩语言。"
+            ))
+        case .recognized, .notEvaluated:
+            break
+        }
+
+        switch analysis.segmentationDiagnostics.status {
+        case .failed, .noUsableRegion:
+            recipe.skyExposureEV = 0
+            recipe.skyHighlightAmount = 1
+            recipe.skySaturation = 1
+            actions.append(PhotographyAction(
+                title: "局部分割降级：改用亮度蒙版",
+                reason: analysis.segmentationDiagnostics.reason
+                    ?? "没有可靠区域蒙版，因此不宣称完成天空、道路、植被、水面或建筑独立精修。"
+            ))
+        case .available, .notEvaluated:
+            break
+        }
     }
 
     /// 人物保护必须最后执行，确保任何场景、风格或问题修正规则都不能重新开启
@@ -122,8 +177,14 @@ final class PhotographyDecisionEngine {
                 objective: "完成曝光、动态范围、白平衡、曲线和场景化色彩关系的整体制作。"
             )
         ]
+        let sceneRegionsAllowed = analysis.faceCount == 0 || analysis.personMask?.isValid == true
+        func usable(_ mask: NormalizedPhotoMask?) -> Bool {
+            guard let mask, mask.isValid else { return false }
+            return mask.activeCoverage >= 0.004 && mask.activeCoverage <= 0.86
+        }
 
-        if analysis.skyMask?.isValid == true,
+        if sceneRegionsAllowed,
+           usable(analysis.skyMask),
            abs(recipe.skyExposureEV) > 0.001
                 || recipe.skyHighlightAmount < 0.999
                 || abs(recipe.skySaturation - 1) > 0.001 {
@@ -132,27 +193,30 @@ final class PhotographyDecisionEngine {
                 objective: "只在可靠天空蒙版内恢复高光、云层和色彩层次。"
             ))
         }
-        if analysis.groundMask?.isValid == true {
+        if sceneRegionsAllowed, usable(analysis.groundMask) {
             regions.append(RegionalTreatment(
                 region: .ground,
                 objective: "在道路与地面蒙版内恢复可用阴影并建立材质层次。"
             ))
         }
-        if analysis.vegetationMask?.isValid == true,
+        if sceneRegionsAllowed,
+           usable(analysis.vegetationMask),
            !Set(context.sceneFacets).isDisjoint(with: [.forest, .countryRoad, .nature]) {
             regions.append(RegionalTreatment(
                 region: .vegetation,
                 objective: "在植被蒙版内按当前配方调整绿黄关系，不用全图增绿或增黄。"
             ))
         }
-        if analysis.waterMask?.isValid == true,
+        if sceneRegionsAllowed,
+           usable(analysis.waterMask),
            !Set(context.sceneFacets).isDisjoint(with: [.water, .coast]) {
             regions.append(RegionalTreatment(
                 region: .water,
                 objective: "在水面蒙版内控制色彩与局部对比，保留真实反射。"
             ))
         }
-        if analysis.architectureMask?.isValid == true,
+        if sceneRegionsAllowed,
+           usable(analysis.architectureMask),
            !Set(context.sceneFacets).isDisjoint(with: [.architecture, .city, .street, .interior, .workspace]) {
             regions.append(RegionalTreatment(
                 region: .architecture,

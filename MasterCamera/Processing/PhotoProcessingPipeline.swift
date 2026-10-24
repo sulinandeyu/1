@@ -54,20 +54,30 @@ final class PhotoProcessingPipeline {
             recipe: decision.recipe,
             analysis: analysis
         )
+        let initialRegionalExecutionDetails = renderer.regionalExecutionDetails(
+            for: decision.recipe,
+            analysis: analysis
+        )
+        AppLogger.imageEngine.info(
+            "识别/分割状态：scene=\(analysis.sceneRecognitionDiagnostics.status.rawValue, privacy: .public) confidence=\(analysis.sceneRecognitionDiagnostics.topConfidence) reason=\(analysis.sceneRecognitionDiagnostics.reason ?? \"none\", privacy: .public)；segmentation=\(analysis.segmentationDiagnostics.status.rawValue, privacy: .public) reason=\(analysis.segmentationDiagnostics.reason ?? \"none\", privacy: .public)；区域回执=[\(initialRegionalExecutionDetails.joined(separator: \"；\"), privacy: .public)]"
+        )
         let renderDuration = ProcessInfo.processInfo.systemUptime - renderStart
         // 6. 与原片比较并检查成片质量
         let qualityStart = ProcessInfo.processInfo.systemUptime
         let initialQualityCheck = try qualityService.check(
             originalData: photo.originalImageData,
             editedData: initialEditedData,
-            sourceAnalysis: analysis
+            sourceAnalysis: analysis,
+            expectedRegions: decision.treatmentPlan.regionalTreatments.map(\.region),
+            regionalExecutionDetails: initialRegionalExecutionDetails
         )
         let finalEdit = try chooseFinalEdit(
             originalData: photo.originalImageData,
             initialEditedData: initialEditedData,
             initialQualityCheck: initialQualityCheck,
             initialRecipe: decision.recipe,
-            analysis: analysis
+            analysis: analysis,
+            expectedRegions: decision.treatmentPlan.regionalTreatments.map(\.region)
         )
         let finalDecision = decision.replacingRecipe(with: finalEdit.recipe)
         let qualityDuration = ProcessInfo.processInfo.systemUptime - qualityStart
@@ -118,6 +128,10 @@ final class PhotoProcessingPipeline {
                     for: finalEdit.recipe,
                     analysis: finalEdit.analysis
                 ),
+                regionalExecutionDetails: renderer.regionalExecutionDetails(
+                    for: finalEdit.recipe,
+                    analysis: finalEdit.analysis
+                ),
                 stages: stageRecords,
                 fallbackReason: finalEdit.fallbackReason
             )
@@ -159,7 +173,8 @@ final class PhotoProcessingPipeline {
         initialEditedData: Data,
         initialQualityCheck: QualityCheckResult,
         initialRecipe: AutomaticEditingRecipe,
-        analysis: PhotoAnalysis
+        analysis: PhotoAnalysis,
+        expectedRegions: [TreatmentRegion]
     ) throws -> (
         data: Data,
         qualityCheck: QualityCheckResult,
@@ -185,11 +200,17 @@ final class PhotoProcessingPipeline {
                 recipe: correctiveRecipe,
                 analysis: analysis
             )
+            let correctiveRegionalExecutionDetails = renderer.regionalExecutionDetails(
+                for: correctiveRecipe,
+                analysis: analysis
+            )
             let correctiveQualityCheck = try qualityService
                 .check(
                     originalData: originalData,
                     editedData: correctiveData,
-                    sourceAnalysis: analysis
+                    sourceAnalysis: analysis,
+                    expectedRegions: expectedRegions,
+                    regionalExecutionDetails: correctiveRegionalExecutionDetails
                 )
                 .applyingFallback()
 
@@ -295,6 +316,16 @@ final class PhotoProcessingPipeline {
             recipe.sharpeningAmount = min(recipe.sharpeningAmount, 0.055)
             recipe.localContrastAmount = min(recipe.localContrastAmount, 0.045)
             recipe.skinTextureProtection = max(recipe.skinTextureProtection, 0.76)
+        }
+
+        if set.contains(.localMaskBoundaryArtifact) {
+            recipe.localContrastAmount = min(recipe.localContrastAmount, 0.04)
+            recipe.skyExposureEV *= 0.5
+            recipe.skyHighlightAmount = max(recipe.skyHighlightAmount, 0.78)
+            recipe.hsl.greenSaturation *= 0.55
+            recipe.hsl.yellowSaturation *= 0.55
+            recipe.hsl.cyanSaturation *= 0.55
+            recipe.hsl.blueSaturation *= 0.55
         }
 
         if set.contains(.amplifiedNoise) {

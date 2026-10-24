@@ -10,7 +10,9 @@ final class QualityCheckService {
     func check(
         originalData: Data,
         editedData: Data,
-        sourceAnalysis: PhotoAnalysis? = nil
+        sourceAnalysis: PhotoAnalysis? = nil,
+        expectedRegions: [TreatmentRegion] = [],
+        regionalExecutionDetails: [String] = []
     ) throws -> QualityCheckResult {
         let originalAnalysis = try analyzer.analyzeImageQuality(data: originalData)
         let editedAnalysis = try analyzer.analyzeImageQuality(data: editedData)
@@ -88,10 +90,15 @@ final class QualityCheckService {
         )
         let hasPortrait = sourceAnalysis?.faceRegions.isEmpty == false
         let minimumMeanDifference: Float = hasPortrait ? 0.004 : 0.006
-        let minimumChangedPixelRatio: Float = hasPortrait ? 0.12 : 0.20
-        if processingImpact.normalizedMeanAbsoluteRGBDifference < minimumMeanDifference,
-           processingImpact.changedPixelRatio < minimumChangedPixelRatio {
+        if processingImpact.normalizedMeanAbsoluteRGBDifference < minimumMeanDifference {
             issues.append(.insufficientProcessingImpact)
+        }
+
+        if !expectedSceneRegionsWereExecuted(
+            expectedRegions: expectedRegions,
+            regionalExecutionDetails: regionalExecutionDetails
+        ) {
+            issues.append(.missingExpectedSceneTreatment)
         }
 
         let originalCanvas = try canvasStatistics(for: originalImage)
@@ -124,6 +131,30 @@ final class QualityCheckService {
             }
         }
 
+
+        if let sourceAnalysis {
+            let executedMasks: [(String, NormalizedPhotoMask?)] = [
+                ("天空：已执行", sourceAnalysis.skyMask),
+                ("地面/道路：已执行", sourceAnalysis.groundMask),
+                ("植被：已执行", sourceAnalysis.vegetationMask),
+                ("水面：已执行", sourceAnalysis.waterMask),
+                ("建筑：已执行", sourceAnalysis.architectureMask)
+            ]
+            let masks = executedMasks.compactMap { item in
+                let (prefix, mask) = item
+                guard regionalExecutionDetails.contains(where: { $0.hasPrefix(prefix) }) else {
+                    return nil
+                }
+                return mask
+            }
+            let boundaryScore = masks
+                .map { maskBoundaryArtifactScore(original: originalImage, edited: editedImage, mask: $0) }
+                .max() ?? 0
+            if boundaryScore > 0.075 {
+                issues.append(.localMaskBoundaryArtifact)
+            }
+        }
+
         return QualityCheckResult(
             status: status(for: issues),
             issues: issues,
@@ -152,13 +183,75 @@ final class QualityCheckService {
             .overprocessedDetail,
             .expandedPureWhite,
             .portraitRegionOverAltered,
-            .portraitTextureAltered
+            .portraitTextureAltered,
+            .localMaskBoundaryArtifact,
+            .missingExpectedSceneTreatment
         ]
         if issues.contains(where: criticalIssues.contains) {
             return .failed
         }
 
         return .warning
+    }
+
+    private func expectedSceneRegionsWereExecuted(
+        expectedRegions: [TreatmentRegion],
+        regionalExecutionDetails: [String]
+    ) -> Bool {
+        let expectedNames = expectedRegions.compactMap { region -> String? in
+            switch region {
+            case .sky: return "天空：已执行"
+            case .ground: return "地面/道路：已执行"
+            case .vegetation: return "植被：已执行"
+            case .water: return "水面：已执行"
+            case .architecture: return "建筑：已执行"
+            case .global, .person, .background, .subject: return nil
+            }
+        }
+        return expectedNames.allSatisfy { expected in
+            regionalExecutionDetails.contains { $0.hasPrefix(expected) }
+        }
+    }
+
+    private func maskBoundaryArtifactScore(
+        original: CIImage,
+        edited: CIImage,
+        mask: NormalizedPhotoMask
+    ) -> Float {
+        guard mask.isValid else { return 0 }
+        let width = 96
+        let height = max(1, Int((CGFloat(width) * original.extent.height / original.extent.width).rounded()))
+        let originalPixels = rgbaPixels(from: original, width: width, height: height)
+        let editedPixels = rgbaPixels(from: edited, width: width, height: height)
+        guard originalPixels.count == editedPixels.count, !originalPixels.isEmpty else { return 0 }
+
+        func isActive(x: Int, y: Int) -> Bool {
+            let maskX = min(mask.width - 1, max(0, Int(Float(x) / Float(width) * Float(mask.width))))
+            let maskY = min(mask.height - 1, max(0, Int(Float(y) / Float(height) * Float(mask.height))))
+            return mask.pixels[(maskY * mask.width) + maskX] >= 128
+        }
+        func luminanceDelta(x: Int, y: Int) -> Float {
+            let index = ((y * width) + x) * 4
+            return luminance(rgb(at: index, in: editedPixels))
+                - luminance(rgb(at: index, in: originalPixels))
+        }
+
+        var total: Float = 0
+        var count: Float = 0
+        for y in 0..<height {
+            for x in 0..<width {
+                let active = isActive(x: x, y: y)
+                if x + 1 < width, active != isActive(x: x + 1, y: y) {
+                    total += abs(luminanceDelta(x: x, y: y) - luminanceDelta(x: x + 1, y: y))
+                    count += 1
+                }
+                if y + 1 < height, active != isActive(x: x, y: y + 1) {
+                    total += abs(luminanceDelta(x: x, y: y) - luminanceDelta(x: x, y: y + 1))
+                    count += 1
+                }
+            }
+        }
+        return count >= 8 ? total / count : 0
     }
 
     private func compareProcessingImpact(

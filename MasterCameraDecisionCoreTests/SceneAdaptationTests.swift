@@ -114,7 +114,11 @@ final class SceneAdaptationTests: XCTestCase {
     }
 
     func testNightCountryRoadKeepsLandscapeFacetTreatment() {
-        let regionMask = NormalizedPhotoMask(width: 1, height: 1, pixels: Data([255]))
+        let regionMask = NormalizedPhotoMask(
+            width: 2,
+            height: 2,
+            pixels: Data([255, 0, 0, 0])
+        )
         let autumnNightPath = decision(for: fixture(
             luminance: 0.139,
             contrast: 0.424,
@@ -135,6 +139,70 @@ final class SceneAdaptationTests: XCTestCase {
         XCTAssertGreaterThan(autumnNightPath.recipe.hsl.orangeSaturation, 0)
         XCTAssertTrue(autumnNightPath.treatmentPlan.regionalTreatments.contains { $0.region == .ground })
         XCTAssertTrue(autumnNightPath.treatmentPlan.regionalTreatments.contains { $0.region == .vegetation })
+    }
+
+    func testRecognitionFailureRemovesSemanticColorAssumptions() {
+        let failed = decision(for: fixture(
+            labels: ["landscape", "sky", "forest"],
+            recognition: SceneRecognitionDiagnostics(
+                status: .failed,
+                topConfidence: 0,
+                acceptedLabelCount: 0,
+                reason: "test failure"
+            )
+        ))
+
+        XCTAssertEqual(failed.recipe.hsl, .neutral)
+        XCTAssertLessThanOrEqual(failed.recipe.colorGradeIntensity, 0.12)
+        XCTAssertTrue(failed.actions.contains { $0.title.contains("场景识别失败") })
+    }
+
+    func testSegmentationFailureUsesSafeNonRegionalTreatment() {
+        let mask = NormalizedPhotoMask(width: 1, height: 1, pixels: Data([255]))
+        let degraded = decision(for: fixture(
+            labels: ["landscape", "sky"],
+            skyMask: mask,
+            segmentation: SceneSegmentationDiagnostics(
+                status: .failed,
+                reason: "test segmentation failure",
+                skyCoverage: 0,
+                groundCoverage: 0,
+                vegetationCoverage: 0,
+                waterCoverage: 0,
+                architectureCoverage: 0
+            )
+        ))
+
+        XCTAssertEqual(degraded.recipe.skyExposureEV, 0)
+        XCTAssertEqual(degraded.recipe.skyHighlightAmount, 1)
+        XCTAssertEqual(degraded.recipe.skySaturation, 1)
+        XCTAssertTrue(degraded.actions.contains { $0.title.contains("局部分割降级") })
+    }
+
+    func testUnreliableMaskCoverageIsNotClaimedAsRegionalTreatment() {
+        let empty = NormalizedPhotoMask(width: 2, height: 2, pixels: Data([0, 0, 0, 0]))
+        let full = NormalizedPhotoMask(width: 2, height: 2, pixels: Data([255, 255, 255, 255]))
+        let result = decision(for: fixture(
+            labels: ["outdoor", "trail", "forest"],
+            groundMask: empty,
+            vegetationMask: full
+        ))
+
+        XCTAssertFalse(result.treatmentPlan.regionalTreatments.contains { $0.region == .ground })
+        XCTAssertFalse(result.treatmentPlan.regionalTreatments.contains { $0.region == .vegetation })
+    }
+
+    func testFaceWithoutReliablePersonMaskBlocksSceneRegionClaims() {
+        let regionMask = NormalizedPhotoMask(width: 2, height: 2, pixels: Data([255, 0, 0, 0]))
+        let result = decision(for: fixture(
+            labels: ["portrait", "street", "building"],
+            faceCount: 1,
+            architectureMask: regionMask
+        ))
+
+        XCTAssertTrue(result.treatmentPlan.portraitProtection.isActive)
+        XCTAssertFalse(result.treatmentPlan.regionalTreatments.contains { $0.region == .architecture })
+        XCTAssertFalse(result.treatmentPlan.regionalTreatments.contains { $0.region == .person })
     }
 
     private func decision(for analysis: PhotoAnalysis) -> PhotographyDecision {
@@ -158,7 +226,14 @@ final class SceneAdaptationTests: XCTestCase {
         groundMask: NormalizedPhotoMask? = nil,
         vegetationMask: NormalizedPhotoMask? = nil,
         waterMask: NormalizedPhotoMask? = nil,
-        architectureMask: NormalizedPhotoMask? = nil
+        architectureMask: NormalizedPhotoMask? = nil,
+        recognition: SceneRecognitionDiagnostics = SceneRecognitionDiagnostics(
+            status: .recognized,
+            topConfidence: 0.8,
+            acceptedLabelCount: 1,
+            reason: nil
+        ),
+        segmentation: SceneSegmentationDiagnostics = .notEvaluated
     ) -> PhotoAnalysis {
         PhotoAnalysis(
             averageLuminance: luminance,
@@ -195,7 +270,9 @@ final class SceneAdaptationTests: XCTestCase {
             vegetationMask: vegetationMask,
             waterMask: waterMask,
             architectureMask: architectureMask,
-            semanticLabels: labels.map { SceneLabel(identifier: $0, confidence: 0.8) }
+            semanticLabels: labels.map { SceneLabel(identifier: $0, confidence: 0.8) },
+            sceneRecognitionDiagnostics: recognition,
+            segmentationDiagnostics: segmentation
         )
     }
 }

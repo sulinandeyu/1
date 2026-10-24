@@ -54,10 +54,51 @@ final class PhotoAnalyzer {
         )
         let personMask = includeFaceDetection ? generatePersonMask(in: data) : nil
         let salientSubjectMask = includeFaceDetection ? generateSalientSubjectMask(in: data) : nil
-        let semanticLabels = includeFaceDetection ? classifyScene(in: data) : []
-        let skySegmentation = includeFaceDetection
+        let classification = includeFaceDetection
+            ? classifyScene(in: data)
+            : SceneClassificationResult(labels: [], diagnostics: .notEvaluated)
+        let segmentationOutcome = includeFaceDetection
             ? skySegmentationService.segmentSky(in: data)
             : nil
+        let skySegmentation: SkySegmentationResult?
+        let segmentationDiagnostics: SceneSegmentationDiagnostics
+        switch segmentationOutcome {
+        case .success(let result):
+            skySegmentation = result
+            let coverages = [
+                result.mask?.activeCoverage ?? 0,
+                result.groundMask?.activeCoverage ?? 0,
+                result.vegetationMask?.activeCoverage ?? 0,
+                result.waterMask?.activeCoverage ?? 0,
+                result.architectureMask?.activeCoverage ?? 0
+            ]
+            let hasUsableRegion = coverages.contains { $0 >= 0.004 && $0 <= 0.86 }
+            segmentationDiagnostics = SceneSegmentationDiagnostics(
+                status: hasUsableRegion ? .available : .noUsableRegion,
+                reason: hasUsableRegion
+                    ? nil
+                    : "模型推理成功，但没有通过覆盖率校验的局部区域",
+                skyCoverage: result.mask?.activeCoverage ?? 0,
+                groundCoverage: result.groundMask?.activeCoverage ?? 0,
+                vegetationCoverage: result.vegetationMask?.activeCoverage ?? 0,
+                waterCoverage: result.waterMask?.activeCoverage ?? 0,
+                architectureCoverage: result.architectureMask?.activeCoverage ?? 0
+            )
+        case .failure(let reason):
+            skySegmentation = nil
+            segmentationDiagnostics = SceneSegmentationDiagnostics(
+                status: .failed,
+                reason: reason,
+                skyCoverage: 0,
+                groundCoverage: 0,
+                vegetationCoverage: 0,
+                waterCoverage: 0,
+                architectureCoverage: 0
+            )
+        case nil:
+            skySegmentation = nil
+            segmentationDiagnostics = .notEvaluated
+        }
 
         return PhotoAnalysis(
             averageLuminance: statistics.averageLuminance,
@@ -92,7 +133,9 @@ final class PhotoAnalyzer {
             vegetationMask: skySegmentation?.vegetationMask,
             waterMask: skySegmentation?.waterMask,
             architectureMask: skySegmentation?.architectureMask,
-            semanticLabels: semanticLabels
+            semanticLabels: classification.labels,
+            sceneRecognitionDiagnostics: classification.diagnostics,
+            segmentationDiagnostics: segmentationDiagnostics
         )
     }
 
@@ -390,19 +433,43 @@ final class PhotoAnalyzer {
         }
     }
 
-    private func classifyScene(in data: Data) -> [SceneLabel] {
+    private func classifyScene(in data: Data) -> SceneClassificationResult {
         let request = VNClassifyImageRequest()
         let handler = VNImageRequestHandler(data: data, options: [:])
 
         do {
             try handler.perform([request])
-            return (request.results ?? [])
+            let labels = (request.results ?? [])
                 .filter { $0.confidence >= 0.12 }
                 .prefix(8)
                 .map { SceneLabel(identifier: $0.identifier, confidence: $0.confidence) }
+            let topConfidence = labels.first?.confidence ?? 0
+            let confidenceMass = labels.reduce(0) { $0 + $1.confidence }
+            let recognized = topConfidence >= 0.28 || (topConfidence >= 0.18 && confidenceMass >= 0.48)
+            return SceneClassificationResult(
+                labels: labels,
+                diagnostics: SceneRecognitionDiagnostics(
+                    status: recognized ? .recognized : .uncertain,
+                    topConfidence: topConfidence,
+                    acceptedLabelCount: labels.count,
+                    reason: recognized
+                        ? nil
+                        : (labels.isEmpty
+                            ? "Vision 未返回达到 0.12 阈值的场景标签"
+                            : "Vision 标签置信度不足，禁止把结果宣称为可靠场景识别")
+                )
+            )
         } catch {
             AppLogger.imageEngine.error("场景语义识别失败：\(error.localizedDescription)")
-            return []
+            return SceneClassificationResult(
+                labels: [],
+                diagnostics: SceneRecognitionDiagnostics(
+                    status: .failed,
+                    topConfidence: 0,
+                    acceptedLabelCount: 0,
+                    reason: "Vision 场景识别失败：\(error.localizedDescription)"
+                )
+            )
         }
     }
 
@@ -475,6 +542,11 @@ final class PhotoAnalyzer {
     private func luminance(red: Float, green: Float, blue: Float) -> Float {
         (0.2126 * red) + (0.7152 * green) + (0.0722 * blue)
     }
+}
+
+private struct SceneClassificationResult {
+    let labels: [SceneLabel]
+    let diagnostics: SceneRecognitionDiagnostics
 }
 
 private struct PixelStatistics {
