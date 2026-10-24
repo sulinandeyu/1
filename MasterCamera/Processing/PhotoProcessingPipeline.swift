@@ -58,8 +58,11 @@ final class PhotoProcessingPipeline {
             for: decision.recipe,
             analysis: analysis
         )
+        let recognitionReason = analysis.sceneRecognitionDiagnostics.reason ?? "none"
+        let segmentationReason = analysis.segmentationDiagnostics.reason ?? "none"
+        let regionalExecutionSummary = initialRegionalExecutionDetails.joined(separator: "；")
         AppLogger.imageEngine.info(
-            "识别/分割状态：scene=\(analysis.sceneRecognitionDiagnostics.status.rawValue, privacy: .public) confidence=\(analysis.sceneRecognitionDiagnostics.topConfidence) reason=\(analysis.sceneRecognitionDiagnostics.reason ?? \"none\", privacy: .public)；segmentation=\(analysis.segmentationDiagnostics.status.rawValue, privacy: .public) reason=\(analysis.segmentationDiagnostics.reason ?? \"none\", privacy: .public)；区域回执=[\(initialRegionalExecutionDetails.joined(separator: \"；\"), privacy: .public)]"
+            "识别/分割状态：scene=\(analysis.sceneRecognitionDiagnostics.status.rawValue, privacy: .public) confidence=\(analysis.sceneRecognitionDiagnostics.topConfidence) reason=\(recognitionReason, privacy: .public)；segmentation=\(analysis.segmentationDiagnostics.status.rawValue, privacy: .public) reason=\(segmentationReason, privacy: .public)；区域回执=[\(regionalExecutionSummary, privacy: .public)]"
         )
         let renderDuration = ProcessInfo.processInfo.systemUptime - renderStart
         // 6. 与原片比较并检查成片质量
