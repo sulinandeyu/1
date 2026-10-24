@@ -140,7 +140,7 @@ final class QualityCheckService {
                 ("水面：已执行", sourceAnalysis.waterMask),
                 ("建筑：已执行", sourceAnalysis.architectureMask)
             ]
-            let masks = executedMasks.compactMap { item in
+            let masks: [NormalizedPhotoMask] = executedMasks.compactMap { item -> NormalizedPhotoMask? in
                 let (prefix, mask) = item
                 guard regionalExecutionDetails.contains(where: { $0.hasPrefix(prefix) }) else {
                     return nil
