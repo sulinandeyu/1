@@ -100,6 +100,37 @@ final class PhotoAnalyzer {
             segmentationDiagnostics = .notEvaluated
         }
 
+        let skyStatistics = PhotoRegionStatistics.measure(
+            rgbaPixels: statistics.rgbaPixels,
+            width: statistics.width,
+            height: statistics.height,
+            mask: skySegmentation?.mask
+        )
+        let groundStatistics = PhotoRegionStatistics.measure(
+            rgbaPixels: statistics.rgbaPixels,
+            width: statistics.width,
+            height: statistics.height,
+            mask: skySegmentation?.groundMask
+        )
+        let vegetationStatistics = PhotoRegionStatistics.measure(
+            rgbaPixels: statistics.rgbaPixels,
+            width: statistics.width,
+            height: statistics.height,
+            mask: skySegmentation?.vegetationMask
+        )
+        let waterStatistics = PhotoRegionStatistics.measure(
+            rgbaPixels: statistics.rgbaPixels,
+            width: statistics.width,
+            height: statistics.height,
+            mask: skySegmentation?.waterMask
+        )
+        let architectureStatistics = PhotoRegionStatistics.measure(
+            rgbaPixels: statistics.rgbaPixels,
+            width: statistics.width,
+            height: statistics.height,
+            mask: skySegmentation?.architectureMask
+        )
+
         return PhotoAnalysis(
             averageLuminance: statistics.averageLuminance,
             contrastRange: statistics.contrastRange,
@@ -133,6 +164,11 @@ final class PhotoAnalyzer {
             vegetationMask: skySegmentation?.vegetationMask,
             waterMask: skySegmentation?.waterMask,
             architectureMask: skySegmentation?.architectureMask,
+            skyStatistics: skyStatistics,
+            groundStatistics: groundStatistics,
+            vegetationStatistics: vegetationStatistics,
+            waterStatistics: waterStatistics,
+            architectureStatistics: architectureStatistics,
             semanticLabels: classification.labels,
             sceneRecognitionDiagnostics: classification.diagnostics,
             segmentationDiagnostics: segmentationDiagnostics
@@ -242,7 +278,8 @@ final class PhotoAnalyzer {
             spatialLuminanceVariance: spatialLight.zoneVariance,
             width: width,
             height: height,
-            luminances: luminances
+            luminances: luminances,
+            rgbaPixels: pixels
         )
     }
 
@@ -572,6 +609,7 @@ private struct PixelStatistics {
     let width: Int
     let height: Int
     let luminances: [Float]
+    let rgbaPixels: [UInt8]
 }
 
 private struct RegionalToneStatistics {

@@ -72,6 +72,7 @@ final class SceneAdaptationTests: XCTestCase {
             personMask: personMask
         ))
 
+        XCTAssertEqual(portrait.sceneStrategy, .portrait)
         XCTAssertTrue(portrait.treatmentPlan.portraitProtection.isActive)
         XCTAssertFalse(portrait.treatmentPlan.portraitProtection.allowsFaceSpecificRelighting)
         XCTAssertFalse(portrait.treatmentPlan.portraitProtection.allowsGeometryChanges)
@@ -205,6 +206,143 @@ final class SceneAdaptationTests: XCTestCase {
         XCTAssertFalse(result.treatmentPlan.regionalTreatments.contains { $0.region == .person })
     }
 
+    func testSmallPersonInLandscapeUsesEnvironmentStrategyWithoutDisablingPortraitProtection() {
+        let personMask = NormalizedPhotoMask(
+            width: 4,
+            height: 4,
+            pixels: Data([255, 0, 0, 0, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+        )
+        let skyMask = NormalizedPhotoMask(
+            width: 4,
+            height: 4,
+            pixels: Data([255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0])
+        )
+        let result = decision(for: fixture(
+            luminance: 0.50,
+            contrast: 0.62,
+            saturation: 0.24,
+            red: 0.40,
+            green: 0.49,
+            blue: 0.57,
+            labels: ["portrait", "person", "landscape", "mountain", "sky"],
+            skyMask: skyMask,
+            skyCoverage: 0.5,
+            faceCount: 1,
+            faceLuminance: 0.48,
+            backgroundLuminance: 0.50,
+            personMask: personMask,
+            skyStatistics: regionStatistics(luminance: 0.62, contrast: 0.38, saturation: 0.42, red: 0.35, green: 0.55, blue: 0.72)
+        ))
+
+        XCTAssertEqual(result.sceneStrategy, .landscape)
+        XCTAssertEqual(result.context.style, .environmentalPortrait)
+        XCTAssertTrue(result.treatmentPlan.portraitProtection.isActive)
+        XCTAssertEqual(result.recipe.faceExposureEV, 0)
+        XCTAssertGreaterThan(result.recipe.skySaturation, 1)
+        XCTAssertFalse(detector.detect(in: fixture(
+            luminance: 0.50,
+            contrast: 0.62,
+            saturation: 0.24,
+            red: 0.40,
+            green: 0.49,
+            blue: 0.57,
+            labels: ["portrait", "person", "landscape", "mountain", "sky"],
+            faceCount: 1,
+            personMask: personMask
+        )).contains(.coolCast))
+    }
+
+    func testBrightBlueDaylightIsNotMisclassifiedAsBlueHour() {
+        let skyMask = NormalizedPhotoMask(width: 2, height: 2, pixels: Data([255, 255, 0, 0]))
+        let daylight = fixture(
+            luminance: 0.50,
+            contrast: 0.60,
+            saturation: 0.26,
+            red: 0.39,
+            green: 0.49,
+            blue: 0.57,
+            labels: ["landscape", "mountain", "sky"],
+            skyMask: skyMask,
+            skyCoverage: 0.5,
+            skyStatistics: regionStatistics(luminance: 0.62, contrast: 0.34, saturation: 0.44, red: 0.34, green: 0.55, blue: 0.73)
+        )
+
+        XCTAssertFalse(daylight.photographyContext.lightingConditions.contains(.blueHour))
+        XCTAssertTrue(daylight.photographyContext.lightingConditions.contains(.midday))
+    }
+
+    func testLowLightBlueSkyStillProducesBlueHourEvidence() {
+        let skyMask = NormalizedPhotoMask(width: 2, height: 2, pixels: Data([255, 255, 0, 0]))
+        let blueHour = fixture(
+            luminance: 0.28,
+            contrast: 0.48,
+            saturation: 0.30,
+            red: 0.25,
+            green: 0.34,
+            blue: 0.43,
+            labels: ["portrait", "landscape", "sky"],
+            skyMask: skyMask,
+            skyCoverage: 0.5,
+            skyStatistics: regionStatistics(luminance: 0.42, contrast: 0.34, saturation: 0.40, red: 0.22, green: 0.39, blue: 0.58),
+            shadowRatio: 0.36
+        )
+
+        XCTAssertTrue(blueHour.photographyContext.lightingConditions.contains(.blueHour))
+        XCTAssertEqual(blueHour.photographyContext.style, .blueHour)
+    }
+
+    func testLandscapeDynamicRangeIsDrivenByMeasuredClippingInsteadOfFixedFlattening() {
+        let balanced = decision(for: fixture(
+            luminance: 0.49,
+            contrast: 0.62,
+            saturation: 0.24,
+            labels: ["landscape", "mountain", "sky"],
+            shadowRatio: 0.12,
+            highlightRatio: 0.06,
+            blackRatio: 0.01,
+            whiteRatio: 0.01
+        ))
+        let clipped = decision(for: fixture(
+            luminance: 0.58,
+            contrast: 0.72,
+            saturation: 0.24,
+            labels: ["landscape", "mountain", "sky"],
+            shadowRatio: 0.12,
+            highlightRatio: 0.20,
+            blackRatio: 0.01,
+            whiteRatio: 0.04
+        ))
+
+        XCTAssertGreaterThan(balanced.recipe.highlightAmount, 0.8)
+        XCTAssertLessThan(balanced.recipe.shadowAmount, 0.1)
+        XCTAssertLessThan(clipped.recipe.highlightAmount, balanced.recipe.highlightAmount)
+    }
+
+    func testRegionalStatisticsMeasureOnlyMaskedPixels() throws {
+        var pixels: [UInt8] = []
+        for index in 0..<16 {
+            let pixel: [UInt8] = index < 12 ? [0, 0, 255, 255] : [255, 0, 0, 255]
+            pixels.append(contentsOf: pixel)
+        }
+        let mask = NormalizedPhotoMask(
+            width: 4,
+            height: 4,
+            pixels: Data([255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 0])
+        )
+
+        let statistics = try XCTUnwrap(PhotoRegionStatistics.measure(
+            rgbaPixels: pixels,
+            width: 4,
+            height: 4,
+            mask: mask
+        ))
+
+        XCTAssertEqual(statistics.redAverage, 0, accuracy: 0.0001)
+        XCTAssertEqual(statistics.blueAverage, 1, accuracy: 0.0001)
+        XCTAssertEqual(statistics.averageSaturation, 1, accuracy: 0.0001)
+        XCTAssertEqual(statistics.shadowRatio, 1, accuracy: 0.0001)
+    }
+
     private func decision(for analysis: PhotoAnalysis) -> PhotographyDecision {
         engine.makeDecision(for: analysis, problems: detector.detect(in: analysis))
     }
@@ -227,6 +365,15 @@ final class SceneAdaptationTests: XCTestCase {
         vegetationMask: NormalizedPhotoMask? = nil,
         waterMask: NormalizedPhotoMask? = nil,
         architectureMask: NormalizedPhotoMask? = nil,
+        skyStatistics: PhotoRegionStatistics? = nil,
+        groundStatistics: PhotoRegionStatistics? = nil,
+        vegetationStatistics: PhotoRegionStatistics? = nil,
+        waterStatistics: PhotoRegionStatistics? = nil,
+        architectureStatistics: PhotoRegionStatistics? = nil,
+        shadowRatio: Float = 0.12,
+        highlightRatio: Float = 0.08,
+        blackRatio: Float = 0.01,
+        whiteRatio: Float = 0.01,
         recognition: SceneRecognitionDiagnostics = SceneRecognitionDiagnostics(
             status: .recognized,
             topConfidence: 0.8,
@@ -241,13 +388,13 @@ final class SceneAdaptationTests: XCTestCase {
             redAverage: red,
             greenAverage: green,
             blueAverage: blue,
-            shadowRatio: 0.12,
-            highlightRatio: 0.08,
+            shadowRatio: shadowRatio,
+            highlightRatio: highlightRatio,
             averageSaturation: saturation,
             detailScore: 0.22,
             noiseEstimate: 0.05,
-            blackRatio: 0.01,
-            whiteRatio: 0.01,
+            blackRatio: blackRatio,
+            whiteRatio: whiteRatio,
             midtoneRatio: 0.7,
             mixedLightScore: 0.05,
             highlightConcentration: 0.05,
@@ -270,9 +417,34 @@ final class SceneAdaptationTests: XCTestCase {
             vegetationMask: vegetationMask,
             waterMask: waterMask,
             architectureMask: architectureMask,
+            skyStatistics: skyStatistics,
+            groundStatistics: groundStatistics,
+            vegetationStatistics: vegetationStatistics,
+            waterStatistics: waterStatistics,
+            architectureStatistics: architectureStatistics,
             semanticLabels: labels.map { SceneLabel(identifier: $0, confidence: 0.8) },
             sceneRecognitionDiagnostics: recognition,
             segmentationDiagnostics: segmentation
+        )
+    }
+
+    private func regionStatistics(
+        luminance: Float,
+        contrast: Float,
+        saturation: Float,
+        red: Float,
+        green: Float,
+        blue: Float
+    ) -> PhotoRegionStatistics {
+        PhotoRegionStatistics(
+            averageLuminance: luminance,
+            contrastRange: contrast,
+            redAverage: red,
+            greenAverage: green,
+            blueAverage: blue,
+            averageSaturation: saturation,
+            shadowRatio: 0.02,
+            highlightRatio: 0.06
         )
     }
 }

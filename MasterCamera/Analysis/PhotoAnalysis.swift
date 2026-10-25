@@ -34,6 +34,11 @@ struct PhotoAnalysis: Equatable, Sendable {
     let vegetationMask: NormalizedPhotoMask?
     let waterMask: NormalizedPhotoMask?
     let architectureMask: NormalizedPhotoMask?
+    let skyStatistics: PhotoRegionStatistics?
+    let groundStatistics: PhotoRegionStatistics?
+    let vegetationStatistics: PhotoRegionStatistics?
+    let waterStatistics: PhotoRegionStatistics?
+    let architectureStatistics: PhotoRegionStatistics?
     let semanticLabels: [SceneLabel]
     var sceneRecognitionDiagnostics: SceneRecognitionDiagnostics = .notEvaluated
     var segmentationDiagnostics: SceneSegmentationDiagnostics = .notEvaluated
@@ -94,6 +99,14 @@ struct PhotoAnalysis: Equatable, Sendable {
         }
 
         return faceAverageLuminance - backgroundAverageLuminance
+    }
+
+    var largestFaceCoverage: Float {
+        faceRegions.map { $0.width * $0.height }.max() ?? 0
+    }
+
+    var personCoverage: Float {
+        personMask?.activeCoverage ?? 0
     }
 
     /// V7 keeps the legacy single scene for compatibility, while exposing a
@@ -167,8 +180,20 @@ struct PhotoAnalysis: Equatable, Sendable {
             "\($0.identifier)=\(String(format: "%.3f", $0.confidence))"
         }.joined(separator: ",")
         let context = photographyContext
+        func regionMetrics(_ name: String, _ statistics: PhotoRegionStatistics?) -> String {
+            statistics.map {
+                String(format: "%@=l%.3f/c%.3f/s%.3f/h%.3f", name, $0.averageLuminance, $0.contrastRange, $0.averageSaturation, $0.highlightRatio)
+            } ?? "\(name)=n/a"
+        }
+        let regionalMetrics = [
+            regionMetrics("sky", skyStatistics),
+            regionMetrics("ground", groundStatistics),
+            regionMetrics("vegetation", vegetationStatistics),
+            regionMetrics("water", waterStatistics),
+            regionMetrics("architecture", architectureStatistics)
+        ].joined(separator: ",")
         return String(
-            format: "semantic=%@ recognition=%@/%.3f segmentation=%@ labels=[%@] facets=[%@] lighting=[%@] style=%@ luma=%.3f contrast=%.3f shadow=%.3f highlight=%.3f saturation=%.3f rgb=%.3f/%.3f/%.3f masks=person:%@,subject:%@,skin:%@,sky:%@(%.3f),ground:%@,vegetation:%@,water:%@,architecture:%@",
+            format: "semantic=%@ recognition=%@/%.3f segmentation=%@ labels=[%@] facets=[%@] lighting=[%@] style=%@ luma=%.3f contrast=%.3f shadow=%.3f highlight=%.3f saturation=%.3f rgb=%.3f/%.3f/%.3f personCoverage=%.3f faceCoverage=%.3f masks=person:%@,subject:%@,skin:%@,sky:%@(%.3f),ground:%@,vegetation:%@,water:%@,architecture:%@ regionMetrics=[%@]",
             semanticScene.rawValue,
             sceneRecognitionDiagnostics.status.rawValue,
             sceneRecognitionDiagnostics.topConfidence,
@@ -185,6 +210,8 @@ struct PhotoAnalysis: Equatable, Sendable {
             redAverage,
             greenAverage,
             blueAverage,
+            personCoverage,
+            largestFaceCoverage,
             personMask?.isValid == true ? "yes" : "no",
             salientSubjectMask?.isValid == true ? "yes" : "no",
             skinMask?.isValid == true ? "yes" : "no",
@@ -193,7 +220,8 @@ struct PhotoAnalysis: Equatable, Sendable {
             groundMask?.isValid == true ? "yes" : "no",
             vegetationMask?.isValid == true ? "yes" : "no",
             waterMask?.isValid == true ? "yes" : "no",
-            architectureMask?.isValid == true ? "yes" : "no"
+            architectureMask?.isValid == true ? "yes" : "no",
+            regionalMetrics
         )
     }
 
@@ -230,8 +258,90 @@ struct PhotoAnalysis: Equatable, Sendable {
         vegetationMask: nil,
         waterMask: nil,
         architectureMask: nil,
+        skyStatistics: nil,
+        groundStatistics: nil,
+        vegetationStatistics: nil,
+        waterStatistics: nil,
+        architectureStatistics: nil,
         semanticLabels: []
     )
+}
+
+struct PhotoRegionStatistics: Equatable, Sendable {
+    let averageLuminance: Float
+    let contrastRange: Float
+    let redAverage: Float
+    let greenAverage: Float
+    let blueAverage: Float
+    let averageSaturation: Float
+    let shadowRatio: Float
+    let highlightRatio: Float
+
+    var blueBias: Float { blueAverage - redAverage }
+    var warmBias: Float { redAverage - blueAverage }
+
+    static func measure(
+        rgbaPixels: [UInt8],
+        width: Int,
+        height: Int,
+        mask: NormalizedPhotoMask?
+    ) -> PhotoRegionStatistics? {
+        guard
+            let mask,
+            mask.isValid,
+            width > 0,
+            height > 0,
+            rgbaPixels.count == width * height * 4
+        else { return nil }
+
+        var luminances: [Float] = []
+        var redTotal: Float = 0
+        var greenTotal: Float = 0
+        var blueTotal: Float = 0
+        var saturationTotal: Float = 0
+        var shadowCount = 0
+        var highlightCount = 0
+
+        for y in 0..<height {
+            let maskY = min(mask.height - 1, Int(Float(y) / Float(height) * Float(mask.height)))
+            for x in 0..<width {
+                let maskX = min(mask.width - 1, Int(Float(x) / Float(width) * Float(mask.width)))
+                guard mask.pixels[(maskY * mask.width) + maskX] >= 32 else { continue }
+
+                let index = ((y * width) + x) * 4
+                let red = Float(rgbaPixels[index]) / 255
+                let green = Float(rgbaPixels[index + 1]) / 255
+                let blue = Float(rgbaPixels[index + 2]) / 255
+                let value = (0.2126 * red) + (0.7152 * green) + (0.0722 * blue)
+                let maximum = max(red, green, blue)
+                let minimum = min(red, green, blue)
+
+                redTotal += red
+                greenTotal += green
+                blueTotal += blue
+                saturationTotal += maximum > 0 ? (maximum - minimum) / maximum : 0
+                luminances.append(value)
+                if value < 0.18 { shadowCount += 1 }
+                if value > 0.85 { highlightCount += 1 }
+            }
+        }
+
+        guard luminances.count >= 12 else { return nil }
+        let sorted = luminances.sorted()
+        let count = Float(luminances.count)
+        let low = sorted[Int(Float(sorted.count - 1) * 0.05)]
+        let high = sorted[Int(Float(sorted.count - 1) * 0.95)]
+        return PhotoRegionStatistics(
+            averageLuminance: luminances.reduce(0, +) / count,
+            contrastRange: max(0, high - low),
+            redAverage: redTotal / count,
+            greenAverage: greenTotal / count,
+            blueAverage: blueTotal / count,
+            averageSaturation: saturationTotal / count,
+            shadowRatio: Float(shadowCount) / count,
+            highlightRatio: Float(highlightCount) / count
+        )
+    }
 }
 
 struct NormalizedPhotoMask: Equatable, Sendable {
@@ -429,9 +539,15 @@ struct PhotographyContext: Equatable, Sendable {
         if labels.containsKeyword(["sunrise", "dawn"]) { lighting.insert(.sunrise) }
         if labels.containsKeyword(["sunset", "dusk", "twilight"]) { lighting.insert(.dusk) }
 
-        let blueBias = analysis.blueAverage - analysis.redAverage
-        let warmBias = analysis.redAverage - analysis.blueAverage
-        if analysis.skyCoverage > 0.08 && analysis.averageLuminance < 0.52 && blueBias > 0.035 {
+        let skyLuminance = analysis.skyStatistics?.averageLuminance ?? analysis.averageLuminance
+        let blueBias = analysis.skyStatistics?.blueBias ?? (analysis.blueAverage - analysis.redAverage)
+        let warmBias = analysis.skyStatistics?.warmBias ?? (analysis.redAverage - analysis.blueAverage)
+        let hasBlueHourLabel = labels.containsKeyword(["blue hour", "twilight", "dusk", "evening"])
+        let hasMetricBlueHourEvidence = analysis.averageLuminance < 0.38
+            && analysis.shadowRatio > 0.20
+            && skyLuminance < 0.58
+            && blueBias > 0.035
+        if analysis.skyCoverage > 0.08 && (hasBlueHourLabel || hasMetricBlueHourEvidence) {
             lighting.insert(.blueHour)
         }
         if analysis.skyCoverage > 0.05 && warmBias > 0.045 && analysis.whiteRatio < 0.12 {
@@ -446,6 +562,10 @@ struct PhotographyContext: Equatable, Sendable {
         }
         if facets.contains(.sky) && analysis.averageSaturation < 0.22 && analysis.contrastRange < 0.5 {
             lighting.insert(.overcast)
+        }
+        if facets.contains(.sky), !lighting.contains(.blueHour), !lighting.contains(.goldenHour),
+           (analysis.averageLuminance >= 0.42 || skyLuminance >= 0.55) {
+            lighting.insert(.midday)
         }
         if lighting.isEmpty { lighting.insert(.frontLit) }
 

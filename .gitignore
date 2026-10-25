@@ -18,3 +18,8 @@ Package.resolved
 # Local environment
 .env
 .env.*
+
+# Private local photo-validation inputs and generated metrics
+TestPhotos/
+图片/
+真实图片/

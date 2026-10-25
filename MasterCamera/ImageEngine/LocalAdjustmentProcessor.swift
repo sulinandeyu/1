@@ -45,7 +45,8 @@ final class LocalAdjustmentProcessor {
         if !facets.isDisjoint(with: [.forest, .countryRoad, .nature]),
            isUsableRegionMask(analysis.vegetationMask),
            let mask = protectedRegionMask(from: analysis.vegetationMask, analysis: analysis, extent: image.extent) {
-            let recoverableShadow = max(0, analysis.shadowRatio - analysis.blackRatio)
+            let recoverableShadow = analysis.vegetationStatistics?.shadowRatio
+                ?? max(0, analysis.shadowRatio - analysis.blackRatio)
             let saturationDelta = min(0.14, max(-0.10,
                 (recipe.hsl.greenSaturation + recipe.hsl.yellowSaturation) * 0.85
             ))
@@ -87,11 +88,22 @@ final class LocalAdjustmentProcessor {
 
         if isUsableRegionMask(analysis.groundMask),
            let mask = protectedRegionMask(from: analysis.groundMask, analysis: analysis, extent: image.extent) {
+            let isLandscapeGround = !facets.isDisjoint(with: [.mountain, .forest, .countryRoad, .nature])
+            let groundContrast = analysis.groundStatistics?.contrastRange ?? analysis.contrastRange
+            let recoverableShadow = analysis.groundStatistics?.shadowRatio
+                ?? max(0, analysis.shadowRatio - analysis.blackRatio)
+            let needsShadowLift = groundContrast < 0.56 && recoverableShadow > 0.2
+            let exposureEV: Float = needsShadowLift
+                ? min(0.09, recipe.shadowZoneExposureEV * 0.5)
+                : min(0.025, recipe.shadowZoneExposureEV * 0.18)
+            let contrastGain = isLandscapeGround
+                ? min(0.075, recipe.localContrastAmount * 0.55)
+                : min(0.04, recipe.localContrastAmount * 0.28)
             let adjusted = applyExposure(
                 to: output.applyingFilter("CIColorControls", parameters: [
-                    kCIInputContrastKey: 1 + min(0.04, recipe.localContrastAmount * 0.28)
+                    kCIInputContrastKey: 1 + contrastGain
                 ]),
-                ev: min(0.09, recipe.shadowZoneExposureEV * 0.5)
+                ev: exposureEV
             )
             output = blend(adjusted, over: output, mask: mask)
         }

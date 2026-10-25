@@ -153,10 +153,15 @@ final class PhotoProblemDetector {
             )
         }
 
-        let canDiagnoseNeutralColor = analysis.semanticScene == .portrait ||
-            analysis.semanticScene == .backlitPortrait ||
-            analysis.semanticScene == .indoor ||
-            analysis.semanticScene == .workspace
+        let facets = Set(analysis.photographyContext.sceneFacets)
+        let environmentalColorIsIntentional = !facets.isDisjoint(with: [
+            .sky, .nature, .mountain, .water, .coast, .forest, .city, .street, .nightCity
+        ])
+        let isControlledInterior = facets.contains(.interior) || facets.contains(.workspace)
+        let isClosePortrait = facets.contains(.portrait)
+            && !environmentalColorIsIntentional
+            && analysis.largestFaceCoverage >= 0.035
+        let canDiagnoseNeutralColor = isControlledInterior || isClosePortrait
         guard canDiagnoseNeutralColor else { return }
 
         switch analysis.colorCast {

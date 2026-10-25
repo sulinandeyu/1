@@ -71,6 +71,28 @@ enum SceneStrategy: String, Equatable, Sendable {
         let lighting = Set(context.lightingConditions)
 
         if facets.contains(.portrait) || facets.contains(.groupPortrait) {
+            let environmentFacets: Set<SceneFacet> = [
+                .nature, .sky, .mountain, .water, .coast, .forest, .countryRoad,
+                .city, .architecture, .street
+            ]
+            let hasReliableWholePersonMask = analysis.personMask?.isValid == true
+            let environmentDominatesFrame = hasReliableWholePersonMask
+                && analysis.personCoverage <= 0.42
+                && analysis.largestFaceCoverage <= 0.08
+                && !facets.isDisjoint(with: environmentFacets)
+
+            if environmentDominatesFrame {
+                if lighting.contains(.sunrise) || lighting.contains(.dusk) || lighting.contains(.goldenHour) {
+                    return .sunset
+                }
+                if lighting.contains(.night) && !lighting.contains(.blueHour) { return .night }
+                if !facets.isDisjoint(with: [.water, .coast, .mountain, .forest, .countryRoad, .nature, .sky]) {
+                    return .landscape
+                }
+                if facets.contains(.architecture) { return .architecture }
+                if facets.contains(.street) || facets.contains(.city) { return .street }
+            }
+
             return analysis.semanticScene == .backlitPortrait ? .backlitPortrait : .portrait
         }
         if lighting.contains(.sunrise) || lighting.contains(.dusk) || lighting.contains(.goldenHour) {

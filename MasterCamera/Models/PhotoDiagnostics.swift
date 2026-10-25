@@ -83,7 +83,10 @@ struct PhotoDiagnosticSection: Identifiable, Equatable, Sendable {
                     label: "人脸/背景亮度差",
                     value: analysis.faceToBackgroundLuminanceDelta.optionalSignedPercentText
                 ),
-                PhotoDiagnosticItem(label: "人物蒙版", value: analysis.personMask.maskSummary),
+                PhotoDiagnosticItem(
+                    label: "人物蒙版",
+                    value: "\(analysis.personMask.maskSummary) · 人物覆盖 \(analysis.personCoverage.percentText) · 最大人脸 \(analysis.largestFaceCoverage.percentText)"
+                ),
                 PhotoDiagnosticItem(label: "主体蒙版", value: analysis.salientSubjectMask.maskSummary),
                 PhotoDiagnosticItem(label: "皮肤蒙版", value: analysis.skinMask.maskSummary),
                 PhotoDiagnosticItem(
@@ -103,6 +106,14 @@ struct PhotoDiagnosticSection: Identifiable, Equatable, Sendable {
                         analysis.segmentationDiagnostics.architectureCoverage * 100
                     )
                 ),
+                PhotoDiagnosticItem(
+                    label: "天空区域实测",
+                    value: analysis.skyStatistics.regionStatisticsSummary
+                ),
+                PhotoDiagnosticItem(label: "地面区域实测", value: analysis.groundStatistics.regionStatisticsSummary),
+                PhotoDiagnosticItem(label: "植被区域实测", value: analysis.vegetationStatistics.regionStatisticsSummary),
+                PhotoDiagnosticItem(label: "水面区域实测", value: analysis.waterStatistics.regionStatisticsSummary),
+                PhotoDiagnosticItem(label: "建筑区域实测", value: analysis.architectureStatistics.regionStatisticsSummary),
                 PhotoDiagnosticItem(label: "语义标签", value: analysis.semanticLabels.labelSummary)
             ]
         )
@@ -447,6 +458,22 @@ private extension Optional where Wrapped == NormalizedPhotoMask {
     var maskSummary: String {
         guard let mask = self, mask.isValid else { return "未检测到" }
         return "已生成 \(mask.width)×\(mask.height)"
+    }
+}
+
+private extension Optional where Wrapped == PhotoRegionStatistics {
+    var regionStatisticsSummary: String {
+        guard let statistics = self else { return "未测得（无可靠区域蒙版）" }
+        return String(
+            format: "亮度 %.1f%% · 5–95%%跨度 %.1f%% · 饱和度 %.1f%% · 高光 %.1f%% · RGB %.0f/%.0f/%.0f",
+            statistics.averageLuminance * 100,
+            statistics.contrastRange * 100,
+            statistics.averageSaturation * 100,
+            statistics.highlightRatio * 100,
+            statistics.redAverage * 255,
+            statistics.greenAverage * 255,
+            statistics.blueAverage * 255
+        )
     }
 }
 

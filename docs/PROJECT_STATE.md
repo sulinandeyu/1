@@ -5,7 +5,9 @@
 - iOS 17+, SwiftUI, AVFoundation, Core Image, Vision and one bundled semantic Core ML model.
 - Camera capture, front/back switching, original preservation, edited JPEG, comparison UI,
   Photos import re-test and Photo Library saving are working.
-- TestFlight build 13 contains the reference-guided V6 engine at commit `3162a6c`.
+- TestFlight build 18 contains the Phase 2 diagnostics baseline at commit `9a5488e`.
+- The 2026-10-25 environment-portrait and regional-statistics repair is currently a local working-tree
+  change and has not yet been compiled or uploaded to TestFlight.
 
 ## Effective capture-to-output chain
 
@@ -62,6 +64,9 @@ JPEG export share `CoreImageRenderer.processImage`; the original is never overwr
   user attachments are App screenshots, so end-to-end photographic acceptance remains a phone test.
 - There is no generative retouch model in the app. Current output is deterministic on-device Core
   Image/Vision/Core ML processing; non-person AI restoration remains a future, separately gated phase.
+
+The same-scene Original/MasterCamera/reference pixel audit and the current repair boundary are recorded
+in `docs/V6_REAL_IMAGE_REPAIR_2026-10-25.md`.
 
 The 2026-10-24 product-position audit and staged implementation plan are recorded in
 `docs/AI_AUTONOMOUS_PHOTOGRAPHER_AUDIT.md`.

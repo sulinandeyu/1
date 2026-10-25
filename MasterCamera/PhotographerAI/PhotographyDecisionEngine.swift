@@ -29,6 +29,7 @@ final class PhotographyDecisionEngine {
         applySceneStrategy(
             analysis: analysis,
             strategy: strategy,
+            problems: problems,
             recipe: &recipe,
             actions: &actions
         )
@@ -316,8 +317,10 @@ final class PhotographyDecisionEngine {
             } else {
                 recipe.skyExposureEV = 0
             }
-            recipe.hsl.greenSaturation = max(-0.08, min(recipe.hsl.greenSaturation, analysis.averageSaturation > 0.38 ? -0.04 : 0.02))
-            recipe.hsl.blueSaturation = max(-0.07, min(recipe.hsl.blueSaturation, analysis.averageSaturation > 0.34 ? -0.035 : 0.025))
+            let vegetationSaturation = analysis.vegetationStatistics?.averageSaturation ?? analysis.averageSaturation
+            let skySaturation = analysis.skyStatistics?.averageSaturation ?? analysis.averageSaturation
+            recipe.hsl.greenSaturation = max(-0.08, min(recipe.hsl.greenSaturation, vegetationSaturation > 0.38 ? -0.04 : 0.025))
+            recipe.hsl.blueSaturation = max(-0.07, min(recipe.hsl.blueSaturation, skySaturation > 0.42 ? -0.035 : 0.035))
             recipe.colorGradeIntensity = min(recipe.colorGradeIntensity, 0.18)
             recipe.shadowCoolAmount = min(recipe.shadowCoolAmount, 0.07)
             recipe.midtoneWarmAmount = min(recipe.midtoneWarmAmount, 0.08)
@@ -731,15 +734,19 @@ final class PhotographyDecisionEngine {
         guard analysis.skyMask?.isValid == true else { return }
 
         let context = analysis.photographyContext
-        let recoverableHighlights = max(0, analysis.highlightRatio - analysis.whiteRatio)
-        let recoveryStrength = min(1, max(0, recoverableHighlights * 4 + max(0, analysis.contrastRange - 0.42)))
-        let saturationHeadroom = min(1, max(0, (0.34 - analysis.averageSaturation) * 4))
+        let skyStatistics = analysis.skyStatistics
+        let skyHighlightRatio = skyStatistics?.highlightRatio ?? analysis.highlightRatio
+        let skyContrast = skyStatistics?.contrastRange ?? analysis.contrastRange
+        let skySaturation = skyStatistics?.averageSaturation ?? analysis.averageSaturation
+        let recoverableHighlights = max(0, skyHighlightRatio - analysis.whiteRatio)
+        let recoveryStrength = min(1, max(0, recoverableHighlights * 3.2 + max(0, skyContrast - 0.42)))
+        let saturationHeadroom = min(1, max(0, (0.48 - skySaturation) * 2.5))
 
         switch strategy {
         case .landscape, .outdoor, .brightOutdoor, .highContrast:
             recipe.skyExposureEV = -(0.025 + 0.105 * recoveryStrength)
             recipe.skyHighlightAmount = 0.78 - 0.26 * recoveryStrength
-            recipe.skySaturation = 1 + 0.035 * saturationHeadroom
+            recipe.skySaturation = 1 + 0.08 * saturationHeadroom
             if context.lightingConditions.contains(.overcast) {
                 recipe.skyExposureEV = max(recipe.skyExposureEV, -0.055)
                 recipe.skySaturation = min(recipe.skySaturation, 0.995)
@@ -768,6 +775,7 @@ final class PhotographyDecisionEngine {
     private func applySceneStrategy(
         analysis: PhotoAnalysis,
         strategy: SceneStrategy,
+        problems: PhotoProblemReport,
         recipe: inout AutomaticEditingRecipe,
         actions: inout [PhotographyAction]
     ) {
@@ -829,21 +837,35 @@ final class PhotographyDecisionEngine {
                 )
             )
         case .landscape:
+            let recoverableHighlights = max(0, analysis.highlightRatio - analysis.whiteRatio)
+            let recoverableShadows = max(0, analysis.shadowRatio - analysis.blackRatio)
             recipe.hsl.greenSaturation = 0.035
             recipe.hsl.greenLuminance = 0.012
             recipe.hsl.blueSaturation = 0.03
             recipe.hsl.blueLuminance = -0.012
-            recipe.highlightAmount = min(recipe.highlightAmount, 0.72)
-            recipe.shadowAmount = max(recipe.shadowAmount, 0.14)
-            recipe.contrast += 0.035
-            recipe.saturation += 0.012
-            recipe.vibrance += 0.14
+            if !problems.contains(.clippedHighlights) {
+                let highlightTarget = max(0.78, 1 - min(0.2, recoverableHighlights * 1.4))
+                recipe.highlightAmount = min(recipe.highlightAmount, highlightTarget)
+            }
+            if !problems.contains(.blockedShadows), recoverableShadows > 0.24 {
+                recipe.shadowAmount = max(recipe.shadowAmount, min(0.13, (recoverableShadows - 0.24) * 0.5))
+            }
+            let contrastLift: Float = analysis.contrastRange < 0.48
+                ? 0.045
+                : (analysis.contrastRange < 0.72 ? 0.03 : 0.012)
+            recipe.contrast += contrastLift
+            recipe.saturation += analysis.averageSaturation < 0.3 ? 0.008 : 0
+            recipe.vibrance += min(0.15, max(0.07, (0.42 - analysis.averageSaturation) * 0.5))
             recipe.toneCurveAmount = max(recipe.toneCurveAmount, 0.62)
             recipe.toneCurveStyle = .landscape
             recipe.colorGradeIntensity = max(recipe.colorGradeIntensity, 0.34)
             recipe.shadowCoolAmount = max(recipe.shadowCoolAmount, 0.28)
             recipe.highlightWarmAmount = max(recipe.highlightWarmAmount, 0.12)
-            recipe.sharpeningAmount = max(recipe.sharpeningAmount, 0.2)
+            recipe.localContrastAmount = max(
+                recipe.localContrastAmount,
+                min(0.13, 0.075 + max(0, analysis.detailScore - analysis.noiseEstimate) * 0.2)
+            )
+            recipe.sharpeningAmount = max(recipe.sharpeningAmount, 0.16)
             actions.append(
                 PhotographyAction(
                     title: "建立风景层次",
