@@ -184,6 +184,83 @@ final class QualityCheckService {
         )
     }
 
+    func measureRegionImpacts(
+        originalData: Data,
+        editedData: Data,
+        analysis: PhotoAnalysis
+    ) throws -> [PhotographyRegionImpact] {
+        guard
+            let original = CIImage(data: originalData, options: [.applyOrientationProperty: true]),
+            let edited = CIImage(data: editedData, options: [.applyOrientationProperty: true])
+        else {
+            throw QualityValidationError.invalidImageData
+        }
+        let width = 96
+        let height = max(1, Int((CGFloat(width) * original.extent.height / original.extent.width).rounded()))
+        let originalPixels = rgbaPixels(from: original, width: width, height: height)
+        let editedPixels = rgbaPixels(from: edited, width: width, height: height)
+        guard originalPixels.count == editedPixels.count, !originalPixels.isEmpty else {
+            throw QualityValidationError.invalidImageData
+        }
+
+        let regions: [(TreatmentRegion, NormalizedPhotoMask?)] = [
+            (.sky, analysis.skyMask),
+            (.ground, analysis.groundMask),
+            (.vegetation, analysis.vegetationMask),
+            (.water, analysis.waterMask),
+            (.architecture, analysis.architectureMask),
+            (.person, analysis.personMask),
+            (.subject, analysis.salientSubjectMask)
+        ]
+        return regions.compactMap { region, optionalMask in
+            guard let mask = optionalMask, mask.isValid else { return nil }
+            var luminanceDelta: Float = 0
+            var colorDelta: Float = 0
+            var contrastDelta: Float = 0
+            var contrastCount: Float = 0
+            var changed: Float = 0
+            var count: Float = 0
+            for y in 0..<height {
+                for x in 0..<width {
+                    let maskX = min(mask.width - 1, max(0, Int(Float(x) / Float(width) * Float(mask.width))))
+                    let maskY = min(mask.height - 1, max(0, Int(Float(y) / Float(height) * Float(mask.height))))
+                    guard mask.pixels[(maskY * mask.width) + maskX] >= 128 else { continue }
+                    let index = ((y * width) + x) * 4
+                    let sourceRGB = rgb(at: index, in: originalPixels)
+                    let resultRGB = rgb(at: index, in: editedPixels)
+                    let sourceLuminance = luminance(sourceRGB)
+                    let resultLuminance = luminance(resultRGB)
+                    luminanceDelta += resultLuminance - sourceLuminance
+                    let difference = chromaDifference(sourceRGB, resultRGB)
+                    colorDelta += difference
+                    if x + 1 < width {
+                        let rightMaskX = min(mask.width - 1, max(0, Int(Float(x + 1) / Float(width) * Float(mask.width))))
+                        if mask.pixels[(maskY * mask.width) + rightMaskX] >= 128 {
+                            let rightIndex = index + 4
+                            let sourceGradient = abs(sourceLuminance - luminance(rgb(at: rightIndex, in: originalPixels)))
+                            let resultGradient = abs(resultLuminance - luminance(rgb(at: rightIndex, in: editedPixels)))
+                            contrastDelta += resultGradient - sourceGradient
+                            contrastCount += 1
+                        }
+                    }
+                    if abs(resultLuminance - sourceLuminance) + difference > (3.0 / 255.0) {
+                        changed += 1
+                    }
+                    count += 1
+                }
+            }
+            guard count >= 4 else { return nil }
+            return PhotographyRegionImpact(
+                region: region,
+                maskCoverage: mask.activeCoverage,
+                luminanceDelta: luminanceDelta / count,
+                colorDelta: colorDelta / count,
+                contrastDelta: contrastCount > 0 ? contrastDelta / contrastCount : 0,
+                changedPixelRatio: changed / count
+            )
+        }
+    }
+
     private func status(for issues: [QualityIssue]) -> QualityStatus {
         guard !issues.isEmpty else {
             return .passed

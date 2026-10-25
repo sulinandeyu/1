@@ -1148,3 +1148,371 @@ final class PhotographyDirector {
     }
 }
 
+/// Produces bounded alternatives from the one authoritative photographer decision.
+/// The candidates are not LUTs: every recipe starts from the current photo's measured
+/// recipe and is varied only in response to its diagnosed problems and reliable regions.
+struct PhotographyCandidatePlanner {
+    func makePlans(
+        decision: PhotographyDecision,
+        analysis: PhotoAnalysis,
+        problems: PhotoProblemReport
+    ) -> [PhotographyEditPlan] {
+        let severity = aggregateSeverity(problems)
+        let naturalStrength = 0.76 + (severity * 0.1)
+        let dimensionalStrength = 0.94 + (severity * 0.14)
+        let targetedStrength = 1.0 + (severity * 0.2)
+
+        let variants: [(PhotographyCandidateIntent, Float)] = [
+            (.natural, naturalStrength),
+            (.dimensional, dimensionalStrength),
+            (.targeted, targetedStrength)
+        ]
+
+        return variants.map { intent, strength in
+            let recipe = candidateRecipe(
+                from: decision.recipe,
+                intent: intent,
+                strength: strength,
+                analysis: analysis,
+                problems: problems
+            )
+            return PhotographyEditPlan(
+                id: intent.rawValue,
+                intent: intent,
+                adjustments: adjustments(
+                    intent: intent,
+                    recipe: recipe,
+                    decision: decision,
+                    problems: problems
+                ),
+                recipe: recipe,
+                rationale: rationale(intent: intent, problems: problems)
+            )
+        }
+    }
+
+    private func aggregateSeverity(_ report: PhotoProblemReport) -> Float {
+        guard !report.problems.isEmpty else { return 0 }
+        let total = report.problems.reduce(Float(0)) { partial, problem in
+            partial + Float(problem.severity.rawValue) * problem.confidence
+        }
+        return min(1, total / (Float(report.problems.count) * 3))
+    }
+
+    private func candidateRecipe(
+        from base: AutomaticEditingRecipe,
+        intent: PhotographyCandidateIntent,
+        strength: Float,
+        analysis: PhotoAnalysis,
+        problems: PhotoProblemReport
+    ) -> AutomaticEditingRecipe {
+        var recipe = scaled(base, by: strength)
+        let kinds = Set(problems.problems.map(\.kind))
+        let hasReliablePersonMask = analysis.personMask?.isValid == true
+
+        switch intent {
+        case .natural:
+            recipe.grainAmount = 0
+            recipe.bloomIntensity = min(recipe.bloomIntensity, 0.004)
+            recipe.halationIntensity = min(recipe.halationIntensity, 0.002)
+            recipe.localContrastAmount = min(recipe.localContrastAmount, 0.075)
+            recipe.colorGradeIntensity = min(recipe.colorGradeIntensity, 0.16)
+        case .dimensional:
+            if kinds.contains(.flatContrast) || analysis.photographyContext.spatialDepthScore < 0.5 {
+                recipe.toneCurveAmount = min(0.62, max(recipe.toneCurveAmount, 0.2 + strength * 0.1))
+                recipe.localContrastAmount = min(0.13, max(recipe.localContrastAmount, 0.055 + strength * 0.025))
+                recipe.upperMidtoneSeparation = min(0.07, max(recipe.upperMidtoneSeparation, 0.025))
+                recipe.backgroundSeparation = min(0.11, max(recipe.backgroundSeparation, 0.035))
+            }
+            if kinds.contains(.harshContrast) {
+                recipe.contrast = min(recipe.contrast, 1.025)
+                recipe.shadowRollOff = max(recipe.shadowRollOff, 0.22)
+                recipe.highlightRollOff = max(recipe.highlightRollOff, 0.28)
+            }
+        case .targeted:
+            applyTargetedProblems(kinds, analysis: analysis, recipe: &recipe)
+        }
+
+        if analysis.faceCount > 0 {
+            recipe.faceExposureEV = 0
+            recipe.subjectExposureEV = hasReliablePersonMask
+                ? min(recipe.subjectExposureEV, 0.15)
+                : 0
+            recipe.skinTextureProtection = max(recipe.skinTextureProtection, 0.72)
+            recipe.localContrastAmount = min(recipe.localContrastAmount, 0.07)
+            recipe.sharpeningAmount = min(recipe.sharpeningAmount, 0.085)
+            recipe.noiseReductionAmount = min(recipe.noiseReductionAmount, 0.025)
+            recipe.hsl.orangeLuminance = 0
+            recipe.hsl.orangeSaturation = min(0.02, max(-0.02, recipe.hsl.orangeSaturation))
+        }
+
+        if analysis.sceneRecognitionDiagnostics.status == .failed {
+            recipe.hsl = .neutral
+            recipe.colorGradeIntensity = min(recipe.colorGradeIntensity, 0.1)
+        }
+        if analysis.segmentationDiagnostics.status == .failed
+            || analysis.segmentationDiagnostics.status == .noUsableRegion {
+            recipe.skyExposureEV = 0
+            recipe.skyHighlightAmount = 1
+            recipe.skySaturation = 1
+        }
+        return recipe.clamped()
+    }
+
+    private func scaled(
+        _ base: AutomaticEditingRecipe,
+        by strength: Float
+    ) -> AutomaticEditingRecipe {
+        var recipe = base
+        recipe.exposureEV *= strength
+        recipe.highlightAmount = 1 - ((1 - base.highlightAmount) * strength)
+        recipe.shadowAmount *= strength
+        recipe.brightness *= strength
+        recipe.contrast = 1 + ((base.contrast - 1) * strength)
+        recipe.blackPoint *= strength
+        recipe.shadowRollOff *= strength
+        recipe.lowerMidtoneLift *= strength
+        recipe.midtoneBias *= strength
+        recipe.upperMidtoneSeparation *= strength
+        recipe.highlightRollOff *= strength
+        recipe.whitePoint = 1 - ((1 - base.whitePoint) * strength)
+        recipe.localContrastAmount *= strength
+        recipe.saturation = 1 + ((base.saturation - 1) * strength)
+        recipe.vibrance *= strength
+        recipe.temperatureShift *= strength
+        recipe.tintShift *= strength
+        recipe.toneCurveAmount *= strength
+        recipe.shadowCoolAmount *= strength
+        recipe.midtoneWarmAmount *= strength
+        recipe.highlightWarmAmount *= strength
+        recipe.colorGradeIntensity *= strength
+        recipe.colorContrast *= strength
+        recipe.sharpeningAmount *= min(1.08, strength)
+        recipe.vignetteIntensity *= strength
+        recipe.subjectExposureEV *= strength
+        recipe.faceExposureEV = 0
+        recipe.skyExposureEV *= strength
+        recipe.skyHighlightAmount = 1 - ((1 - base.skyHighlightAmount) * strength)
+        recipe.skySaturation = 1 + ((base.skySaturation - 1) * strength)
+        recipe.grainAmount *= strength
+        recipe.bloomIntensity *= strength
+        recipe.halationIntensity *= strength
+        recipe.backgroundSeparation *= strength
+        recipe.shadowZoneExposureEV *= strength
+        recipe.highlightZoneExposureEV *= strength
+        recipe.luminanceMaskStrength *= min(1.1, strength)
+        return recipe
+    }
+
+    private func applyTargetedProblems(
+        _ kinds: Set<PhotoProblemKind>,
+        analysis: PhotoAnalysis,
+        recipe: inout AutomaticEditingRecipe
+    ) {
+        if kinds.contains(.underexposed) {
+            recipe.exposureEV = min(0.24, max(recipe.exposureEV, (0.43 - analysis.averageLuminance) * 0.42))
+        }
+        if kinds.contains(.overexposed) {
+            recipe.exposureEV = max(-0.24, min(recipe.exposureEV, (0.55 - analysis.averageLuminance) * 0.38))
+        }
+        if kinds.contains(.clippedHighlights) {
+            recipe.highlightAmount = min(recipe.highlightAmount, max(0.42, 0.78 - analysis.highlightRatio * 1.1))
+            recipe.highlightRollOff = max(recipe.highlightRollOff, min(0.58, analysis.highlightRatio * 1.8))
+            recipe.whitePoint = min(recipe.whitePoint, 0.975)
+        }
+        if kinds.contains(.blockedShadows) && !analysis.photographyContext.lightingConditions.contains(.night) {
+            recipe.shadowAmount = min(0.52, max(recipe.shadowAmount, analysis.shadowRatio * 0.58))
+            recipe.shadowZoneExposureEV = min(0.18, max(recipe.shadowZoneExposureEV, 0.055))
+        }
+        if kinds.contains(.flatContrast) {
+            recipe.toneCurveAmount = min(0.68, max(recipe.toneCurveAmount, 0.32))
+            recipe.localContrastAmount = min(0.14, max(recipe.localContrastAmount, 0.075))
+        }
+        if kinds.contains(.harshContrast) {
+            recipe.contrast = min(recipe.contrast, 1.02)
+            recipe.shadowRollOff = max(recipe.shadowRollOff, 0.26)
+            recipe.highlightRollOff = max(recipe.highlightRollOff, 0.3)
+        }
+        if kinds.contains(.oversaturated) {
+            recipe.saturation = min(recipe.saturation, 0.99)
+            recipe.vibrance = min(recipe.vibrance, 0.045)
+        }
+        if kinds.contains(.noiseRisk) {
+            recipe.noiseReductionAmount = max(recipe.noiseReductionAmount, 0.025)
+            recipe.sharpeningAmount = min(recipe.sharpeningAmount, 0.07)
+            recipe.grainAmount = 0
+        }
+        if kinds.contains(.backlitSubject), analysis.personMask?.isValid == true {
+            recipe.subjectExposureEV = min(0.15, max(recipe.subjectExposureEV, 0.07))
+            recipe.backgroundSeparation = min(0.1, max(recipe.backgroundSeparation, 0.04))
+        }
+        if kinds.contains(.regionalUnderexposure) {
+            recipe.luminanceMaskStrength = min(0.85, max(recipe.luminanceMaskStrength, 0.5))
+            recipe.shadowZoneExposureEV = min(0.17, max(recipe.shadowZoneExposureEV, 0.07))
+        }
+        if kinds.contains(.regionalFlatness) {
+            recipe.localContrastAmount = min(0.14, max(recipe.localContrastAmount, 0.075))
+        }
+        if kinds.contains(.regionalHighlightRisk) {
+            recipe.highlightRollOff = min(0.65, max(recipe.highlightRollOff, 0.28))
+            recipe.highlightZoneExposureEV = max(-0.2, min(recipe.highlightZoneExposureEV, -0.075))
+        }
+    }
+
+    private func adjustments(
+        intent: PhotographyCandidateIntent,
+        recipe: AutomaticEditingRecipe,
+        decision: PhotographyDecision,
+        problems: PhotoProblemReport
+    ) -> [PhotographyPlannedAdjustment] {
+        var result = problems.problems.map { problem in
+            plannedAdjustment(for: problem, recipe: recipe, intent: intent)
+        }
+        for treatment in decision.treatmentPlan.regionalTreatments where treatment.region != .global {
+            result.append(PhotographyPlannedAdjustment(
+                targetRegion: treatment.region,
+                adjustmentType: .localContrast,
+                intensity: min(0.14, recipe.localContrastAmount * treatment.confidence),
+                confidence: treatment.confidence,
+                reason: treatment.reason,
+                minimumValue: 0,
+                maximumValue: 0.14,
+                expectedEffect: treatment.objective,
+                fallbackBehavior: treatment.fallback
+            ))
+        }
+        if recipe.vibrance > 0.001 {
+            result.append(PhotographyPlannedAdjustment(
+                targetRegion: .global,
+                adjustmentType: .vibrance,
+                intensity: recipe.vibrance,
+                confidence: 0.85,
+                reason: "依据当前照片平均饱和度补充自然饱和度。",
+                minimumValue: 0,
+                maximumValue: 0.32,
+                expectedEffect: "优先改善低饱和颜色，避免所有颜色同步过饱和。",
+                fallbackBehavior: "若候选出现过饱和则降低或关闭。"
+            ))
+        }
+        if recipe.luminanceMaskStrength > 0.001 {
+            result.append(PhotographyPlannedAdjustment(
+                targetRegion: .global,
+                adjustmentType: .dodgeAndBurn,
+                intensity: recipe.luminanceMaskStrength,
+                confidence: 0.84,
+                reason: "按当前照片高光与阴影分布执行亮度蒙版处理。",
+                minimumValue: 0,
+                maximumValue: 1,
+                expectedEffect: "分别控制高光和阴影，不用统一曝光替代。",
+                fallbackBehavior: "暗部噪声或高光异常时由质检限制强度。"
+            ))
+        }
+        if recipe.noiseReductionAmount > 0.001 {
+            result.append(PhotographyPlannedAdjustment(
+                targetRegion: .global,
+                adjustmentType: .noiseReduction,
+                intensity: recipe.noiseReductionAmount,
+                confidence: 0.82,
+                reason: "由暗部与高频残差估计触发。",
+                minimumValue: 0,
+                maximumValue: 0.06,
+                expectedEffect: "控制低照度噪点，同时保留真实纹理。",
+                fallbackBehavior: "人物纹理风险出现时限制到人物保护上限。"
+            ))
+        }
+        if recipe.sharpeningAmount > 0.001 {
+            result.append(PhotographyPlannedAdjustment(
+                targetRegion: .global,
+                adjustmentType: .sharpening,
+                intensity: recipe.sharpeningAmount,
+                confidence: 0.8,
+                reason: "依据当前细节分数执行有限亮度锐化。",
+                minimumValue: 0,
+                maximumValue: 0.22,
+                expectedEffect: "改善边缘清晰度，不制造锐化白边。",
+                fallbackBehavior: "细节过硬或噪声增加时自动降低。"
+            ))
+        }
+        if recipe.grainAmount > 0.001 {
+            result.append(PhotographyPlannedAdjustment(
+                targetRegion: .global,
+                adjustmentType: .filmGrain,
+                intensity: recipe.grainAmount,
+                confidence: 0.65,
+                reason: "仅在当前摄影风格和噪声余量允许时保留轻微颗粒。",
+                minimumValue: 0,
+                maximumValue: 0.12,
+                expectedEffect: "增加克制的摄影质感。",
+                fallbackBehavior: "低照度或噪声风险场景立即关闭。"
+            ))
+        }
+        if result.isEmpty {
+            result.append(PhotographyPlannedAdjustment(
+                targetRegion: .global,
+                adjustmentType: .tonalCurve,
+                intensity: recipe.toneCurveAmount,
+                confidence: 0.8,
+                reason: "原片没有明显技术问题，只进行低强度摄影整理。",
+                minimumValue: 0,
+                maximumValue: 0.32,
+                expectedEffect: "保持原有观感并改善细微层次。",
+                fallbackBehavior: "若技术质量没有改善则保留最克制方案。"
+            ))
+        }
+        return result
+    }
+
+    private func plannedAdjustment(
+        for problem: PhotoProblem,
+        recipe: AutomaticEditingRecipe,
+        intent: PhotographyCandidateIntent
+    ) -> PhotographyPlannedAdjustment {
+        let definition: (PhotographyAdjustmentType, Float, Float, Float)
+        switch problem.kind {
+        case .underexposed, .overexposed:
+            definition = (.globalExposure, recipe.exposureEV, -0.35, 0.35)
+        case .clippedHighlights:
+            definition = (.highlightRecovery, 1 - recipe.highlightAmount, 0, 0.68)
+        case .blockedShadows:
+            definition = (.shadowRecovery, recipe.shadowAmount, 0, 0.68)
+        case .flatContrast, .harshContrast:
+            definition = (.tonalCurve, recipe.toneCurveAmount, 0, 1)
+        case .coolCast, .warmCast, .greenCast:
+            definition = (.whiteBalance, recipe.temperatureShift, -600, 600)
+        case .oversaturated:
+            definition = (.saturation, recipe.saturation, 0.96, 1.08)
+        case .noiseRisk:
+            definition = (.noiseReduction, recipe.noiseReductionAmount, 0, 0.06)
+        case .backlitSubject:
+            definition = (.localExposure, recipe.subjectExposureEV, 0, 0.3)
+        case .regionalUnderexposure:
+            definition = (.dodgeAndBurn, recipe.shadowZoneExposureEV, 0, 0.22)
+        case .regionalFlatness:
+            definition = (.localContrast, recipe.localContrastAmount, 0, 0.28)
+        case .regionalHighlightRisk:
+            definition = (.highlightRecovery, abs(recipe.highlightZoneExposureEV), 0, 0.24)
+        }
+        return PhotographyPlannedAdjustment(
+            targetRegion: problem.affectedRegions.first ?? .global,
+            adjustmentType: definition.0,
+            intensity: definition.1,
+            confidence: problem.confidence,
+            reason: "\(intent.rawValue)：\(problem.evidence)",
+            minimumValue: definition.2,
+            maximumValue: definition.3,
+            expectedEffect: problem.recommendation,
+            fallbackBehavior: problem.risk
+        )
+    }
+
+    private func rationale(
+        intent: PhotographyCandidateIntent,
+        problems: PhotoProblemReport
+    ) -> String {
+        let evidence = problems.problems
+            .map { "\($0.kind.title)(\($0.severity.title))" }
+            .joined(separator: "、")
+        return "\(intent.rawValue)候选由当前照片问题[\(evidence.isEmpty ? "无明显问题" : evidence)]派生，不使用固定 LUT。"
+    }
+}
+

@@ -17,10 +17,11 @@
 
 ## 2. 所需设备与软件
 
-- 一台能够运行当前工程的 Mac 和匹配 iOS 17+ SDK 的 Xcode。
-- 一台 iOS 17 或更高版本的真实 iPhone；不能只用 Simulator 代替相机、Vision/Core ML 性能和相册保存验收。
-- Xcode 中配置有效的 Development Team；工程当前 `DEVELOPMENT_TEAM` 为空，需要测试人员选择自己的签名团队。
-- iPhone 与 Mac 建立信任，可读取 Xcode Console；设备至少预留 2 GB 空间。
+- Windows 开发电脑可继续承担代码修改；不要求用户本地拥有 Mac。
+- 仓库现有 GitHub Actions `iOS Build` 使用 `macos-latest` 执行 `swift test` 和 iOS Simulator build，`TestFlight Release` 使用既有签名材料归档并上传。
+- 一台 iOS 17 或更高版本的真实 iPhone，通过 TestFlight 安装构建；不能只用 Simulator 代替 Vision/Core ML 性能、相册保存和视觉验收。
+- GitHub Actions 和 App Store Connect 中现有签名/上传配置保持不变，不另建发布系统。
+- iPhone 至少预留 2 GB 空间。TestFlight 路径无法直接读取 Xcode Console，因此以 App 内诊断页、错误提示、成片文件和 workflow 日志作为验收证据。
 - 允许 App 使用相机，以及向照片图库添加照片。
 - 五类未经截图、未经社交软件二次压缩的手机原始 JPEG/HEIC。相同文件在整个回归周期内不得替换。
 
@@ -54,16 +55,15 @@
 ## 5. 每次真机运行步骤
 
 1. 保留当前工作区，先记录 `git rev-parse HEAD`、`git status --short`、Xcode 版本、App build、设备型号和 iOS 版本。
-2. 在 Mac 上先运行 `swift test`。它只证明决策核心自动测试状态，不能证明 iOS 图像管线。
-3. 运行一次真机 Debug Build；推荐命令：`xcodebuild -project MasterCamera.xcodeproj -scheme MasterCamera -configuration Debug -destination 'platform=iOS,name=<设备名>' build`。也可在 Xcode 中选择真实设备后 Build & Run。
-4. 打开 Console 日志并按 `com.sulinandeyu.mastercamera` / `ImageEngine` 过滤。每张照片单独保存日志，避免多张结果混在一起。
-5. 在 App 相机页点击“样片复测”，只选择当前 Case 的原始文件。等待处理完成；若出现错误，记录错误并把状态写成 FAIL，不得继续把原图登记为成片。
-6. 在预览页打开信息面板，按 `DEVICE_TEST_RECORD_TEMPLATE.md` 逐字段记录；对长内容分段截图，必须包含识别状态、置信度、覆盖率、执行回执、耗时和质检。
-7. 切换 Original、AI 成片、差异图和逐阶段预览，检查处理步骤与视觉区域是否对应。参数或像素有差异不等于视觉质量通过。
-8. 点击保存，确认照片图库新增两个资源；检查时间戳配对、尺寸、方向，并重新打开 AI 成片确认可解码且不是旧照片。
-9. 导出原图、AI 成片、Console 日志、信息面板截图和填写完成的记录。建议保存到：
+2. 推送后由 GitHub Actions `iOS Build` 运行 `swift test` 和 Simulator build。它们只证明自动测试与构建状态，不能证明真机图像管线。
+3. `iOS Build` 成功后运行既有 `TestFlight Release`，等待 Archive、IPA 导出、上传和 Apple 处理完成，再在 iPhone TestFlight 安装新 build。
+4. 在 App 相机页点击“样片复测”，只选择当前 Case 的原始文件。等待处理完成；若出现错误，记录错误并把状态写成 FAIL，不得继续把原图登记为成片。
+5. 在预览页打开信息面板，按 `DEVICE_TEST_RECORD_TEMPLATE.md` 逐字段记录；对长内容分段截图，必须包含识别状态、置信度、覆盖率、候选评价、执行回执、耗时和质检。
+6. 切换 Original、AI 成片、差异图和逐阶段预览，检查处理步骤与视觉区域是否对应。参数或像素有差异不等于视觉质量通过。
+7. 点击保存，确认照片图库新增两个资源；检查时间戳配对、尺寸、方向，并重新打开 AI 成片确认可解码且不是旧照片。
+8. 导出原图、AI 成片、信息面板截图和填写完成的记录；若 workflow 或 App 显示错误，同时保存对应日志/错误截图。建议保存到：
    `真机验收结果/<日期>-<build>/<Case-ID>/`
-10. 关闭预览返回相机页后再测下一张，避免把上一张预览或时间戳误记到下一 Case。
+9. 关闭预览返回相机页后再测下一张，避免把上一张预览或时间戳误记到下一 Case。
 
 ## 6. 人物专项安全验收
 

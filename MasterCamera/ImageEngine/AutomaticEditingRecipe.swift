@@ -168,6 +168,8 @@ struct RegionalPixelAdjustment: Equatable, Sendable {
                 .clamped(to: -0.07...0.14)
             shadowAmount = ((statistics.shadowRatio - 0.16) * 0.42)
                 .clamped(to: 0...0.2)
+            highlightAmount = (1 - max(0, statistics.highlightRatio - 0.1) * 0.9)
+                .clamped(to: 0.76...1)
             contrast = 1 + ((0.56 - statistics.contrastRange) * 0.16)
                 .clamped(to: 0...0.075)
             clarity = min(0.075, max(0, recipe.localContrastAmount * 0.55))
@@ -180,6 +182,8 @@ struct RegionalPixelAdjustment: Equatable, Sendable {
                 .clamped(to: -0.055...0.105)
             shadowAmount = ((statistics.shadowRatio - 0.2) * 0.34)
                 .clamped(to: 0...0.16)
+            highlightAmount = (1 - max(0, statistics.highlightRatio - 0.12) * 0.75)
+                .clamped(to: 0.8...1)
             contrast = 1 + ((0.54 - statistics.contrastRange) * 0.14)
                 .clamped(to: 0...0.065)
             let saturationDelta = ((0.3 - statistics.averageSaturation) * 0.24)
@@ -216,15 +220,22 @@ struct RegionalPixelAdjustment: Equatable, Sendable {
             return nil
         }
 
+        let regionalResponse = min(
+            1.18,
+            max(
+                0.72,
+                0.72 + (recipe.luminanceMaskStrength * 0.42) + (recipe.localContrastAmount * 1.5)
+            )
+        )
         let scaled = RegionalPixelAdjustment(
             region: region,
-            exposureEV: exposureEV * confidence,
-            highlightAmount: 1 - ((1 - highlightAmount) * confidence),
-            shadowAmount: shadowAmount * confidence,
-            contrast: 1 + ((contrast - 1) * confidence),
+            exposureEV: (exposureEV * confidence * regionalResponse).clamped(to: -0.14...0.14),
+            highlightAmount: max(0.65, 1 - ((1 - highlightAmount) * confidence * regionalResponse)),
+            shadowAmount: min(0.2, shadowAmount * confidence * regionalResponse),
+            contrast: 1 + min(0.075, (contrast - 1) * confidence * regionalResponse),
             saturation: 1 + ((saturation - 1) * confidence),
             temperatureShift: temperatureShift * confidence,
-            clarity: clarity * confidence,
+            clarity: min(0.075, clarity * confidence * regionalResponse),
             confidence: confidence,
             reason: reason,
             fallback: "蒙版或置信度不足时跳过该区域，仅保留全局实测影调处理。"

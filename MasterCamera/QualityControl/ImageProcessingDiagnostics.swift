@@ -10,6 +10,8 @@ struct ImageProcessingDiagnostics: Equatable, Sendable {
     let difference: PixelDifferenceMetrics
     let executedModules: [String]
     let regionalExecutionDetails: [String]
+    let candidateEvaluations: [PhotographyCandidateEvaluation]
+    let finalRegionImpacts: [PhotographyRegionImpact]
     let stages: [ProcessingStageRecord]
     let fallbackReason: String?
 }
@@ -74,6 +76,8 @@ final class ImageProcessingDiagnosticsService {
         editedData: Data,
         executedModules: [String],
         regionalExecutionDetails: [String],
+        candidateEvaluations: [PhotographyCandidateEvaluation] = [],
+        finalRegionImpacts: [PhotographyRegionImpact] = [],
         stages: [ProcessingStageRecord],
         fallbackReason: String?
     ) throws -> ImageDiagnosticsResult {
@@ -100,6 +104,8 @@ final class ImageProcessingDiagnosticsService {
             difference: metrics,
             executedModules: executedModules,
             regionalExecutionDetails: regionalExecutionDetails,
+            candidateEvaluations: candidateEvaluations,
+            finalRegionImpacts: finalRegionImpacts,
             stages: stages,
             fallbackReason: fallbackReason
         )

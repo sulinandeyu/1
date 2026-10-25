@@ -37,6 +37,36 @@ final class CoreImageRenderer {
         return UIImage(cgImage: cgImage)
     }
 
+    func renderEvaluationOriginal(
+        from data: Data,
+        maximumLongEdge: CGFloat = 640
+    ) throws -> Data {
+        guard let decoded = CIImage(
+            data: data,
+            options: [.applyOrientationProperty: true]
+        ) else {
+            throw ImageRenderingError.invalidImageData
+        }
+        return try evaluationJPEG(
+            from: scaledForEvaluation(canonicalImage(decoded), maximumLongEdge: maximumLongEdge)
+        )
+    }
+
+    func renderEvaluationPreview(
+        from data: Data,
+        recipe: AutomaticEditingRecipe,
+        analysis: PhotoAnalysis?,
+        maximumLongEdge: CGFloat = 640
+    ) throws -> Data {
+        let result = try processImage(
+            data: data,
+            recipe: recipe,
+            analysis: analysis,
+            maximumLongEdge: maximumLongEdge
+        )
+        return try evaluationJPEG(from: result.finalImage)
+    }
+
     func renderStagePreviews(
         from data: Data,
         recipe: AutomaticEditingRecipe,
@@ -97,12 +127,16 @@ final class CoreImageRenderer {
     private func processImage(
         data: Data,
         recipe: AutomaticEditingRecipe,
-        analysis: PhotoAnalysis?
+        analysis: PhotoAnalysis?,
+        maximumLongEdge: CGFloat? = nil
     ) throws -> (finalImage: CIImage, canvas: CGRect, stages: [(String, CIImage)], timings: [TimeInterval]) {
         guard let decoded = CIImage(data: data, options: [.applyOrientationProperty: true]) else {
             throw ImageRenderingError.invalidImageData
         }
-        let input = canonicalImage(decoded)
+        let canonical = canonicalImage(decoded)
+        let input = maximumLongEdge.map {
+            scaledForEvaluation(canonical, maximumLongEdge: $0)
+        } ?? canonical
         let canvas = input.extent
         var start = ProcessInfo.processInfo.systemUptime
         let exposed = applyExposure(to: input, recipe: recipe)
@@ -155,6 +189,34 @@ final class CoreImageRenderer {
         return translated.cropped(
             to: CGRect(origin: .zero, size: sourceExtent.size)
         )
+    }
+
+    private func scaledForEvaluation(
+        _ image: CIImage,
+        maximumLongEdge: CGFloat
+    ) -> CIImage {
+        let longEdge = max(image.extent.width, image.extent.height)
+        guard longEdge > maximumLongEdge else { return image }
+        let scale = maximumLongEdge / longEdge
+        return image
+            .transformed(by: CGAffineTransform(scaleX: scale, y: scale))
+            .cropped(to: CGRect(
+                x: 0,
+                y: 0,
+                width: (image.extent.width * scale).rounded(.down),
+                height: (image.extent.height * scale).rounded(.down)
+            ))
+    }
+
+    private func evaluationJPEG(from image: CIImage) throws -> Data {
+        guard let data = context.jpegRepresentation(
+            of: image,
+            colorSpace: outputColorSpace,
+            options: [:]
+        ) else {
+            throw ImageRenderingError.renderFailed
+        }
+        return data
     }
 
     private func checkedCanvas(

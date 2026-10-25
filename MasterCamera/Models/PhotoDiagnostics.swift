@@ -287,7 +287,7 @@ struct PhotoDiagnosticSection: Identifiable, Equatable, Sendable {
             : report.problems.enumerated().map { index, problem in
                 PhotoDiagnosticItem(
                     label: "问题 \(index + 1) · \(problem.severity.title)",
-                    value: "\(problem.kind.title)：\(problem.evidence)"
+                    value: "\(problem.kind.title)：\(problem.evidence) 影响区域：\(problem.affectedRegions.map(\.rawValue).joined(separator: "、"))；置信度 \(Int((problem.confidence * 100).rounded()))%；建议：\(problem.recommendation)；风险：\(problem.risk)"
                 )
             }
 
@@ -383,8 +383,52 @@ struct PhotoDiagnosticSection: Identifiable, Equatable, Sendable {
                     value: diagnostics.executedModules.joined(separator: " → ")
                 ),
                 PhotoDiagnosticItem(
+                    label: "候选方案评估",
+                    value: diagnostics.candidateEvaluations.isEmpty
+                        ? "未执行候选评估"
+                        : diagnostics.candidateEvaluations.map { candidate in
+                            let impactText = candidate.regionImpacts.map { impact in
+                                String(
+                                    format: "%@覆盖%.0f%%/亮度%+.1f%%/颜色%.1f%%/对比%+.1f%%/变化%.0f%%",
+                                    impact.region.rawValue,
+                                    impact.maskCoverage * 100,
+                                    impact.luminanceDelta * 100,
+                                    impact.colorDelta * 100,
+                                    impact.contrastDelta * 100,
+                                    impact.changedPixelRatio * 100
+                                )
+                            }.joined(separator: ",")
+                            return String(
+                                format: "%@%@ · %@ · %.1f分 · 问题改善 %.0f%% · 保真 %.0f%% · %@",
+                                candidate.title,
+                                candidate.selected ? "（已选）" : "",
+                                candidate.status.rawValue,
+                                candidate.score,
+                                candidate.problemImprovement * 100,
+                                candidate.preservationScore * 100,
+                                candidate.reason
+                            ) + (impactText.isEmpty ? "" : " · 区域[\(impactText)]")
+                        }.joined(separator: "；")
+                ),
+                PhotoDiagnosticItem(
                     label: "局部执行回执",
                     value: diagnostics.regionalExecutionDetails.joined(separator: "；")
+                ),
+                PhotoDiagnosticItem(
+                    label: "最终成片区域变化",
+                    value: diagnostics.finalRegionImpacts.isEmpty
+                        ? "没有可测量的可靠区域蒙版"
+                        : diagnostics.finalRegionImpacts.map { impact in
+                            String(
+                                format: "%@：覆盖 %.1f%% · 亮度 %+.2f%% · 颜色 %.2f%% · 局部对比 %+.2f%% · 变化像素 %.1f%%",
+                                impact.region.rawValue,
+                                impact.maskCoverage * 100,
+                                impact.luminanceDelta * 100,
+                                impact.colorDelta * 100,
+                                impact.contrastDelta * 100,
+                                impact.changedPixelRatio * 100
+                            )
+                        }.joined(separator: "；")
                 ),
                 PhotoDiagnosticItem(
                     label: "降级原因",

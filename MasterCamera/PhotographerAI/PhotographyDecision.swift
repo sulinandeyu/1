@@ -185,3 +185,267 @@ struct PhotographyAction: Equatable, Sendable {
     let reason: String
 }
 
+enum PhotographyCandidateIntent: String, CaseIterable, Equatable, Hashable, Sendable {
+    case natural = "自然保守"
+    case dimensional = "层次增强"
+    case targeted = "问题定向"
+}
+
+enum PhotographyAdjustmentType: String, Equatable, Sendable {
+    case globalExposure
+    case localExposure
+    case highlightRecovery
+    case shadowRecovery
+    case tonalCurve
+    case whiteBalance
+    case saturation
+    case vibrance
+    case localContrast
+    case texture
+    case noiseReduction
+    case sharpening
+    case dodgeAndBurn
+    case filmGrain
+}
+
+struct PhotographyPlannedAdjustment: Equatable, Sendable {
+    let targetRegion: TreatmentRegion
+    let adjustmentType: PhotographyAdjustmentType
+    let intensity: Float
+    let confidence: Float
+    let reason: String
+    let minimumValue: Float
+    let maximumValue: Float
+    let expectedEffect: String
+    let fallbackBehavior: String
+}
+
+struct PhotographyEditPlan: Equatable, Sendable {
+    let id: String
+    let intent: PhotographyCandidateIntent
+    let adjustments: [PhotographyPlannedAdjustment]
+    let recipe: AutomaticEditingRecipe
+    let rationale: String
+}
+
+enum CandidateEvaluationStatus: String, Equatable, Sendable {
+    case passed
+    case warning
+    case rejected
+    case skipped
+}
+
+struct PhotographyCandidateEvaluation: Equatable, Sendable {
+    let planID: String
+    let title: String
+    let status: CandidateEvaluationStatus
+    let score: Float
+    let problemImprovement: Float
+    let preservationScore: Float
+    let issues: [String]
+    let regionImpacts: [PhotographyRegionImpact]
+    let reason: String
+    let durationMilliseconds: Int
+    let selected: Bool
+
+    init(
+        planID: String,
+        title: String,
+        status: CandidateEvaluationStatus,
+        score: Float,
+        problemImprovement: Float,
+        preservationScore: Float,
+        issues: [String],
+        regionImpacts: [PhotographyRegionImpact] = [],
+        reason: String,
+        durationMilliseconds: Int,
+        selected: Bool
+    ) {
+        self.planID = planID
+        self.title = title
+        self.status = status
+        self.score = score
+        self.problemImprovement = problemImprovement
+        self.preservationScore = preservationScore
+        self.issues = issues
+        self.regionImpacts = regionImpacts
+        self.reason = reason
+        self.durationMilliseconds = durationMilliseconds
+        self.selected = selected
+    }
+
+    func markingSelected() -> PhotographyCandidateEvaluation {
+        PhotographyCandidateEvaluation(
+            planID: planID,
+            title: title,
+            status: status,
+            score: score,
+            problemImprovement: problemImprovement,
+            preservationScore: preservationScore,
+            issues: issues,
+            regionImpacts: regionImpacts,
+            reason: reason,
+            durationMilliseconds: durationMilliseconds,
+            selected: true
+        )
+    }
+}
+
+struct PhotographyRegionImpact: Equatable, Sendable {
+    let region: TreatmentRegion
+    let maskCoverage: Float
+    let luminanceDelta: Float
+    let colorDelta: Float
+    let contrastDelta: Float
+    let changedPixelRatio: Float
+}
+
+struct PhotographyCandidateSelector {
+    func select(from evaluations: [PhotographyCandidateEvaluation]) -> PhotographyCandidateEvaluation? {
+        let rendered = evaluations.filter { $0.status != .skipped }
+        guard !rendered.isEmpty else { return nil }
+        let acceptable = rendered.filter { $0.status != .rejected }
+        if acceptable.isEmpty {
+            return rendered.first { $0.planID == PhotographyCandidateIntent.natural.rawValue }
+                ?? rendered.max { $0.preservationScore < $1.preservationScore }
+        }
+        return acceptable.max { left, right in
+            if abs(left.score - right.score) > 0.001 {
+                return left.score < right.score
+            }
+            if abs(left.preservationScore - right.preservationScore) > 0.001 {
+                return left.preservationScore < right.preservationScore
+            }
+            return left.durationMilliseconds > right.durationMilliseconds
+        }
+    }
+}
+
+/// Scores only measured improvement. An unchanged image earns zero rather than a
+/// neutral-looking default score, so candidate selection cannot claim progress
+/// merely because a render completed.
+struct PhotographyProblemImprovementScorer {
+    func score(
+        problems: PhotoProblemReport,
+        source: PhotoAnalysis,
+        edited: PhotoAnalysis,
+        regionImpacts: [PhotographyRegionImpact]
+    ) -> Float {
+        guard !problems.isEmpty else { return 0 }
+        var total: Float = 0
+        var weight: Float = 0
+        for problem in problems.problems {
+            let itemWeight = Float(problem.severity.rawValue) * problem.confidence
+            let improvement: Float
+            switch problem.kind {
+            case .underexposed:
+                improvement = normalizedImprovement(
+                    edited.averageLuminance - source.averageLuminance,
+                    scale: 0.09
+                )
+            case .overexposed:
+                improvement = normalizedImprovement(
+                    source.averageLuminance - edited.averageLuminance,
+                    scale: 0.09
+                )
+            case .clippedHighlights:
+                improvement = normalizedImprovement(
+                    source.highlightRatio - edited.highlightRatio,
+                    scale: 0.07
+                )
+            case .blockedShadows:
+                improvement = normalizedImprovement(
+                    source.shadowRatio - edited.shadowRatio,
+                    scale: 0.1
+                )
+            case .flatContrast:
+                improvement = normalizedImprovement(
+                    edited.contrastRange - source.contrastRange,
+                    scale: 0.12
+                )
+            case .harshContrast:
+                improvement = normalizedImprovement(
+                    source.contrastRange - edited.contrastRange,
+                    scale: 0.12
+                )
+            case .oversaturated:
+                improvement = normalizedImprovement(
+                    source.averageSaturation - edited.averageSaturation,
+                    scale: 0.1
+                )
+            case .noiseRisk:
+                improvement = normalizedImprovement(
+                    source.noiseEstimate - edited.noiseEstimate,
+                    scale: 0.05
+                )
+            case .coolCast, .warmCast, .greenCast:
+                improvement = colorNeutralityImprovement(source: source, edited: edited)
+            case .backlitSubject:
+                improvement = personRelightingImprovement(regionImpacts)
+            case .regionalUnderexposure:
+                improvement = regionalImprovement(
+                    for: problem,
+                    impacts: regionImpacts,
+                    keyPath: \.luminanceDelta,
+                    scale: 0.06
+                )
+            case .regionalFlatness:
+                improvement = regionalImprovement(
+                    for: problem,
+                    impacts: regionImpacts,
+                    keyPath: \.contrastDelta,
+                    scale: 0.025
+                )
+            case .regionalHighlightRisk:
+                improvement = regionalImprovement(
+                    for: problem,
+                    impacts: regionImpacts,
+                    keyPath: \.luminanceDelta,
+                    scale: -0.05
+                )
+            }
+            total += improvement * itemWeight
+            weight += itemWeight
+        }
+        return weight > 0 ? min(1, max(0, total / weight)) : 0
+    }
+
+    private func normalizedImprovement(_ value: Float, scale: Float) -> Float {
+        min(1, max(0, value / max(0.001, scale)))
+    }
+
+    private func regionalImprovement(
+        for problem: PhotoProblem,
+        impacts: [PhotographyRegionImpact],
+        keyPath: KeyPath<PhotographyRegionImpact, Float>,
+        scale: Float
+    ) -> Float {
+        guard
+            let region = problem.affectedRegions.first,
+            let impact = impacts.first(where: { $0.region == region })
+        else { return 0 }
+        let directionalValue = impact[keyPath: keyPath] * (scale < 0 ? -1 : 1)
+        return normalizedImprovement(directionalValue, scale: abs(scale))
+    }
+
+    private func personRelightingImprovement(
+        _ impacts: [PhotographyRegionImpact]
+    ) -> Float {
+        guard let impact = impacts.first(where: { $0.region == .person })
+            ?? impacts.first(where: { $0.region == .subject })
+        else { return 0 }
+        return normalizedImprovement(impact.luminanceDelta, scale: 0.05)
+    }
+
+    private func colorNeutralityImprovement(
+        source: PhotoAnalysis,
+        edited: PhotoAnalysis
+    ) -> Float {
+        let sourceSpread = max(source.redAverage, max(source.greenAverage, source.blueAverage))
+            - min(source.redAverage, min(source.greenAverage, source.blueAverage))
+        let editedSpread = max(edited.redAverage, max(edited.greenAverage, edited.blueAverage))
+            - min(edited.redAverage, min(edited.greenAverage, edited.blueAverage))
+        return normalizedImprovement(sourceSpread - editedSpread, scale: 0.06)
+    }
+}
+

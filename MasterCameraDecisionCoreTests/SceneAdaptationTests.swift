@@ -456,6 +456,266 @@ final class SceneAdaptationTests: XCTestCase {
         XCTAssertEqual(result.recipe.hsl, .neutral)
     }
 
+    func testV8CandidatesComeFromMeasuredProblemsAndAreNotOnePreset() throws {
+        let dark = fixture(
+            luminance: 0.2,
+            contrast: 0.3,
+            saturation: 0.16,
+            labels: ["landscape", "mountain", "sky"],
+            shadowRatio: 0.54
+        )
+        let bright = fixture(
+            luminance: 0.76,
+            contrast: 0.72,
+            saturation: 0.2,
+            labels: ["landscape", "mountain", "sky"],
+            highlightRatio: 0.2
+        )
+        let planner = PhotographyCandidatePlanner()
+        let darkProblems = detector.detect(in: dark)
+        let brightProblems = detector.detect(in: bright)
+        let darkPlans = planner.makePlans(
+            decision: engine.makeDecision(for: dark, problems: darkProblems),
+            analysis: dark,
+            problems: darkProblems
+        )
+        let brightPlans = planner.makePlans(
+            decision: engine.makeDecision(for: bright, problems: brightProblems),
+            analysis: bright,
+            problems: brightProblems
+        )
+
+        XCTAssertEqual(darkPlans.count, 3)
+        XCTAssertEqual(Set(darkPlans.map(\.intent)), Set(PhotographyCandidateIntent.allCases))
+        XCTAssertGreaterThanOrEqual(Set(darkPlans.map { $0.recipe.traceSummary }).count, 2)
+        let darkTargeted = try XCTUnwrap(darkPlans.first { $0.intent == .targeted })
+        let brightTargeted = try XCTUnwrap(brightPlans.first { $0.intent == .targeted })
+        XCTAssertGreaterThan(darkTargeted.recipe.exposureEV, brightTargeted.recipe.exposureEV)
+        XCTAssertNotEqual(darkTargeted.recipe.traceSummary, brightTargeted.recipe.traceSummary)
+        XCTAssertTrue(darkTargeted.adjustments.contains { $0.adjustmentType == .globalExposure })
+    }
+
+    func testV8RegionalProblemUsesMaskBackedMeasurements() throws {
+        let mask = NormalizedPhotoMask(width: 2, height: 2, pixels: Data([255, 255, 0, 0]))
+        let analysis = fixture(
+            luminance: 0.46,
+            contrast: 0.58,
+            saturation: 0.2,
+            labels: ["landscape", "trail", "forest"],
+            groundMask: mask,
+            groundStatistics: regionStatistics(
+                luminance: 0.14,
+                contrast: 0.18,
+                saturation: 0.15,
+                red: 0.15,
+                green: 0.14,
+                blue: 0.12,
+                shadowRatio: 0.62
+            )
+        )
+        let problems = detector.detect(in: analysis)
+        let darkGround = try XCTUnwrap(problems.problems.first {
+            $0.kind == .regionalUnderexposure && $0.affectedRegions == [.ground]
+        })
+
+        XCTAssertGreaterThan(darkGround.confidence, 0.5)
+        XCTAssertTrue(darkGround.evidence.contains("ground"))
+        let plans = PhotographyCandidatePlanner().makePlans(
+            decision: engine.makeDecision(for: analysis, problems: problems),
+            analysis: analysis,
+            problems: problems
+        )
+        let targeted = try XCTUnwrap(plans.first { $0.intent == .targeted })
+        XCTAssertTrue(targeted.adjustments.contains {
+            $0.targetRegion == .ground && $0.adjustmentType == .dodgeAndBurn
+        })
+    }
+
+    func testV8EditPlanParametersRemainInsideDeclaredBounds() {
+        let analysis = fixture(
+            luminance: 0.21,
+            contrast: 0.28,
+            saturation: 0.61,
+            labels: ["night", "street", "building"],
+            shadowRatio: 0.6,
+            highlightRatio: 0.18
+        )
+        let problems = detector.detect(in: analysis)
+        let plans = PhotographyCandidatePlanner().makePlans(
+            decision: engine.makeDecision(for: analysis, problems: problems),
+            analysis: analysis,
+            problems: problems
+        )
+
+        for adjustment in plans.flatMap(\.adjustments) {
+            XCTAssertGreaterThanOrEqual(adjustment.intensity, adjustment.minimumValue)
+            XCTAssertLessThanOrEqual(adjustment.intensity, adjustment.maximumValue)
+            XCTAssertGreaterThanOrEqual(adjustment.confidence, 0)
+            XCTAssertLessThanOrEqual(adjustment.confidence, 1)
+        }
+    }
+
+    func testV8EveryPortraitCandidatePreservesHardProtection() {
+        let personMask = NormalizedPhotoMask(width: 2, height: 2, pixels: Data([255, 255, 0, 0]))
+        let analysis = fixture(
+            luminance: 0.28,
+            contrast: 0.72,
+            saturation: 0.24,
+            labels: ["portrait", "person", "sky"],
+            faceCount: 1,
+            faceLuminance: 0.2,
+            backgroundLuminance: 0.42,
+            personMask: personMask
+        )
+        let problems = detector.detect(in: analysis)
+        let plans = PhotographyCandidatePlanner().makePlans(
+            decision: engine.makeDecision(for: analysis, problems: problems),
+            analysis: analysis,
+            problems: problems
+        )
+
+        for plan in plans {
+            XCTAssertEqual(plan.recipe.faceExposureEV, 0)
+            XCTAssertLessThanOrEqual(plan.recipe.subjectExposureEV, 0.15)
+            XCTAssertGreaterThanOrEqual(plan.recipe.skinTextureProtection, 0.72)
+            XCTAssertEqual(plan.recipe.hsl.orangeLuminance, 0)
+            XCTAssertLessThanOrEqual(abs(plan.recipe.hsl.orangeSaturation), 0.02)
+        }
+    }
+
+    func testCandidateSelectorRejectsTechnicallyFailedHigherScore() throws {
+        let rejected = PhotographyCandidateEvaluation(
+            planID: "rejected",
+            title: "过强候选",
+            status: .rejected,
+            score: 99,
+            problemImprovement: 1,
+            preservationScore: 0.2,
+            issues: ["clippedHighlights"],
+            reason: "技术质量失败",
+            durationMilliseconds: 10,
+            selected: false
+        )
+        let accepted = PhotographyCandidateEvaluation(
+            planID: "accepted",
+            title: "自然候选",
+            status: .passed,
+            score: 72,
+            problemImprovement: 0.7,
+            preservationScore: 0.9,
+            issues: [],
+            reason: "问题改善且保真",
+            durationMilliseconds: 12,
+            selected: false
+        )
+
+        let selected = try XCTUnwrap(PhotographyCandidateSelector().select(from: [rejected, accepted]))
+        XCTAssertEqual(selected.planID, "accepted")
+    }
+
+    func testProblemImprovementDoesNotRewardUnchangedImage() {
+        let analysis = fixture(
+            luminance: 0.21,
+            contrast: 0.3,
+            saturation: 0.2,
+            labels: ["landscape"],
+            shadowRatio: 0.58
+        )
+        let problems = detector.detect(in: analysis)
+
+        let score = PhotographyProblemImprovementScorer().score(
+            problems: problems,
+            source: analysis,
+            edited: analysis,
+            regionImpacts: []
+        )
+
+        XCTAssertEqual(score, 0, accuracy: 0.0001)
+    }
+
+    func testProblemImprovementRewardsOnlyCorrectMeasuredDirection() {
+        let source = fixture(
+            luminance: 0.21,
+            contrast: 0.52,
+            saturation: 0.2,
+            labels: ["landscape"],
+            shadowRatio: 0.12
+        )
+        let brighter = fixture(
+            luminance: 0.27,
+            contrast: 0.52,
+            saturation: 0.2,
+            labels: ["landscape"],
+            shadowRatio: 0.12
+        )
+        let darker = fixture(
+            luminance: 0.17,
+            contrast: 0.52,
+            saturation: 0.2,
+            labels: ["landscape"],
+            shadowRatio: 0.12
+        )
+        let underexposure = PhotoProblemReport(problems: [PhotoProblem(
+            kind: .underexposed,
+            severity: .strong,
+            evidence: "fixture",
+            confidence: 1
+        )])
+        let scorer = PhotographyProblemImprovementScorer()
+
+        XCTAssertGreaterThan(
+            scorer.score(
+                problems: underexposure,
+                source: source,
+                edited: brighter,
+                regionImpacts: []
+            ),
+            0
+        )
+        XCTAssertEqual(
+            scorer.score(
+                problems: underexposure,
+                source: source,
+                edited: darker,
+                regionImpacts: []
+            ),
+            0,
+            accuracy: 0.0001
+        )
+    }
+
+    func testRegionalProblemWithoutMeasuredImpactGetsNoImprovementCredit() {
+        let mask = NormalizedPhotoMask(width: 2, height: 2, pixels: Data([255, 255, 0, 0]))
+        let analysis = fixture(
+            luminance: 0.46,
+            contrast: 0.58,
+            saturation: 0.2,
+            labels: ["landscape", "trail"],
+            groundMask: mask,
+            groundStatistics: regionStatistics(
+                luminance: 0.14,
+                contrast: 0.18,
+                saturation: 0.15,
+                red: 0.15,
+                green: 0.14,
+                blue: 0.12,
+                shadowRatio: 0.62
+            )
+        )
+        let regionalProblems = PhotoProblemReport(problems: detector.detect(in: analysis).problems.filter {
+            $0.kind == .regionalUnderexposure || $0.kind == .regionalFlatness
+        })
+
+        let score = PhotographyProblemImprovementScorer().score(
+            problems: regionalProblems,
+            source: analysis,
+            edited: analysis,
+            regionImpacts: []
+        )
+
+        XCTAssertEqual(score, 0, accuracy: 0.0001)
+    }
+
     private func decision(for analysis: PhotoAnalysis) -> PhotographyDecision {
         engine.makeDecision(for: analysis, problems: detector.detect(in: analysis))
     }
