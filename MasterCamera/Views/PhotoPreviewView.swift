@@ -41,65 +41,89 @@ struct PhotoPreviewView: View {
                     .foregroundStyle(.white)
             }
 
-            VStack {
-                HStack {
-                    Button(action: onRetake) {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 18, weight: .bold))
-                            .frame(width: 44, height: 44)
-                            .background(.black.opacity(0.5), in: Circle())
+            LinearGradient(
+                colors: [.black.opacity(0.86), .clear, .clear, .black.opacity(0.72)],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .ignoresSafeArea()
+            .allowsHitTesting(false)
+
+            VStack(spacing: 0) {
+                ZStack {
+                    VStack(spacing: 1) {
+                        Text("小苏相机")
+                            .font(.system(size: 16, weight: .bold, design: .rounded))
+                        Text(selectedStageID == nil ? selectedVersion.title : "处理阶段")
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundStyle(.white.opacity(0.62))
                     }
-                    .accessibilityLabel("重拍")
 
-                    Spacer()
+                    HStack(spacing: 10) {
+                        Button(action: onRetake) {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 17, weight: .bold))
+                                .frame(width: 46, height: 46)
+                                .background(.black.opacity(0.62), in: Circle())
+                                .overlay {
+                                    Circle().stroke(.white.opacity(0.16), lineWidth: 0.5)
+                                }
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("重拍")
 
-                    Button {
-                        showsDebugSummary.toggle()
-                    } label: {
-                        Image(systemName: showsDebugSummary ? "info.circle.fill" : "info.circle")
-                            .font(.system(size: 20, weight: .semibold))
-                            .frame(width: 44, height: 44)
-                            .background(.black.opacity(0.5), in: Circle())
-                    }
-                    .accessibilityLabel(showsDebugSummary ? "隐藏成片信息" : "显示成片信息")
+                        Spacer()
 
-                    Button(action: onSave) {
-                        ZStack {
-                            Circle()
-                                .fill(.black.opacity(0.5))
-                                .frame(width: 44, height: 44)
+                        Button {
+                            showsDebugSummary.toggle()
+                        } label: {
+                            Image(systemName: showsDebugSummary ? "info.circle.fill" : "info.circle")
+                                .font(.system(size: 19, weight: .semibold))
+                                .frame(width: 46, height: 46)
+                                .background(.black.opacity(0.62), in: Circle())
+                                .overlay {
+                                    Circle().stroke(.white.opacity(0.16), lineWidth: 0.5)
+                                }
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(showsDebugSummary ? "隐藏成片信息" : "显示成片信息")
 
-                            if saveState.isSaving {
-                                ProgressView()
-                                    .progressViewStyle(.circular)
-                                    .tint(.white)
-                            } else {
-                                Image(systemName: "square.and.arrow.down")
-                                    .font(.system(size: 18, weight: .bold))
+                        Button(action: onSave) {
+                            ZStack {
+                                Circle()
+                                    .fill(.white)
+                                    .frame(width: 46, height: 46)
+
+                                if saveState.isSaving {
+                                    ProgressView()
+                                        .progressViewStyle(.circular)
+                                        .tint(.black)
+                                } else {
+                                    Image(systemName: "square.and.arrow.down")
+                                        .font(.system(size: 18, weight: .bold))
+                                        .foregroundStyle(.black)
+                                }
                             }
                         }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("保存原图和 AI 成片")
+                        .disabled(saveState.isSaving)
                     }
-                    .accessibilityLabel("保存原图和 AI 成片")
-                    .disabled(saveState.isSaving)
                 }
                 .foregroundStyle(.white)
 
-                Picker("照片版本", selection: $selectedVersion) {
-                    ForEach(PhotoVersion.allCases) { version in
-                        Text(version.title).tag(version)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .padding(.top, 16)
-                .accessibilityLabel("照片版本")
-                .onChange(of: selectedVersion) { _, _ in
-                    selectedStageID = nil
-                }
+                versionSelector
+                    .padding(.top, 14)
 
                 Text(compareHint)
-                    .font(.caption)
-                    .foregroundStyle(.white.opacity(0.72))
-                    .padding(.top, 8)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.76))
+                    .lineLimit(2)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 7)
+                    .background(.black.opacity(0.5), in: Capsule())
+                    .padding(.top, 9)
 
                 Spacer()
 
@@ -109,8 +133,54 @@ struct PhotoPreviewView: View {
                     debugSummary
                 }
             }
-            .padding(20)
+            .padding(.horizontal, 16)
+            .padding(.top, 8)
+            .padding(.bottom, 12)
         }
+    }
+
+    private var versionSelector: some View {
+        HStack(spacing: 5) {
+            ForEach(PhotoVersion.allCases) { version in
+                Button {
+                    withAnimation(.easeOut(duration: 0.18)) {
+                        selectedVersion = version
+                        selectedStageID = nil
+                    }
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: version.iconName)
+                            .font(.system(size: 12, weight: .semibold))
+
+                        Text(version.title)
+                            .font(.system(size: 13, weight: .bold))
+                            .lineLimit(1)
+                    }
+                    .foregroundStyle(selectedVersion == version && selectedStageID == nil ? .black : .white)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 42)
+                    .background(
+                        selectedVersion == version && selectedStageID == nil
+                            ? Color.white
+                            : Color.white.opacity(0.08),
+                        in: RoundedRectangle(cornerRadius: 13)
+                    )
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("查看\(version.title)")
+                .accessibilityValue(
+                    selectedVersion == version && selectedStageID == nil ? "已选择" : ""
+                )
+            }
+        }
+        .padding(5)
+        .background(.black.opacity(0.82), in: RoundedRectangle(cornerRadius: 18))
+        .overlay {
+            RoundedRectangle(cornerRadius: 18)
+                .stroke(.white.opacity(0.18), lineWidth: 0.5)
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("照片版本")
     }
 
     private var displayedImage: UIImage? {
@@ -158,7 +228,7 @@ struct PhotoPreviewView: View {
                 .foregroundStyle(saveState.textColor)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 10)
-                .background(.black.opacity(0.55), in: RoundedRectangle(cornerRadius: 8))
+                .background(.black.opacity(0.7), in: Capsule())
                 .padding(.bottom, 16)
         }
     }
@@ -183,7 +253,11 @@ struct PhotoPreviewView: View {
                 .padding(14)
             }
             .frame(maxHeight: 280)
-            .background(.black.opacity(0.58), in: RoundedRectangle(cornerRadius: 8))
+            .background(.black.opacity(0.76), in: RoundedRectangle(cornerRadius: 18))
+            .overlay {
+                RoundedRectangle(cornerRadius: 18)
+                    .stroke(.white.opacity(0.14), lineWidth: 0.5)
+            }
         }
     }
 
@@ -305,6 +379,17 @@ private enum PhotoVersion: String, CaseIterable, Identifiable {
             return "AI 成片"
         case .difference:
             return "差异"
+        }
+    }
+
+    var iconName: String {
+        switch self {
+        case .original:
+            return "photo"
+        case .edited:
+            return "wand.and.stars"
+        case .difference:
+            return "circle.lefthalf.filled"
         }
     }
 }

@@ -11,16 +11,24 @@ struct CameraView: View {
                 session: viewModel.cameraManager.session,
                 onTapToFocus: viewModel.focusAndExpose
             )
-            .aspectRatio(3.0 / 4.0, contentMode: .fit)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .ignoresSafeArea()
 
-            VStack {
+            LinearGradient(
+                colors: [.black.opacity(0.62), .clear, .black.opacity(0.78)],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .ignoresSafeArea()
+            .allowsHitTesting(false)
+
+            VStack(spacing: 0) {
                 topBar
                 Spacer()
                 bottomBar
             }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 18)
+            .padding(.horizontal, 18)
+            .padding(.top, 8)
+            .padding(.bottom, 12)
 
             if let message = viewModel.state.message ?? viewModel.errorMessage {
                 messageOverlay(message)
@@ -59,69 +67,128 @@ struct CameraView: View {
     }
 
     private var topBar: some View {
-        HStack {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("小苏相机")
+                    .font(.system(size: 17, weight: .bold, design: .rounded))
+
+                Text("智能摄影后期")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.68))
+            }
+            .foregroundStyle(.white)
+            .padding(.horizontal, 14)
+            .frame(height: 48)
+            .background(.black.opacity(0.46), in: Capsule())
+            .overlay {
+                Capsule()
+                    .stroke(.white.opacity(0.14), lineWidth: 0.5)
+            }
+
             Spacer()
 
             Button(action: viewModel.switchCamera) {
                 Image(systemName: "arrow.triangle.2.circlepath.camera")
-                    .font(.system(size: 22, weight: .semibold))
+                    .font(.system(size: 20, weight: .semibold))
                     .frame(width: 48, height: 48)
-                    .background(.black.opacity(0.45), in: Circle())
+                    .background(.black.opacity(0.46), in: Circle())
+                    .overlay {
+                        Circle()
+                            .stroke(.white.opacity(0.14), lineWidth: 0.5)
+                    }
                     .foregroundStyle(.white)
             }
+            .buttonStyle(.plain)
             .accessibilityLabel("切换摄像头")
             .disabled(viewModel.state == .capturing || viewModel.processingState.isProcessing)
         }
     }
 
     private var bottomBar: some View {
-        VStack(spacing: 18) {
+        VStack(spacing: 14) {
             zoomControl
 
-            HStack {
+            HStack(alignment: .center) {
                 PhotosPicker(selection: $selectedSample, matching: .images) {
-                    VStack(spacing: 4) {
-                        Image(systemName: "photo.badge.plus")
-                            .font(.system(size: 20, weight: .semibold))
-                        Text("样片复测")
-                            .font(.caption2.weight(.medium))
+                    VStack(spacing: 6) {
+                        Image(systemName: "photo.on.rectangle")
+                            .font(.system(size: 19, weight: .semibold))
+                        Text("导入照片")
+                            .font(.system(size: 11, weight: .semibold))
                     }
-                    .frame(width: 78, height: 58)
+                    .frame(width: 82, height: 62)
                     .foregroundStyle(.white)
-                    .background(.black.opacity(0.45), in: RoundedRectangle(cornerRadius: 12))
+                    .background(.black.opacity(0.5), in: RoundedRectangle(cornerRadius: 18))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 18)
+                            .stroke(.white.opacity(0.14), lineWidth: 0.5)
+                    }
                 }
                 .disabled(viewModel.processingState.isProcessing)
-                .accessibilityLabel("导入真实样片复测")
+                .accessibilityLabel("导入照片")
+
+                Spacer()
 
                 Button(action: viewModel.capturePhoto) {
                     ZStack {
                         Circle()
+                            .fill(.black.opacity(0.18))
+                            .frame(width: 88, height: 88)
+
+                        Circle()
                             .stroke(.white, lineWidth: 4)
-                            .frame(width: 78, height: 78)
+                            .frame(width: 82, height: 82)
 
                         Circle()
                             .fill(.white)
-                            .frame(width: 62, height: 62)
+                            .frame(width: 66, height: 66)
+
+                        Circle()
+                            .stroke(.black.opacity(0.08), lineWidth: 1)
+                            .frame(width: 64, height: 64)
                     }
+                    .contentShape(Circle())
                 }
+                .buttonStyle(.plain)
                 .accessibilityLabel("拍照")
                 .disabled(viewModel.state != .ready || viewModel.processingState.isProcessing)
 
-                Color.clear
-                    .frame(width: 78, height: 58)
-                    .accessibilityHidden(true)
+                Spacer()
+
+                VStack(spacing: 6) {
+                    Image(systemName: "wand.and.stars")
+                        .font(.system(size: 18, weight: .semibold))
+                    Text("自动优化")
+                        .font(.system(size: 11, weight: .semibold))
+                }
+                .frame(width: 82, height: 62)
+                .foregroundStyle(.white.opacity(0.9))
+                .background(.black.opacity(0.5), in: RoundedRectangle(cornerRadius: 18))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 18)
+                        .stroke(.white.opacity(0.14), lineWidth: 0.5)
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("自动场景优化已开启")
             }
             .frame(maxWidth: .infinity)
         }
-        .padding(.bottom, 22)
     }
 
     private var zoomControl: some View {
-        VStack(spacing: 8) {
-            Text(String(format: "%.1f×", viewModel.zoomFactor))
-                .font(.system(.headline, design: .rounded, weight: .semibold))
-                .monospacedDigit()
-                .foregroundStyle(.white)
+        VStack(spacing: 9) {
+            HStack {
+                Label("自动场景", systemImage: "sparkles")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.72))
+
+                Spacer()
+
+                Text(String(format: "%.1f×", viewModel.zoomFactor))
+                    .font(.system(size: 14, weight: .bold, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundStyle(.white)
+            }
 
             if viewModel.maximumZoomFactor > 1.0 {
                 Slider(
@@ -132,7 +199,7 @@ struct CameraView: View {
                     in: 1.0...Double(viewModel.maximumZoomFactor),
                     step: 0.1
                 )
-                .tint(.yellow)
+                .tint(.white)
                 .disabled(viewModel.state != .ready)
                 .accessibilityLabel("相机倍率")
                 .accessibilityValue(String(format: "%.1f 倍", viewModel.zoomFactor))
@@ -143,9 +210,13 @@ struct CameraView: View {
                     .accessibilityHidden(true)
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
-        .background(.black.opacity(0.45), in: RoundedRectangle(cornerRadius: 14))
+        .padding(.horizontal, 15)
+        .padding(.vertical, 12)
+        .background(.black.opacity(0.5), in: RoundedRectangle(cornerRadius: 18))
+        .overlay {
+            RoundedRectangle(cornerRadius: 18)
+                .stroke(.white.opacity(0.14), lineWidth: 0.5)
+        }
     }
 
     private func processingOverlay(_ state: ProcessingState) -> some View {
@@ -168,7 +239,11 @@ struct CameraView: View {
         .foregroundStyle(.white)
         .padding(20)
         .frame(maxWidth: 320)
-        .background(.black.opacity(0.74), in: RoundedRectangle(cornerRadius: 8))
+        .background(.black.opacity(0.82), in: RoundedRectangle(cornerRadius: 20))
+        .overlay {
+            RoundedRectangle(cornerRadius: 20)
+                .stroke(.white.opacity(0.14), lineWidth: 0.5)
+        }
         .padding()
     }
 
@@ -185,7 +260,11 @@ struct CameraView: View {
         .foregroundStyle(.white)
         .padding(20)
         .frame(maxWidth: 320)
-        .background(.black.opacity(0.72), in: RoundedRectangle(cornerRadius: 8))
+        .background(.black.opacity(0.82), in: RoundedRectangle(cornerRadius: 20))
+        .overlay {
+            RoundedRectangle(cornerRadius: 20)
+                .stroke(.white.opacity(0.14), lineWidth: 0.5)
+        }
         .padding()
     }
 }
