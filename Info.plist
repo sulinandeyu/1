@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>MasterCamera</string>
+	<string>小苏相机</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -23,9 +23,9 @@
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSCameraUsageDescription</key>
-	<string>MasterCamera 需要访问相机，用于拍摄照片。</string>
+	<string>小苏相机需要访问相机，用于拍摄照片。</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
-	<string>MasterCamera 需要相册写入权限，用于保存原图和 AI 成片。</string>
+	<string>小苏相机需要相册写入权限，用于保存原图和 AI 成片。</string>
 	<key>UILaunchScreen</key>
 	<dict/>
 	<key>UISupportedInterfaceOrientations</key>

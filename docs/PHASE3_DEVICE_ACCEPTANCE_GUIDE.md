@@ -36,8 +36,8 @@
 - Xcode Console：过滤 subsystem `com.sulinandeyu.mastercamera`、category `ImageEngine`，保存完整日志。
 - 预览版本切换：Original、AI 成片、5 倍差异图和逐阶段预览。
 - 保存按钮：在系统照片图库产生两个独立资源：
-  - `MasterCamera_<timestamp>_Original.jpg`
-  - `MasterCamera_<timestamp>_AI_Edited.jpg`
+  - `XiaoSuCamera_<timestamp>_Original.jpg`
+  - `XiaoSuCamera_<timestamp>_AI_Edited.jpg`
 
 ## 4. 五类素材清单
 

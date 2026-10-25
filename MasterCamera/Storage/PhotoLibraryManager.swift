@@ -34,7 +34,7 @@ enum PhotoLibraryManager {
             let stamp = Int(photo.capturedAt.timeIntervalSince1970)
 
             let originalOptions = PHAssetResourceCreationOptions()
-            originalOptions.originalFilename = "MasterCamera_\(stamp)_Original.jpg"
+            originalOptions.originalFilename = "XiaoSuCamera_\(stamp)_Original.jpg"
             let originalRequest = PHAssetCreationRequest.forAsset()
             originalRequest.addResource(
                 with: .photo,
@@ -43,7 +43,7 @@ enum PhotoLibraryManager {
             )
 
             let editedOptions = PHAssetResourceCreationOptions()
-            editedOptions.originalFilename = "MasterCamera_\(stamp)_AI_Edited.jpg"
+            editedOptions.originalFilename = "XiaoSuCamera_\(stamp)_AI_Edited.jpg"
             let editedRequest = PHAssetCreationRequest.forAsset()
             editedRequest.addResource(
                 with: .photo,

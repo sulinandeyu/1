@@ -1,6 +1,6 @@
-# MasterCamera
+# 小苏相机
 
-MasterCamera 是一款 AI 自动摄影师相机 App 原型。
+小苏相机（项目内部代号 MasterCamera）是一款 AI 自动摄影师相机 App 原型。
 
 核心目标：用户只负责构图和按快门，App 自动分析照片、制定摄影后期方案，并同时保留原图和 AI 成片。
 
