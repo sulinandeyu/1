@@ -72,7 +72,7 @@ final class SceneAdaptationTests: XCTestCase {
             personMask: personMask
         ))
 
-        XCTAssertEqual(portrait.sceneStrategy, .portrait)
+        XCTAssertEqual(portrait.sceneStrategy, .backlitPortrait)
         XCTAssertTrue(portrait.treatmentPlan.portraitProtection.isActive)
         XCTAssertFalse(portrait.treatmentPlan.portraitProtection.allowsFaceSpecificRelighting)
         XCTAssertFalse(portrait.treatmentPlan.portraitProtection.allowsGeometryChanges)
