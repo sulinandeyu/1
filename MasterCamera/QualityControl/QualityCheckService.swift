@@ -89,7 +89,27 @@ final class QualityCheckService {
             edited: editedImage
         )
         let hasPortrait = sourceAnalysis?.faceRegions.isEmpty == false
-        let minimumMeanDifference: Float = hasPortrait ? 0.004 : 0.006
+        let expectsLocalTreatment = expectedRegions.contains {
+            ![.global, .person, .background, .subject].contains($0)
+        }
+        let sourceNeedsVisibleCorrection = sourceAnalysis.map { analysis in
+            analysis.exposureProfile != .balanced
+                || analysis.contrastProfile != .balanced
+                || analysis.highlightRatio > 0.12
+                || analysis.shadowRatio > 0.45
+                || analysis.averageSaturation > 0.55
+                || analysis.noiseEstimate > 0.12
+        } ?? false
+        // A technically healthy photo is allowed to remain visually close to the
+        // original. A stronger minimum is used only when measurements or an actual
+        // mask-backed regional plan say that visible intervention is required.
+        let requiresVisibleCorrection = sourceNeedsVisibleCorrection || expectsLocalTreatment
+        let minimumMeanDifference: Float
+        if requiresVisibleCorrection {
+            minimumMeanDifference = hasPortrait ? 0.003 : 0.004
+        } else {
+            minimumMeanDifference = 0.0005
+        }
         if processingImpact.normalizedMeanAbsoluteRGBDifference < minimumMeanDifference {
             issues.append(.insufficientProcessingImpact)
         }

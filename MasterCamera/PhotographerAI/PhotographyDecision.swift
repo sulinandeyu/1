@@ -14,14 +14,61 @@ struct PhotographyDecision: Equatable, Sendable {
         return "\(sceneStrategy.title): \(actionText)"
     }
 
-    func replacingRecipe(with recipe: AutomaticEditingRecipe) -> PhotographyDecision {
-        PhotographyDecision(
+    func replacingRecipe(
+        with recipe: AutomaticEditingRecipe,
+        analysis: PhotoAnalysis
+    ) -> PhotographyDecision {
+        let refreshedTreatments = treatmentPlan.regionalTreatments.compactMap { treatment -> RegionalTreatment? in
+            guard [.ground, .vegetation, .water, .architecture].contains(treatment.region) else {
+                if treatment.region == .sky {
+                    let requested = abs(recipe.skyExposureEV) > 0.001
+                        || recipe.skyHighlightAmount < 0.999
+                        || abs(recipe.skySaturation - 1) > 0.001
+                    guard requested else { return nil }
+                    return RegionalTreatment(
+                        region: .sky,
+                        objective: treatment.objective,
+                        reason: treatment.reason,
+                        parameters: String(
+                            format: "sky EV=%+.3f highlights=%.3f saturation=%.3f",
+                            recipe.skyExposureEV,
+                            recipe.skyHighlightAmount,
+                            recipe.skySaturation
+                        ),
+                        maximumSafeAdjustment: treatment.maximumSafeAdjustment,
+                        confidence: treatment.confidence,
+                        fallback: treatment.fallback
+                    )
+                }
+                return treatment
+            }
+            guard let adjustment = RegionalPixelAdjustment.make(
+                region: treatment.region,
+                analysis: analysis,
+                recipe: recipe
+            ) else { return nil }
+            return RegionalTreatment(
+                region: treatment.region,
+                objective: treatment.objective,
+                reason: adjustment.reason,
+                parameters: adjustment.traceSummary,
+                maximumSafeAdjustment: treatment.maximumSafeAdjustment,
+                confidence: adjustment.confidence,
+                fallback: adjustment.fallback
+            )
+        }
+        return PhotographyDecision(
             sceneStrategy: sceneStrategy,
             context: context,
             aestheticTarget: aestheticTarget,
             intent: intent,
             actions: actions,
-            treatmentPlan: treatmentPlan,
+            treatmentPlan: PhotographyTreatmentPlan(
+                finalLook: treatmentPlan.finalLook,
+                lightingDesign: treatmentPlan.lightingDesign,
+                regionalTreatments: refreshedTreatments,
+                portraitProtection: treatmentPlan.portraitProtection
+            ),
             recipe: recipe
         )
     }
@@ -39,6 +86,29 @@ struct PhotographyTreatmentPlan: Equatable, Sendable {
 struct RegionalTreatment: Equatable, Sendable {
     let region: TreatmentRegion
     let objective: String
+    let reason: String
+    let parameters: String
+    let maximumSafeAdjustment: String
+    let confidence: Float
+    let fallback: String
+
+    init(
+        region: TreatmentRegion,
+        objective: String,
+        reason: String = "由当前照片实测数据触发。",
+        parameters: String = "见最终像素配方。",
+        maximumSafeAdjustment: String = "受配方安全范围限制。",
+        confidence: Float = 1,
+        fallback: String = "证据不足时跳过该区域。"
+    ) {
+        self.region = region
+        self.objective = objective
+        self.reason = reason
+        self.parameters = parameters
+        self.maximumSafeAdjustment = maximumSafeAdjustment
+        self.confidence = confidence
+        self.fallback = fallback
+    }
 }
 
 enum TreatmentRegion: String, Equatable, Sendable {

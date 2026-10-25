@@ -44,8 +44,13 @@ final class PhotoProcessingPipeline {
         // 3–4. 判断摄影风格并制定处理策略
         let decision = photographyDirector.direct(analysis: analysis, problems: problemReport)
         let decisionDuration = ProcessInfo.processInfo.systemUptime - decisionStart
+        let treatmentTrace = decision.treatmentPlan.regionalTreatments
+            .map { treatment in
+                "\(treatment.region.rawValue){confidence=\(String(format: "%.2f", treatment.confidence)); \(treatment.parameters)}"
+            }
+            .joined(separator: "；")
         AppLogger.imageEngine.info(
-            "摄影总监决策完成 \(Self.milliseconds(decisionDuration))ms：策略=\(decision.sceneStrategy.rawValue)，目标=\(decision.aestheticTarget.rawValue)，区域=\(decision.treatmentPlan.regionalTreatments.map { $0.region.rawValue }.joined(separator: ","), privacy: .public)，人物保护=\(decision.treatmentPlan.portraitProtection.isActive)，问题=[\(problemReport.problems.map { $0.kind.rawValue }.joined(separator: ","), privacy: .public)]，配方=\(decision.recipe.traceSummary, privacy: .public)"
+            "摄影总监决策完成 \(Self.milliseconds(decisionDuration))ms：策略=\(decision.sceneStrategy.rawValue)，目标=\(decision.aestheticTarget.rawValue)，区域计划=[\(treatmentTrace, privacy: .public)]，人物保护=\(decision.treatmentPlan.portraitProtection.isActive)，问题=[\(problemReport.problems.map { $0.kind.rawValue }.joined(separator: ","), privacy: .public)]，配方=\(decision.recipe.traceSummary, privacy: .public)"
         )
         // 5. 使用人物、主体和人脸蒙版执行分区域及全局处理
         let renderStart = ProcessInfo.processInfo.systemUptime
@@ -82,7 +87,10 @@ final class PhotoProcessingPipeline {
             analysis: analysis,
             expectedRegions: decision.treatmentPlan.regionalTreatments.map(\.region)
         )
-        let finalDecision = decision.replacingRecipe(with: finalEdit.recipe)
+        let finalDecision = decision.replacingRecipe(
+            with: finalEdit.recipe,
+            analysis: analysis
+        )
         let qualityDuration = ProcessInfo.processInfo.systemUptime - qualityStart
         let totalDuration = ProcessInfo.processInfo.systemUptime - totalStart
         let finishingMemory = Self.memoryFootprint()

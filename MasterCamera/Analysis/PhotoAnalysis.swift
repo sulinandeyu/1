@@ -132,7 +132,10 @@ struct PhotoAnalysis: Equatable, Sendable {
             return .sunset
         }
 
-        if averageLuminance < 0.27 || shadowRatio > 0.55 || identifiers.containsKeyword(["night", "nighttime"] ) {
+        let hasNightLabel = identifiers.containsKeyword(["night", "nighttime"])
+        let hasMetricNightEvidence = averageLuminance < 0.27
+            || (averageLuminance < 0.36 && shadowRatio > 0.55)
+        if hasNightLabel || hasMetricNightEvidence {
             return .night
         }
 
@@ -515,6 +518,12 @@ struct PhotographyContext: Equatable, Sendable {
             facets.insert(analysis.faceCount > 1 ? .groupPortrait : .portrait)
         }
         if analysis.skyCoverage > 0.03 || labels.containsKeyword(["sky", "cloud"]) { facets.insert(.sky) }
+        // These facets come only from the bundled semantic model's validated masks.
+        // They are stronger evidence than color thresholds, but still do not claim a
+        // more specific object such as "forest" or "road" without classifier support.
+        if analysis.vegetationMask?.isValid == true { facets.insert(.nature) }
+        if analysis.waterMask?.isValid == true { facets.insert(.water) }
+        if analysis.architectureMask?.isValid == true { facets.insert(.architecture) }
         if labels.containsKeyword(["nature", "landscape", "field", "scenery", "park"]) { facets.insert(.nature) }
         if labels.containsKeyword(["mountain", "hill", "valley"]) { facets.insert(.mountain) }
         if labels.containsKeyword(["water", "lake", "river", "ocean", "sea"]) { facets.insert(.water) }
@@ -531,7 +540,10 @@ struct PhotographyContext: Equatable, Sendable {
         if labels.containsKeyword(["cat", "dog", "pet", "animal"]) { facets.insert(.pet) }
         if labels.containsKeyword(["car", "vehicle", "motorcycle", "bicycle"]) { facets.insert(.vehicle) }
 
-        let looksNight = analysis.averageLuminance < 0.3 || analysis.shadowRatio > 0.55 || labels.containsKeyword(["night", "nighttime"])
+        let hasNightLabel = labels.containsKeyword(["night", "nighttime"])
+        let hasMetricNightEvidence = analysis.averageLuminance < 0.27
+            || (analysis.averageLuminance < 0.36 && analysis.shadowRatio > 0.55)
+        let looksNight = hasNightLabel || hasMetricNightEvidence
         if looksNight {
             lighting.insert(.night)
             if facets.contains(.city) || facets.contains(.street) || facets.contains(.architecture) { facets.insert(.nightCity) }

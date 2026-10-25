@@ -129,7 +129,25 @@ final class SceneAdaptationTests: XCTestCase {
             blue: 0.091,
             labels: ["night", "trail", "tree", "outdoor"],
             groundMask: regionMask,
-            vegetationMask: regionMask
+            vegetationMask: regionMask,
+            groundStatistics: regionStatistics(
+                luminance: 0.12,
+                contrast: 0.38,
+                saturation: 0.24,
+                red: 0.16,
+                green: 0.13,
+                blue: 0.08,
+                shadowRatio: 0.58
+            ),
+            vegetationStatistics: regionStatistics(
+                luminance: 0.11,
+                contrast: 0.34,
+                saturation: 0.42,
+                red: 0.15,
+                green: 0.13,
+                blue: 0.07,
+                shadowRatio: 0.62
+            )
         ))
 
         XCTAssertEqual(autumnNightPath.sceneStrategy, .night)
@@ -291,6 +309,20 @@ final class SceneAdaptationTests: XCTestCase {
         XCTAssertEqual(blueHour.photographyContext.style, .blueHour)
     }
 
+    func testBrightHighShadowLandscapeIsNotMisclassifiedAsNight() {
+        let daylight = fixture(
+            luminance: 0.48,
+            contrast: 0.76,
+            saturation: 0.24,
+            labels: ["landscape", "mountain", "sky"],
+            shadowRatio: 0.62,
+            highlightRatio: 0.11
+        )
+
+        XCTAssertNotEqual(daylight.semanticScene, .night)
+        XCTAssertFalse(daylight.photographyContext.lightingConditions.contains(.night))
+    }
+
     func testLandscapeDynamicRangeIsDrivenByMeasuredClippingInsteadOfFixedFlattening() {
         let balanced = decision(for: fixture(
             luminance: 0.49,
@@ -341,6 +373,87 @@ final class SceneAdaptationTests: XCTestCase {
         XCTAssertEqual(statistics.blueAverage, 1, accuracy: 0.0001)
         XCTAssertEqual(statistics.averageSaturation, 1, accuracy: 0.0001)
         XCTAssertEqual(statistics.shadowRatio, 1, accuracy: 0.0001)
+    }
+
+    func testGroundAdjustmentIsDrivenByGroundMeasurements() throws {
+        let mask = NormalizedPhotoMask(
+            width: 2,
+            height: 2,
+            pixels: Data([255, 0, 0, 0])
+        )
+        let darkGround = decision(for: fixture(
+            labels: ["landscape", "mountain", "trail"],
+            groundMask: mask,
+            groundStatistics: regionStatistics(
+                luminance: 0.18,
+                contrast: 0.32,
+                saturation: 0.16,
+                red: 0.2,
+                green: 0.18,
+                blue: 0.15,
+                shadowRatio: 0.52
+            )
+        ))
+        let brightGround = decision(for: fixture(
+            labels: ["landscape", "mountain", "trail"],
+            groundMask: mask,
+            groundStatistics: regionStatistics(
+                luminance: 0.52,
+                contrast: 0.62,
+                saturation: 0.16,
+                red: 0.4,
+                green: 0.38,
+                blue: 0.34,
+                shadowRatio: 0.05
+            )
+        ))
+
+        let darkPlan = try XCTUnwrap(darkGround.treatmentPlan.regionalTreatments.first { $0.region == .ground })
+        let brightPlan = try XCTUnwrap(brightGround.treatmentPlan.regionalTreatments.first { $0.region == .ground })
+        XCTAssertNotEqual(darkPlan.parameters, brightPlan.parameters)
+        XCTAssertTrue(darkPlan.parameters.contains("EV=+"))
+        XCTAssertTrue(brightPlan.parameters.contains("EV=-"))
+    }
+
+    func testRecognitionFailureKeepsMeasuredMaskBackedRegions() {
+        let mask = NormalizedPhotoMask(
+            width: 2,
+            height: 2,
+            pixels: Data([255, 0, 0, 0])
+        )
+        let result = decision(for: fixture(
+            labels: ["landscape", "forest", "trail"],
+            groundMask: mask,
+            vegetationMask: mask,
+            groundStatistics: regionStatistics(
+                luminance: 0.2,
+                contrast: 0.3,
+                saturation: 0.18,
+                red: 0.2,
+                green: 0.2,
+                blue: 0.2,
+                shadowRatio: 0.45
+            ),
+            vegetationStatistics: regionStatistics(
+                luminance: 0.2,
+                contrast: 0.3,
+                saturation: 0.18,
+                red: 0.18,
+                green: 0.24,
+                blue: 0.16,
+                shadowRatio: 0.45
+            ),
+            recognition: SceneRecognitionDiagnostics(
+                status: .failed,
+                topConfidence: 0,
+                acceptedLabelCount: 0,
+                reason: "test failure"
+            )
+        ))
+
+        XCTAssertTrue(result.treatmentPlan.regionalTreatments.contains { $0.region == .ground })
+        XCTAssertTrue(result.treatmentPlan.regionalTreatments.contains { $0.region == .vegetation })
+        XCTAssertEqual(result.recipe.hsl, .neutral)
     }
 
     private func decision(for analysis: PhotoAnalysis) -> PhotographyDecision {
@@ -434,7 +547,9 @@ final class SceneAdaptationTests: XCTestCase {
         saturation: Float,
         red: Float,
         green: Float,
-        blue: Float
+        blue: Float,
+        shadowRatio: Float = 0.02,
+        highlightRatio: Float = 0.06
     ) -> PhotoRegionStatistics {
         PhotoRegionStatistics(
             averageLuminance: luminance,
@@ -443,8 +558,8 @@ final class SceneAdaptationTests: XCTestCase {
             greenAverage: green,
             blueAverage: blue,
             averageSaturation: saturation,
-            shadowRatio: 0.02,
-            highlightRatio: 0.06
+            shadowRatio: shadowRatio,
+            highlightRatio: highlightRatio
         )
     }
 }

@@ -194,35 +194,29 @@ final class PhotographyDecisionEngine {
                 objective: "只在可靠天空蒙版内恢复高光、云层和色彩层次。"
             ))
         }
-        if sceneRegionsAllowed, usable(analysis.groundMask) {
-            regions.append(RegionalTreatment(
-                region: .ground,
-                objective: "在道路与地面蒙版内恢复可用阴影并建立材质层次。"
-            ))
-        }
-        if sceneRegionsAllowed,
-           usable(analysis.vegetationMask),
-           !Set(context.sceneFacets).isDisjoint(with: [.forest, .countryRoad, .nature]) {
-            regions.append(RegionalTreatment(
-                region: .vegetation,
-                objective: "在植被蒙版内按当前配方调整绿黄关系，不用全图增绿或增黄。"
-            ))
-        }
-        if sceneRegionsAllowed,
-           usable(analysis.waterMask),
-           !Set(context.sceneFacets).isDisjoint(with: [.water, .coast]) {
-            regions.append(RegionalTreatment(
-                region: .water,
-                objective: "在水面蒙版内控制色彩与局部对比，保留真实反射。"
-            ))
-        }
-        if sceneRegionsAllowed,
-           usable(analysis.architectureMask),
-           !Set(context.sceneFacets).isDisjoint(with: [.architecture, .city, .street, .interior, .workspace]) {
-            regions.append(RegionalTreatment(
-                region: .architecture,
-                objective: "在建筑与室内结构蒙版内增强线条和材质，不影响人物。"
-            ))
+        if sceneRegionsAllowed {
+            let measuredRegions: [(TreatmentRegion, String)] = [
+                (.ground, "在道路与地面蒙版内恢复可用阴影并建立材质层次。"),
+                (.vegetation, "在植被蒙版内按区域实测调整绿黄关系，不用全图增绿或增黄。"),
+                (.water, "在水面蒙版内控制高光、色彩与局部对比，保留真实反射。"),
+                (.architecture, "在建筑与室内结构蒙版内控制光源并增强线条和材质，不影响人物。")
+            ]
+            for (region, objective) in measuredRegions {
+                guard let adjustment = RegionalPixelAdjustment.make(
+                    region: region,
+                    analysis: analysis,
+                    recipe: recipe
+                ) else { continue }
+                regions.append(RegionalTreatment(
+                    region: region,
+                    objective: objective,
+                    reason: adjustment.reason,
+                    parameters: adjustment.traceSummary,
+                    maximumSafeAdjustment: "区域曝光不超过 ±0.14 EV；饱和度变化不超过 7.5%；局部清晰度不超过 0.075。",
+                    confidence: adjustment.confidence,
+                    fallback: adjustment.fallback
+                ))
+            }
         }
         if analysis.faceCount > 0, analysis.personMask?.isValid == true {
             regions.append(RegionalTreatment(

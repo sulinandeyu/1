@@ -159,7 +159,9 @@ struct PhotoDiagnosticSection: Identifiable, Equatable, Sendable {
                 PhotoDiagnosticItem(
                     label: "局部精修区域",
                     value: decision.treatmentPlan.regionalTreatments
-                        .map { "\($0.region.rawValue)：\($0.objective)" }
+                        .map {
+                            "\($0.region.rawValue)（置信度 \(Int(($0.confidence * 100).rounded()))%）：\($0.objective) 原因：\($0.reason) 参数：\($0.parameters) 降级：\($0.fallback)"
+                        }
                         .joined(separator: "；")
                 ),
                 PhotoDiagnosticItem(
