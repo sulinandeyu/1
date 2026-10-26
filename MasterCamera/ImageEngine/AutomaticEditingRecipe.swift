@@ -595,7 +595,7 @@ struct AutomaticEditingRecipe: Equatable, Sendable {
 /// V6 的统一专业配方名称；保留旧名称以兼容现有相机与诊断数据。
 typealias ProfessionalEditingRecipe = AutomaticEditingRecipe
 
-private extension Float {
+extension Float {
     func clamped(to range: ClosedRange<Float>) -> Float {
         min(max(self, range.lowerBound), range.upperBound)
     }
