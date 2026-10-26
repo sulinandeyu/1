@@ -1000,6 +1000,15 @@ struct PhotographyContext: Equatable, Sendable {
                 sceneProfile.naturalDocumentaryTendency * 100,
                 sceneProfile.architecturePresence * 100
             )
+        } else if lighting.contains(.night)
+                    && facets.contains(.countryRoad)
+                    && facets.contains(.forest) {
+            // A dark rural path with reliable road/vegetation evidence is still a
+            // landscape-lighting problem. The documentary tendency can be slightly
+            // higher because the frame is vegetation-heavy, but selecting that style
+            // drops the measured ground and foliage treatment that the scene needs.
+            style = .professionalLandscape
+            reason = "夜间乡间道路同时具有道路引导与林木层次证据，采用夜景风光策略保留环境氛围并分别处理地面和植被。"
         } else if sceneProfile.naturalDocumentaryTendency > sceneProfile.landscapeTendency + 0.025 {
             style = .naturalDocumentary
             reason = String(
