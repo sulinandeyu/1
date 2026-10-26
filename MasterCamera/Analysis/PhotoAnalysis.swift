@@ -923,7 +923,8 @@ struct PhotographyContext: Equatable, Sendable {
         if facets.contains(.interior) {
             lighting.insert(analysis.highlightSourceCount > 0 ? .indoorArtificial : .indoorNatural)
         }
-        if facets.contains(.sky) && analysis.averageSaturation < 0.22 && analysis.contrastRange < 0.5 {
+        if labels.containsKeyword(["overcast", "cloudy"])
+            || (facets.contains(.sky) && analysis.averageSaturation < 0.22 && analysis.contrastRange < 0.5) {
             lighting.insert(.overcast)
         }
         if facets.contains(.sky), !lighting.contains(.blueHour), !lighting.contains(.goldenHour),
