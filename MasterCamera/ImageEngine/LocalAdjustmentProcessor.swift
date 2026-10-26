@@ -41,34 +41,56 @@ final class LocalAdjustmentProcessor {
         }
         var output = image
 
-        let candidates: [(TreatmentRegion, NormalizedPhotoMask?)] = [
-            (.ground, analysis.groundMask),
-            (.vegetation, analysis.vegetationMask),
-            (.water, analysis.waterMask),
-            (.architecture, analysis.architectureMask)
+        let candidates: [TreatmentRegion] = [
+            .subject, .ground, .vegetation, .water, .architecture
         ]
-        for (region, photoMask) in candidates {
-            guard
-                let adjustment = RegionalPixelAdjustment.make(
-                    region: region,
-                    analysis: analysis,
-                    recipe: recipe
-                ),
-                let mask = protectedRegionMask(
-                    from: photoMask,
-                    analysis: analysis,
-                    extent: image.extent
-                )
-            else { continue }
-
-            output = apply(
-                adjustment: adjustment,
+        for region in candidates {
+            output = applyRegionalAdjustment(
+                region,
                 to: output,
-                mask: mask
+                analysis: analysis,
+                recipe: recipe
             )
         }
 
         return output.cropped(to: image.extent)
+    }
+
+    /// Used by the diagnostic renderer as well as the production loop so the
+    /// subject-only preview cannot drift from the real local-processing branch.
+    func applyRegionalAdjustment(
+        _ region: TreatmentRegion,
+        to image: CIImage,
+        analysis: PhotoAnalysis,
+        recipe: AutomaticEditingRecipe
+    ) -> CIImage {
+        if analysis.faceCount > 0, analysis.personMask?.isValid != true {
+            return image
+        }
+        let photoMask: NormalizedPhotoMask?
+        switch region {
+        case .subject: photoMask = analysis.salientSubjectMask
+        case .ground: photoMask = analysis.groundMask
+        case .vegetation: photoMask = analysis.vegetationMask
+        case .water: photoMask = analysis.waterMask
+        case .architecture: photoMask = analysis.architectureMask
+        default: return image
+        }
+        guard
+            let adjustment = RegionalPixelAdjustment.make(
+                region: region,
+                analysis: analysis,
+                recipe: recipe
+            ),
+            let mask = protectedRegionMask(
+                from: photoMask,
+                analysis: analysis,
+                excludingSalientSubject: region != .subject,
+                extent: image.extent
+            )
+        else { return image }
+        return apply(adjustment: adjustment, to: image, mask: mask)
+            .cropped(to: image.extent)
     }
 
     func regionalExecutionDetails(
@@ -78,8 +100,15 @@ final class LocalAdjustmentProcessor {
         guard let analysis else { return ["区域精修：跳过（无分析结果）"] }
         let blocksSemanticRegions = analysis.faceCount > 0 && analysis.personMask?.isValid != true
         let semanticDetails = blocksSemanticRegions
-            ? ["植被：跳过（人物保护）", "水面：跳过（人物保护）", "建筑：跳过（人物保护）", "地面/道路：跳过（人物保护）"]
+            ? ["显著主体：跳过（人物保护）", "植被：跳过（人物保护）", "水面：跳过（人物保护）", "建筑：跳过（人物保护）", "地面/道路：跳过（人物保护）"]
             : [
+                executionDetail(
+                    name: "显著主体",
+                    region: .subject,
+                    mask: analysis.salientSubjectMask,
+                    analysis: analysis,
+                    recipe: recipe
+                ),
                 executionDetail(
                     name: "植被",
                     region: .vegetation,
@@ -123,6 +152,12 @@ final class LocalAdjustmentProcessor {
         guard isUsableRegionMask(mask) else {
             return String(format: "%@：跳过（覆盖率 %.2f%% 不可靠）", name, mask.activeCoverage * 100)
         }
+        let exclusions = [analysis.personMask, region == .subject ? nil : analysis.salientSubjectMask]
+            .compactMap { $0 }
+        let effectiveCoverage = mask.activeCoverage(excluding: exclusions)
+        guard effectiveCoverage >= 0.004 else {
+            return String(format: "%@：跳过（保护人物/主体后有效覆盖仅 %.2f%%）", name, effectiveCoverage * 100)
+        }
         guard let adjustment = RegionalPixelAdjustment.make(
             region: region,
             analysis: analysis,
@@ -133,7 +168,7 @@ final class LocalAdjustmentProcessor {
         return String(
             format: "%@：已执行（覆盖率 %.2f%%；%@）",
             name,
-            mask.activeCoverage * 100,
+            effectiveCoverage * 100,
             adjustment.traceSummary
         )
     }
@@ -173,9 +208,10 @@ final class LocalAdjustmentProcessor {
         recipe: AutomaticEditingRecipe
     ) -> CIImage {
         guard
+            (analysis?.faceCount ?? 0) > 0,
             recipe.subjectExposureEV > 0,
             let analysis,
-            let photoMask = analysis.personMask ?? analysis.salientSubjectMask,
+            let photoMask = analysis.personMask,
             let mask = makePixelMask(from: photoMask, extent: image.extent)
         else {
             return image
@@ -270,14 +306,25 @@ final class LocalAdjustmentProcessor {
     private func protectedRegionMask(
         from photoMask: NormalizedPhotoMask?,
         analysis: PhotoAnalysis,
+        excludingSalientSubject: Bool,
         extent: CGRect
     ) -> CIImage? {
-        guard let photoMask, var mask = makePixelMask(from: photoMask, extent: extent) else {
+        let exclusions = [analysis.personMask, excludingSalientSubject ? analysis.salientSubjectMask : nil]
+            .compactMap { $0 }
+        guard let photoMask, photoMask.activeCoverage(excluding: exclusions) >= 0.004 else {
+            return nil
+        }
+        guard var mask = makePixelMask(from: photoMask, extent: extent) else {
             return nil
         }
         if let person = analysis.personMask,
            let personMask = makePixelMask(from: person, extent: extent) {
             mask = multiply(mask, by: personMask.applyingFilter("CIColorInvert"))
+        }
+        if excludingSalientSubject,
+           let subject = analysis.salientSubjectMask,
+           let subjectMask = makePixelMask(from: subject, extent: extent) {
+            mask = multiply(mask, by: subjectMask.applyingFilter("CIColorInvert"))
         }
         return mask.cropped(to: extent)
     }

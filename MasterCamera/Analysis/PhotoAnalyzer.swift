@@ -130,6 +130,12 @@ final class PhotoAnalyzer {
             height: statistics.height,
             mask: skySegmentation?.architectureMask
         )
+        let salientSubjectStatistics = PhotoRegionStatistics.measure(
+            rgbaPixels: statistics.rgbaPixels,
+            width: statistics.width,
+            height: statistics.height,
+            mask: salientSubjectMask
+        )
 
         return PhotoAnalysis(
             averageLuminance: statistics.averageLuminance,
@@ -157,6 +163,7 @@ final class PhotoAnalyzer {
             backgroundAverageLuminance: regionalTone.backgroundAverageLuminance,
             personMask: personMask,
             salientSubjectMask: salientSubjectMask,
+            salientSubjectStatistics: salientSubjectStatistics,
             skinMask: capturedSkinMask?.isValid == true ? capturedSkinMask : nil,
             skyMask: skySegmentation?.mask,
             skyCoverage: skySegmentation?.coverage ?? 0,
@@ -537,7 +544,15 @@ final class PhotoAnalyzer {
             guard let pixelBuffer = request.results?.first?.pixelBuffer else {
                 return nil
             }
-            return normalizedMask(from: pixelBuffer)
+            guard let mask = normalizedMask(from: pixelBuffer) else { return nil }
+            let coverage = mask.activeCoverage
+            guard coverage >= 0.004, coverage <= 0.72 else {
+                AppLogger.imageEngine.warning(
+                    "显著主体蒙版覆盖率不可靠，已跳过：\(coverage)"
+                )
+                return nil
+            }
+            return mask
         } catch {
             AppLogger.imageEngine.error("显著主体分析失败：\(error.localizedDescription)")
             return nil

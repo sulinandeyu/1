@@ -19,7 +19,7 @@ struct PhotographyDecision: Equatable, Sendable {
         analysis: PhotoAnalysis
     ) -> PhotographyDecision {
         let refreshedTreatments = treatmentPlan.regionalTreatments.compactMap { treatment -> RegionalTreatment? in
-            guard [.ground, .vegetation, .water, .architecture].contains(treatment.region) else {
+            guard [.subject, .ground, .vegetation, .water, .architecture].contains(treatment.region) else {
                 if treatment.region == .sky {
                     let requested = abs(recipe.skyExposureEV) > 0.001
                         || recipe.skyHighlightAmount < 0.999
@@ -242,6 +242,8 @@ struct PhotographyCandidateEvaluation: Equatable, Sendable {
     let score: Float
     let problemImprovement: Float
     let preservationScore: Float
+    let subjectPriorityScore: Float
+    let harmonyScore: Float
     let issues: [String]
     let regionImpacts: [PhotographyRegionImpact]
     let reason: String
@@ -255,6 +257,8 @@ struct PhotographyCandidateEvaluation: Equatable, Sendable {
         score: Float,
         problemImprovement: Float,
         preservationScore: Float,
+        subjectPriorityScore: Float = 0,
+        harmonyScore: Float = 0,
         issues: [String],
         regionImpacts: [PhotographyRegionImpact] = [],
         reason: String,
@@ -267,6 +271,8 @@ struct PhotographyCandidateEvaluation: Equatable, Sendable {
         self.score = score
         self.problemImprovement = problemImprovement
         self.preservationScore = preservationScore
+        self.subjectPriorityScore = subjectPriorityScore
+        self.harmonyScore = harmonyScore
         self.issues = issues
         self.regionImpacts = regionImpacts
         self.reason = reason
@@ -282,6 +288,8 @@ struct PhotographyCandidateEvaluation: Equatable, Sendable {
             score: score,
             problemImprovement: problemImprovement,
             preservationScore: preservationScore,
+            subjectPriorityScore: subjectPriorityScore,
+            harmonyScore: harmonyScore,
             issues: issues,
             regionImpacts: regionImpacts,
             reason: reason,
@@ -446,6 +454,131 @@ struct PhotographyProblemImprovementScorer {
         let editedSpread = max(edited.redAverage, max(edited.greenAverage, edited.blueAverage))
             - min(edited.redAverage, min(edited.greenAverage, edited.blueAverage))
         return normalizedImprovement(sourceSpread - editedSpread, scale: 0.06)
+    }
+}
+
+struct PhotographyAestheticProgress: Equatable, Sendable {
+    let subjectPriority: Float
+    let regionalHarmony: Float
+
+    var hasMeaningfulProgress: Bool {
+        max(subjectPriority, regionalHarmony) >= 0.14
+    }
+}
+
+/// Candidate-level evidence that complements technical quality gates. It never
+/// rewards raw pixel difference by itself: direction, relative subject separation,
+/// regional balance and bounded magnitudes must all agree.
+struct PhotographyAestheticProgressScorer {
+    func score(
+        source: PhotoAnalysis,
+        regionImpacts: [PhotographyRegionImpact]
+    ) -> PhotographyAestheticProgress {
+        let subjectScore = scoreSubject(source: source, impacts: regionImpacts)
+        let harmonyScore = scoreHarmony(source: source, impacts: regionImpacts)
+        return PhotographyAestheticProgress(
+            subjectPriority: subjectScore,
+            regionalHarmony: harmonyScore
+        )
+    }
+
+    private func scoreSubject(
+        source: PhotoAnalysis,
+        impacts: [PhotographyRegionImpact]
+    ) -> Float {
+        guard
+            source.salientSubjectPriorityConfidence >= 0.54,
+            let subject = impacts.first(where: { $0.region == .subject })
+        else { return 0 }
+
+        let background = impacts.filter { $0.region != .subject && $0.region != .person }
+        let backgroundLuminance = background.isEmpty
+            ? 0
+            : background.map(\.luminanceDelta).reduce(0, +) / Float(background.count)
+        let relativeLift = normalized(subject.luminanceDelta - backgroundLuminance, scale: 0.035)
+        let contrast = normalized(subject.contrastDelta, scale: 0.018)
+        let colorSeparation = min(1, max(0, subject.colorDelta / 0.035))
+        let executionEvidence = min(1, max(0, subject.changedPixelRatio / 0.35))
+        let overProcessingPenalty = max(0, abs(subject.luminanceDelta) - 0.11) * 5
+            + max(0, subject.colorDelta - 0.09) * 5
+        return min(
+            1,
+            max(
+                0,
+                relativeLift * 0.38
+                    + contrast * 0.27
+                    + colorSeparation * 0.2
+                    + executionEvidence * 0.15
+                    - overProcessingPenalty
+            )
+        )
+    }
+
+    private func scoreHarmony(
+        source: PhotoAnalysis,
+        impacts: [PhotographyRegionImpact]
+    ) -> Float {
+        let profile = source.photographyContext.sceneProfile
+        let reliable = impacts.filter {
+            [.sky, .ground, .vegetation, .water, .architecture].contains($0.region)
+        }
+        guard !reliable.isEmpty else { return 0 }
+
+        var total: Float = 0
+        var weight: Float = 0
+        for impact in reliable {
+            let regionWeight: Float
+            let directional: Float
+            switch impact.region {
+            case .sky:
+                regionWeight = max(0.2, profile.skyPresence)
+                if (source.skyStatistics?.highlightRatio ?? 0) > 0.16 {
+                    directional = normalized(-impact.luminanceDelta, scale: 0.045)
+                } else {
+                    directional = min(1, impact.changedPixelRatio / 0.28)
+                }
+            case .vegetation:
+                regionWeight = max(0.25, profile.vegetationDominant)
+                let luminanceNeed = (source.vegetationStatistics?.averageLuminance ?? 0.4) < 0.38
+                let luminance = luminanceNeed
+                    ? normalized(impact.luminanceDelta, scale: 0.045)
+                    : min(1, abs(impact.luminanceDelta) / 0.025)
+                directional = luminance * 0.5
+                    + normalized(impact.contrastDelta, scale: 0.016) * 0.5
+            case .ground:
+                regionWeight = max(0.2, profile.groundOrRoadPresence)
+                let luminanceNeed = (source.groundStatistics?.averageLuminance ?? 0.4) < 0.3
+                directional = (luminanceNeed
+                    ? normalized(impact.luminanceDelta, scale: 0.045)
+                    : min(1, impact.changedPixelRatio / 0.32)) * 0.55
+                    + normalized(impact.contrastDelta, scale: 0.018) * 0.45
+            case .architecture:
+                regionWeight = max(0.12, profile.architecturePresence)
+                if profile.urbanArchitectureTendency < 0.45 {
+                    directional = min(1, max(0, 0.04 - impact.luminanceDelta) / 0.04)
+                } else {
+                    directional = normalized(impact.contrastDelta, scale: 0.018)
+                }
+            case .water:
+                regionWeight = max(0.2, profile.waterPresence)
+                directional = min(1, impact.changedPixelRatio / 0.3)
+            default:
+                continue
+            }
+            let naturalityPenalty = max(0, abs(impact.luminanceDelta) - 0.12) * 4
+                + max(0, impact.colorDelta - 0.1) * 4
+            let executionEvidence = min(1, impact.changedPixelRatio / 0.3)
+            total += max(0, directional * 0.72 + executionEvidence * 0.28 - naturalityPenalty) * regionWeight
+            weight += regionWeight
+        }
+        guard weight > 0 else { return 0 }
+        let coordinatedRegions = Float(reliable.filter { $0.changedPixelRatio >= 0.08 }.count)
+            / Float(reliable.count)
+        return min(1, max(0, (total / weight) * 0.82 + coordinatedRegions * 0.18))
+    }
+
+    private func normalized(_ value: Float, scale: Float) -> Float {
+        min(1, max(0, value / max(0.001, scale)))
     }
 }
 

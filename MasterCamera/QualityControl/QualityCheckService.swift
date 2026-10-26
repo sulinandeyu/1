@@ -90,7 +90,7 @@ final class QualityCheckService {
         )
         let hasPortrait = sourceAnalysis?.faceRegions.isEmpty == false
         let expectsLocalTreatment = expectedRegions.contains {
-            ![.global, .person, .background, .subject].contains($0)
+            ![.global, .person, .background].contains($0)
         }
         let sourceNeedsVisibleCorrection = sourceAnalysis.map { analysis in
             analysis.exposureProfile != .balanced
@@ -214,6 +214,17 @@ final class QualityCheckService {
         ]
         return regions.compactMap { region, optionalMask in
             guard let mask = optionalMask, mask.isValid else { return nil }
+            let exclusions: [NormalizedPhotoMask]
+            switch region {
+            case .person:
+                exclusions = []
+            case .subject:
+                exclusions = [analysis.personMask].compactMap { $0 }
+            default:
+                exclusions = [analysis.personMask, analysis.salientSubjectMask].compactMap { $0 }
+            }
+            let effectiveCoverage = mask.activeCoverage(excluding: exclusions)
+            guard effectiveCoverage >= 0.004 else { return nil }
             var luminanceDelta: Float = 0
             var colorDelta: Float = 0
             var contrastDelta: Float = 0
@@ -225,6 +236,19 @@ final class QualityCheckService {
                     let maskX = min(mask.width - 1, max(0, Int(Float(x) / Float(width) * Float(mask.width))))
                     let maskY = min(mask.height - 1, max(0, Int(Float(y) / Float(height) * Float(mask.height))))
                     guard mask.pixels[(maskY * mask.width) + maskX] >= 128 else { continue }
+                    let isExcluded = exclusions.contains { exclusion in
+                        guard exclusion.isValid else { return false }
+                        let exclusionX = min(
+                            exclusion.width - 1,
+                            max(0, Int(Float(x) / Float(width) * Float(exclusion.width)))
+                        )
+                        let exclusionY = min(
+                            exclusion.height - 1,
+                            max(0, Int(Float(y) / Float(height) * Float(exclusion.height)))
+                        )
+                        return exclusion.pixels[(exclusionY * exclusion.width) + exclusionX] >= 128
+                    }
+                    guard !isExcluded else { continue }
                     let index = ((y * width) + x) * 4
                     let sourceRGB = rgb(at: index, in: originalPixels)
                     let resultRGB = rgb(at: index, in: editedPixels)
@@ -252,7 +276,7 @@ final class QualityCheckService {
             guard count >= 4 else { return nil }
             return PhotographyRegionImpact(
                 region: region,
-                maskCoverage: mask.activeCoverage,
+                maskCoverage: effectiveCoverage,
                 luminanceDelta: luminanceDelta / count,
                 colorDelta: colorDelta / count,
                 contrastDelta: contrastCount > 0 ? contrastDelta / contrastCount : 0,
@@ -302,7 +326,8 @@ final class QualityCheckService {
             case .vegetation: return "植被：已执行"
             case .water: return "水面：已执行"
             case .architecture: return "建筑：已执行"
-            case .global, .person, .background, .subject: return nil
+            case .subject: return "显著主体：已执行"
+            case .global, .person, .background: return nil
             }
         }
         return expectedNames.allSatisfy { expected in

@@ -79,6 +79,103 @@ final class CoreImageRenderer {
         }
     }
 
+    /// Development evidence for mask coordinates and coverage. These previews use
+    /// exactly the same normalized-mask scaling as the renderer; they are diagnostic
+    /// artifacts, not alternative photographs.
+    func renderMaskDiagnosticPreviews(
+        from data: Data,
+        analysis: PhotoAnalysis,
+        recipe: AutomaticEditingRecipe,
+        maximumLongEdge: CGFloat = 640
+    ) throws -> [ProcessingStagePreview] {
+        guard let decoded = CIImage(data: data, options: [.applyOrientationProperty: true]) else {
+            throw ImageRenderingError.invalidImageData
+        }
+        let source = scaledForEvaluation(
+            canonicalImage(decoded),
+            maximumLongEdge: maximumLongEdge
+        )
+        let masks: [(String, NormalizedPhotoMask?)] = [
+            ("主体优先", analysis.subjectPriorityProfile.primarySubjectMask),
+            ("显著性原始", analysis.subjectPriorityProfile.primarySubjectMask == nil ? analysis.salientSubjectMask : nil),
+            ("天空", analysis.skyMask),
+            ("地面道路", analysis.groundMask),
+            ("植被", analysis.vegetationMask),
+            ("水面", analysis.waterMask),
+            ("建筑", analysis.architectureMask),
+            ("人物", analysis.personMask)
+        ]
+        var previews: [ProcessingStagePreview] = []
+        for (name, optionalMask) in masks {
+            guard let mask = optionalMask, let maskImage = diagnosticMask(mask, extent: source.extent) else {
+                continue
+            }
+            let rawMask = maskImage.applyingFilter("CIColorControls", parameters: [
+                kCIInputSaturationKey: 0,
+                kCIInputContrastKey: 1.15
+            ]).cropped(to: source.extent)
+            let tint = CIImage(color: CIColor(red: 1, green: 0.28, blue: 0.02, alpha: 1))
+                .cropped(to: source.extent)
+            let tintedRegion = tint.applyingFilter("CIBlendWithMask", parameters: [
+                kCIInputBackgroundImageKey: source,
+                kCIInputMaskImageKey: maskImage
+            ]).cropped(to: source.extent)
+            let overlay = source.applyingFilter("CIDissolveTransition", parameters: [
+                kCIInputTargetImageKey: tintedRegion,
+                kCIInputTimeKey: 0.48
+            ]).cropped(to: source.extent)
+            previews.append(ProcessingStagePreview(
+                name: "蒙版-\(name)",
+                imageData: try evaluationJPEG(from: rawMask)
+            ))
+            previews.append(ProcessingStagePreview(
+                name: "蒙版叠加-\(name)",
+                imageData: try evaluationJPEG(from: overlay)
+            ))
+        }
+        if analysis.subjectPriorityProfile.mode == .primarySubject,
+           analysis.faceCount == 0 {
+            let pipeline = try processImage(
+                data: data,
+                recipe: recipe,
+                analysis: analysis,
+                maximumLongEdge: maximumLongEdge
+            )
+            if let global = pipeline.stages.first(where: { $0.0 == "B 仅全局调整" })?.1 {
+                let subjectAdjusted = localAdjustmentProcessor.applyRegionalAdjustment(
+                    .subject,
+                    to: global,
+                    analysis: analysis,
+                    recipe: recipe
+                )
+                let difference = subjectAdjusted
+                    .applyingFilter("CIDifferenceBlendMode", parameters: [
+                        kCIInputBackgroundImageKey: global
+                    ])
+                    .applyingFilter("CIColorMatrix", parameters: [
+                        "inputRVector": CIVector(x: 5, y: 0, z: 0, w: 0),
+                        "inputGVector": CIVector(x: 0, y: 5, z: 0, w: 0),
+                        "inputBVector": CIVector(x: 0, y: 0, z: 5, w: 0),
+                        "inputAVector": CIVector(x: 0, y: 0, z: 0, w: 1)
+                    ])
+                    .cropped(to: global.extent)
+                previews.append(ProcessingStagePreview(
+                    name: "主体调整前-仅全局",
+                    imageData: try evaluationJPEG(from: global)
+                ))
+                previews.append(ProcessingStagePreview(
+                    name: "主体单独调整后",
+                    imageData: try evaluationJPEG(from: subjectAdjusted)
+                ))
+                previews.append(ProcessingStagePreview(
+                    name: "主体调整差异-放大5倍",
+                    imageData: try evaluationJPEG(from: difference)
+                ))
+            }
+        }
+        return previews
+    }
+
     func renderAutomaticEdit(
         from data: Data,
         recipe: AutomaticEditingRecipe = .naturalEnhancement,
@@ -169,13 +266,37 @@ final class CoreImageRenderer {
         let finished = try checkedCanvas(cinematicLensCharacterProcessor.apply(to: protected, recipe: recipe), canvas: canvas, stage: "镜头特征")
         let detailTime = ProcessInfo.processInfo.systemUptime - start
         return (finished, canvas, [
-            ("Original", input),
+            ("A 原始照片", input),
             ("曝光与动态范围", blackAdjusted),
             ("七段电影影调", curved),
-            ("专业色彩分级", graded),
-            ("局部空间与材质", local),
-            ("Final Edited", finished)
+            ("B 仅全局调整", graded),
+            ("C 全局+局部蒙版", local),
+            ("E 自动选择最终结果", finished)
         ], [toneTime, colorTime, spatialTime, detailTime])
+    }
+
+    private func diagnosticMask(
+        _ photoMask: NormalizedPhotoMask,
+        extent: CGRect
+    ) -> CIImage? {
+        guard photoMask.isValid else { return nil }
+        let image = CIImage(
+            bitmapData: photoMask.pixels,
+            bytesPerRow: photoMask.width,
+            size: CGSize(width: photoMask.width, height: photoMask.height),
+            format: .L8,
+            colorSpace: nil
+        )
+        let scaled = image
+            .transformed(by: CGAffineTransform(
+                scaleX: extent.width / CGFloat(photoMask.width),
+                y: extent.height / CGFloat(photoMask.height)
+            ))
+            .transformed(by: CGAffineTransform(
+                translationX: extent.minX,
+                y: extent.minY
+            ))
+        return scaled.cropped(to: extent)
     }
 
     private func canonicalImage(_ image: CIImage) -> CIImage {

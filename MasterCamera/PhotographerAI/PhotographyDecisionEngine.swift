@@ -53,6 +53,12 @@ final class PhotographyDecisionEngine {
             recipe: &recipe,
             actions: &actions
         )
+        applyCoordinationMode(
+            analysis: analysis,
+            context: context,
+            recipe: &recipe,
+            actions: &actions
+        )
         applyAnalysisReliabilityLimits(
             analysis: analysis,
             recipe: &recipe,
@@ -138,6 +144,85 @@ final class PhotographyDecisionEngine {
         }
     }
 
+    /// V8.1 selects one of two photographic production modes from measured
+    /// subject evidence. A missing subject is not treated as a reason to do
+    /// almost nothing: reliable semantic regions still receive a coordinated,
+    /// bounded treatment.
+    private func applyCoordinationMode(
+        analysis: PhotoAnalysis,
+        context: PhotographyContext,
+        recipe: inout AutomaticEditingRecipe,
+        actions: inout [PhotographyAction]
+    ) {
+        let priority = analysis.subjectPriorityProfile
+        if priority.mode == .primarySubject, analysis.faceCount > 0 {
+            actions.append(PhotographyAction(
+                title: "人物主体模式：交由严格人物保护链",
+                reason: "可靠整人物蒙版建立人物与环境关系，但禁止人脸专属提亮、美颜、几何或生成式修改。"
+            ))
+            return
+        }
+        if priority.mode == .primarySubject,
+           analysis.faceCount == 0,
+           let subjectStatistics = analysis.salientSubjectStatistics {
+            let subjectDeficit = max(0, analysis.averageLuminance - subjectStatistics.averageLuminance)
+            let requestedLift = min(0.11, 0.035 + subjectDeficit * 0.28)
+            recipe.subjectExposureEV = max(recipe.subjectExposureEV, requestedLift)
+            recipe.localContrastAmount = min(
+                0.115,
+                max(recipe.localContrastAmount, analysis.noiseEstimate > 0.22 ? 0.055 : 0.075)
+            )
+            recipe.backgroundSeparation = min(0.095, max(recipe.backgroundSeparation, 0.045))
+            actions.append(PhotographyAction(
+                title: "主体优先模式：显著主体进入真实局部渲染",
+                reason: String(
+                    format: "主体置信度 %.0f%%、覆盖 %.1f%%；按主体实测亮度、色彩和局部对比生成独立蒙版参数，同时轻度降低背景竞争。",
+                    priority.confidence * 100,
+                    analysis.salientSubjectCoverage * 100
+                )
+            ))
+            return
+        }
+
+        let reliableRegionCount = [
+            analysis.skyMask,
+            analysis.groundMask,
+            analysis.vegetationMask,
+            analysis.waterMask,
+            analysis.architectureMask
+        ].compactMap { mask -> NormalizedPhotoMask? in
+            guard let mask, mask.isValid, mask.activeCoverage >= 0.004, mask.activeCoverage <= 0.86 else {
+                return nil
+            }
+            return mask
+        }.count
+        guard reliableRegionCount > 0 else {
+            actions.append(PhotographyAction(
+                title: "整图协调降级：仅使用实测影调",
+                reason: "没有可靠单一主体或语义区域蒙版，只执行直方图、曲线、白平衡与亮度蒙版处理。"
+            ))
+            return
+        }
+
+        if analysis.contrastProfile == .flat {
+            recipe.toneCurveAmount = min(0.5, max(recipe.toneCurveAmount, 0.28))
+            recipe.localContrastAmount = min(0.1, max(recipe.localContrastAmount, 0.065))
+        } else if analysis.contrastProfile == .highContrast {
+            recipe.contrast = min(recipe.contrast, 1.02)
+            recipe.shadowRollOff = max(recipe.shadowRollOff, 0.22)
+            recipe.highlightRollOff = max(recipe.highlightRollOff, 0.28)
+        }
+        if analysis.averageSaturation < 0.32 {
+            recipe.vibrance = min(0.18, max(recipe.vibrance, 0.075))
+        }
+        recipe.colorGradeIntensity = min(0.2, max(recipe.colorGradeIntensity, 0.1))
+        recipe.luminanceMaskStrength = min(0.76, max(recipe.luminanceMaskStrength, 0.36))
+        actions.append(PhotographyAction(
+            title: "整图协调模式：区域关系共同驱动成片",
+            reason: "主体证据不足；以 \(reliableRegionCount) 个可靠区域协调天空高光、植被层次、地面引导和背景竞争，而不是回退到极弱全局轻调。Scene Profile：\(context.sceneProfile.weightSummary)"
+        ))
+    }
+
     /// 人物保护必须最后执行，确保任何场景、风格或问题修正规则都不能重新开启
     /// 人脸专属提亮、过强皮肤细节处理或疑似美颜式的橙色明度提升。
     private func enforcePortraitProtection(
@@ -196,6 +281,7 @@ final class PhotographyDecisionEngine {
         }
         if sceneRegionsAllowed {
             let measuredRegions: [(TreatmentRegion, String)] = [
+                (.subject, "围绕可靠显著主体建立局部明暗、色彩分离和材质层次，不把背景元素一并强化。"),
                 (.ground, "在道路与地面蒙版内恢复可用阴影并建立材质层次。"),
                 (.vegetation, "在植被蒙版内按区域实测调整绿黄关系，不用全图增绿或增黄。"),
                 (.water, "在水面蒙版内控制高光、色彩与局部对比，保留真实反射。"),
@@ -229,11 +315,6 @@ final class PhotographyDecisionEngine {
                     objective: "在人物外区域建立空间层次，不对人物区域做变相美颜。"
                 ))
             }
-        } else if analysis.salientSubjectMask?.isValid == true {
-            regions.append(RegionalTreatment(
-                region: .subject,
-                objective: "围绕显著主体进行克制的局部光影与空间层次调整。"
-            ))
         }
 
         let lighting = context.lightingConditions.map(\.rawValue).joined(separator: ",")
@@ -1231,6 +1312,30 @@ struct PhotographyCandidatePlanner {
             }
         case .targeted:
             applyTargetedProblems(kinds, analysis: analysis, recipe: &recipe)
+        }
+
+        if analysis.faceCount == 0 {
+            switch (analysis.subjectPriorityProfile.mode, intent) {
+            case (.primarySubject, .dimensional):
+                recipe.subjectExposureEV = min(0.13, max(recipe.subjectExposureEV, 0.055))
+                recipe.localContrastAmount = min(0.125, max(recipe.localContrastAmount, 0.082))
+                recipe.backgroundSeparation = min(0.105, max(recipe.backgroundSeparation, 0.055))
+            case (.primarySubject, .targeted):
+                recipe.subjectExposureEV = min(0.15, max(recipe.subjectExposureEV, 0.075))
+                recipe.localContrastAmount = min(0.135, max(recipe.localContrastAmount, 0.09))
+                recipe.backgroundSeparation = min(0.115, max(recipe.backgroundSeparation, 0.065))
+            case (.globalHarmony, .dimensional):
+                recipe.toneCurveAmount = min(0.58, max(recipe.toneCurveAmount, 0.3))
+                recipe.localContrastAmount = min(0.115, max(recipe.localContrastAmount, 0.072))
+                recipe.luminanceMaskStrength = min(0.8, max(recipe.luminanceMaskStrength, 0.42))
+            case (.globalHarmony, .targeted):
+                recipe.toneCurveAmount = min(0.64, max(recipe.toneCurveAmount, 0.34))
+                recipe.localContrastAmount = min(0.13, max(recipe.localContrastAmount, 0.08))
+                recipe.luminanceMaskStrength = min(0.84, max(recipe.luminanceMaskStrength, 0.48))
+                recipe.vibrance = min(0.2, max(recipe.vibrance, analysis.averageSaturation < 0.32 ? 0.09 : 0.04))
+            case (_, .natural):
+                break
+            }
         }
 
         if analysis.faceCount > 0 {

@@ -70,7 +70,8 @@ final class CameraViewModel: ObservableObject {
             CapturedPhoto(
                 originalImageData: data,
                 editedImageData: nil,
-                capturedAt: Date()
+                capturedAt: Date(),
+                isDiagnosticImport: true
             )
         )
     }

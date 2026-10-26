@@ -716,6 +716,267 @@ final class SceneAdaptationTests: XCTestCase {
         XCTAssertEqual(score, 0, accuracy: 0.0001)
     }
 
+    func testReliableSalientSubjectDrivesMeasuredLocalAdjustment() throws {
+        let subjectMask = NormalizedPhotoMask(
+            width: 4,
+            height: 4,
+            pixels: Data([
+                0, 0, 0, 0,
+                0, 255, 255, 0,
+                0, 255, 255, 0,
+                0, 0, 0, 0
+            ])
+        )
+        let subjectStatistics = regionStatistics(
+            luminance: 0.24,
+            contrast: 0.28,
+            saturation: 0.34,
+            red: 0.4,
+            green: 0.23,
+            blue: 0.12,
+            shadowRatio: 0.48
+        )
+        let analysis = fixture(
+            luminance: 0.46,
+            contrast: 0.56,
+            saturation: 0.18,
+            labels: ["outdoor", "garden", "fruit"],
+            salientSubjectMask: subjectMask,
+            salientSubjectStatistics: subjectStatistics
+        )
+        let problems = detector.detect(in: analysis)
+        let decision = engine.makeDecision(for: analysis, problems: problems)
+        let adjustment = try XCTUnwrap(RegionalPixelAdjustment.make(
+            region: .subject,
+            analysis: analysis,
+            recipe: decision.recipe
+        ))
+
+        XCTAssertGreaterThan(analysis.salientSubjectPriorityConfidence, 0.54)
+        XCTAssertTrue(problems.problems.contains {
+            $0.kind == .regionalUnderexposure && $0.affectedRegions == [.subject]
+        })
+        XCTAssertGreaterThan(adjustment.exposureEV, 0)
+        XCTAssertGreaterThan(adjustment.contrast, 1)
+        XCTAssertTrue(decision.treatmentPlan.regionalTreatments.contains { $0.region == .subject })
+    }
+
+    func testBroadSaliencyMaskIsNotTreatedAsReliableSubject() {
+        let broadMask = NormalizedPhotoMask(
+            width: 2,
+            height: 2,
+            pixels: Data([255, 255, 255, 255])
+        )
+        let analysis = fixture(
+            luminance: 0.46,
+            contrast: 0.56,
+            saturation: 0.18,
+            labels: ["outdoor"],
+            salientSubjectMask: broadMask,
+            salientSubjectStatistics: regionStatistics(
+                luminance: 0.3,
+                contrast: 0.3,
+                saturation: 0.2,
+                red: 0.3,
+                green: 0.3,
+                blue: 0.3
+            )
+        )
+
+        XCTAssertEqual(analysis.salientSubjectPriorityConfidence, 0)
+        XCTAssertNil(RegionalPixelAdjustment.make(
+            region: .subject,
+            analysis: analysis,
+            recipe: decision(for: analysis).recipe
+        ))
+    }
+
+    func testV81PersimmonLikeProfileDoesNotLetMinorArchitectureWin() throws {
+        let vegetation = NormalizedPhotoMask(
+            width: 4,
+            height: 4,
+            pixels: Data([
+                255, 255, 255, 255,
+                255, 255, 255, 255,
+                255, 0, 0, 0,
+                0, 0, 0, 0
+            ])
+        )
+        let architecture = NormalizedPhotoMask(
+            width: 4,
+            height: 4,
+            pixels: Data([
+                0, 0, 0, 0,
+                0, 0, 0, 0,
+                0, 0, 0, 0,
+                0, 0, 0, 255
+            ])
+        )
+        let ground = NormalizedPhotoMask(
+            width: 4,
+            height: 4,
+            pixels: Data([
+                0, 0, 0, 0,
+                0, 0, 0, 0,
+                255, 255, 0, 0,
+                255, 255, 255, 0
+            ])
+        )
+        let subject = NormalizedPhotoMask(
+            width: 4,
+            height: 4,
+            pixels: Data([
+                255, 255, 0, 0,
+                255, 255, 0, 0,
+                0, 0, 0, 0,
+                0, 0, 0, 0
+            ])
+        )
+        let analysis = fixture(
+            luminance: 0.45,
+            contrast: 0.83,
+            saturation: 0.22,
+            labels: ["outdoor", "sky", "cloudy", "plant"],
+            skyCoverage: 0.069,
+            salientSubjectMask: subject,
+            salientSubjectStatistics: regionStatistics(
+                luminance: 0.28,
+                contrast: 0.34,
+                saturation: 0.4,
+                red: 0.48,
+                green: 0.27,
+                blue: 0.14,
+                shadowRatio: 0.38
+            ),
+            groundMask: ground,
+            vegetationMask: vegetation,
+            architectureMask: architecture,
+            groundStatistics: regionStatistics(
+                luminance: 0.53,
+                contrast: 0.67,
+                saturation: 0.19,
+                red: 0.55,
+                green: 0.53,
+                blue: 0.47
+            ),
+            vegetationStatistics: regionStatistics(
+                luminance: 0.35,
+                contrast: 0.84,
+                saturation: 0.24,
+                red: 0.35,
+                green: 0.36,
+                blue: 0.32
+            ),
+            architectureStatistics: regionStatistics(
+                luminance: 0.53,
+                contrast: 0.74,
+                saturation: 0.13,
+                red: 0.52,
+                green: 0.53,
+                blue: 0.53
+            ),
+            segmentation: SceneSegmentationDiagnostics(
+                status: .available,
+                reason: nil,
+                skyCoverage: 0.069,
+                groundCoverage: 0.3125,
+                vegetationCoverage: 0.5625,
+                waterCoverage: 0,
+                architectureCoverage: 0.0625
+            )
+        )
+        let context = analysis.photographyContext
+        let result = decision(for: analysis)
+
+        XCTAssertEqual(context.style, .naturalDocumentary)
+        XCTAssertLessThan(context.sceneProfile.urbanArchitectureTendency, 0.12)
+        XCTAssertGreaterThan(
+            context.sceneProfile.naturalDocumentaryTendency,
+            context.sceneProfile.urbanArchitectureTendency
+        )
+        XCTAssertTrue(result.treatmentPlan.regionalTreatments.contains { $0.region == .subject })
+        let subjectAdjustment = try XCTUnwrap(
+            RegionalPixelAdjustment.make(region: .subject, analysis: analysis, recipe: result.recipe)
+        )
+        XCTAssertGreaterThan(subjectAdjustment.exposureEV, 0)
+    }
+
+    func testV81SceneConfidenceIsNotReusedAsSubjectConfidence() {
+        let analysis = fixture(
+            labels: ["outdoor", "sky", "cloudy", "plant"],
+            recognition: SceneRecognitionDiagnostics(
+                status: .recognized,
+                topConfidence: 1,
+                acceptedLabelCount: 4,
+                reason: nil
+            )
+        )
+
+        XCTAssertEqual(analysis.photographyContext.primarySubjectConfidence, 0, accuracy: 0.0001)
+        XCTAssertEqual(analysis.subjectPriorityProfile.mode, .globalHarmony)
+    }
+
+    func testV81AestheticScorerRewardsSubjectSeparationOverWeakChange() {
+        let subjectMask = NormalizedPhotoMask(
+            width: 4,
+            height: 4,
+            pixels: Data([
+                0, 0, 0, 0,
+                0, 255, 255, 0,
+                0, 255, 255, 0,
+                0, 0, 0, 0
+            ])
+        )
+        let analysis = fixture(
+            luminance: 0.46,
+            contrast: 0.56,
+            saturation: 0.18,
+            labels: ["outdoor", "garden", "fruit"],
+            salientSubjectMask: subjectMask,
+            salientSubjectStatistics: regionStatistics(
+                luminance: 0.24,
+                contrast: 0.28,
+                saturation: 0.34,
+                red: 0.4,
+                green: 0.23,
+                blue: 0.12,
+                shadowRatio: 0.48
+            )
+        )
+        let scorer = PhotographyAestheticProgressScorer()
+        let weak = scorer.score(source: analysis, regionImpacts: [
+            PhotographyRegionImpact(
+                region: .subject,
+                maskCoverage: 0.25,
+                luminanceDelta: 0.003,
+                colorDelta: 0.002,
+                contrastDelta: 0.001,
+                changedPixelRatio: 0.05
+            )
+        ])
+        let improved = scorer.score(source: analysis, regionImpacts: [
+            PhotographyRegionImpact(
+                region: .subject,
+                maskCoverage: 0.25,
+                luminanceDelta: 0.04,
+                colorDelta: 0.022,
+                contrastDelta: 0.014,
+                changedPixelRatio: 0.62
+            ),
+            PhotographyRegionImpact(
+                region: .vegetation,
+                maskCoverage: 0.5,
+                luminanceDelta: 0.012,
+                colorDelta: 0.01,
+                contrastDelta: 0.004,
+                changedPixelRatio: 0.35
+            )
+        ])
+
+        XCTAssertGreaterThan(improved.subjectPriority, weak.subjectPriority)
+        XCTAssertTrue(improved.hasMeaningfulProgress)
+    }
+
     private func decision(for analysis: PhotoAnalysis) -> PhotographyDecision {
         engine.makeDecision(for: analysis, problems: detector.detect(in: analysis))
     }
@@ -734,6 +995,8 @@ final class SceneAdaptationTests: XCTestCase {
         faceLuminance: Float? = nil,
         backgroundLuminance: Float? = nil,
         personMask: NormalizedPhotoMask? = nil,
+        salientSubjectMask: NormalizedPhotoMask? = nil,
+        salientSubjectStatistics: PhotoRegionStatistics? = nil,
         groundMask: NormalizedPhotoMask? = nil,
         vegetationMask: NormalizedPhotoMask? = nil,
         waterMask: NormalizedPhotoMask? = nil,
@@ -782,7 +1045,8 @@ final class SceneAdaptationTests: XCTestCase {
             faceAverageLuminance: faceLuminance,
             backgroundAverageLuminance: backgroundLuminance,
             personMask: personMask,
-            salientSubjectMask: nil,
+            salientSubjectMask: salientSubjectMask,
+            salientSubjectStatistics: salientSubjectStatistics,
             skinMask: nil,
             skyMask: skyMask,
             skyCoverage: skyCoverage ?? (skyMask == nil ? 0 : 0.38),

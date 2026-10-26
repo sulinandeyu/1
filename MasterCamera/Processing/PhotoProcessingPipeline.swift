@@ -61,7 +61,8 @@ final class PhotoProcessingPipeline {
             originalData: photo.originalImageData,
             decision: decision,
             analysis: analysis,
-            problems: problemReport
+            problems: problemReport,
+            retainPreviews: photo.isDiagnosticImport
         )
         let candidateDuration = ProcessInfo.processInfo.systemUptime - candidateStart
         let selectedDecision = decision.replacingRecipe(
@@ -186,13 +187,25 @@ final class PhotoProcessingPipeline {
 
         let stagePreviews: [ProcessingStagePreview]
         do {
-            stagePreviews = try renderer.renderStagePreviews(
+            let renderedStages = try renderer.renderStagePreviews(
                 from: photo.originalImageData,
                 recipe: finalEdit.recipe,
                 analysis: finalEdit.analysis
             )
+            if photo.isDiagnosticImport {
+                let maskDiagnostics = try renderer.renderMaskDiagnosticPreviews(
+                    from: photo.originalImageData,
+                    analysis: analysis,
+                    recipe: finalEdit.recipe
+                )
+                stagePreviews = candidateResult.previews + renderedStages + maskDiagnostics
+            } else {
+                stagePreviews = renderedStages
+            }
         } catch {
-            stagePreviews = []
+            // Candidate previews were already rendered successfully and remain useful
+            // even if a later full-stage or mask diagnostic preview fails.
+            stagePreviews = photo.isDiagnosticImport ? candidateResult.previews : []
             AppLogger.imageEngine.error("处理阶段预览生成失败：\(error.localizedDescription)")
         }
 
@@ -201,6 +214,7 @@ final class PhotoProcessingPipeline {
             originalImageData: photo.originalImageData,
             editedImageData: finalEdit.data,
             capturedAt: photo.capturedAt,
+            isDiagnosticImport: photo.isDiagnosticImport,
             skinMask: photo.skinMask,
             analysis: analysis,
             problemReport: problemReport,
@@ -216,10 +230,12 @@ final class PhotoProcessingPipeline {
         originalData: Data,
         decision: PhotographyDecision,
         analysis: PhotoAnalysis,
-        problems: PhotoProblemReport
+        problems: PhotoProblemReport,
+        retainPreviews: Bool
     ) throws -> (
         plan: PhotographyEditPlan,
         evaluations: [PhotographyCandidateEvaluation],
+        previews: [ProcessingStagePreview],
         selectionReason: String
     ) {
         let plans = candidatePlanner.makePlans(
@@ -231,6 +247,7 @@ final class PhotoProcessingPipeline {
         let evaluationStart = ProcessInfo.processInfo.systemUptime
         let timeBudget: TimeInterval = 3.2
         var evaluations: [PhotographyCandidateEvaluation] = []
+        var candidatePreviews: [ProcessingStagePreview] = []
 
         for plan in plans {
             let elapsed = ProcessInfo.processInfo.systemUptime - evaluationStart
@@ -257,6 +274,12 @@ final class PhotoProcessingPipeline {
                     recipe: plan.recipe,
                     analysis: analysis
                 )
+                if retainPreviews {
+                    candidatePreviews.append(ProcessingStagePreview(
+                        name: "D V8.1候选-\(plan.intent.rawValue)",
+                        imageData: preview
+                    ))
+                }
                 let candidateDecision = decision.replacingRecipe(
                     with: plan.recipe,
                     analysis: analysis
@@ -283,6 +306,10 @@ final class PhotoProcessingPipeline {
                     edited: quality.measuredAnalysis,
                     regionImpacts: regionImpacts
                 )
+                let aestheticProgress = PhotographyAestheticProgressScorer().score(
+                    source: analysis,
+                    regionImpacts: regionImpacts
+                )
                 let preservation = preservationScore(
                     quality: quality,
                     hasProblems: !problems.isEmpty
@@ -296,10 +323,18 @@ final class PhotoProcessingPipeline {
                 let technicalPenalty: Float = status == .rejected
                     ? 46
                     : (status == .warning ? 10 : 0)
-                let score = (improvement * 52)
-                    + (preservation * 28)
-                    + 20
+                let insufficientImprovementPenalty: Float = !problems.isEmpty
+                    && improvement < 0.08
+                    && !aestheticProgress.hasMeaningfulProgress
+                    ? 14
+                    : 0
+                let score = (improvement * 42)
+                    + (preservation * 22)
+                    + (aestheticProgress.subjectPriority * 18)
+                    + (aestheticProgress.regionalHarmony * 18)
+                    + 10
                     - technicalPenalty
+                    - insufficientImprovementPenalty
                     - Float(quality.issues.count) * 3
                 let duration = Self.milliseconds(ProcessInfo.processInfo.systemUptime - start)
                 let evaluation = PhotographyCandidateEvaluation(
@@ -309,15 +344,17 @@ final class PhotoProcessingPipeline {
                     score: score,
                     problemImprovement: improvement,
                     preservationScore: preservation,
+                    subjectPriorityScore: aestheticProgress.subjectPriority,
+                    harmonyScore: aestheticProgress.regionalHarmony,
                     issues: quality.issues.map(\.rawValue),
                     regionImpacts: regionImpacts,
-                    reason: "\(plan.rationale) 技术质检=\(quality.status.rawValue)，不以像素差异大小单独判优。",
+                    reason: "\(plan.rationale) 技术质检=\(quality.status.rawValue)；主体改善=\(Int((aestheticProgress.subjectPriority * 100).rounded()))%，区域协调=\(Int((aestheticProgress.regionalHarmony * 100).rounded()))%，弱改善惩罚=\(Int(insufficientImprovementPenalty))；不以像素差异大小单独判优。",
                     durationMilliseconds: duration,
                     selected: false
                 )
                 evaluations.append(evaluation)
                 AppLogger.imageEngine.info(
-                    "候选 \(plan.intent.rawValue, privacy: .public)：status=\(status.rawValue, privacy: .public) score=\(score) improvement=\(improvement) preservation=\(preservation) duration=\(duration)ms recipe=\(plan.recipe.traceSummary, privacy: .public)"
+                    "候选 \(plan.intent.rawValue, privacy: .public)：status=\(status.rawValue, privacy: .public) score=\(score) improvement=\(improvement) subject=\(aestheticProgress.subjectPriority) harmony=\(aestheticProgress.regionalHarmony) preservation=\(preservation) weakPenalty=\(insufficientImprovementPenalty) duration=\(duration)ms recipe=\(plan.recipe.traceSummary, privacy: .public)"
                 )
             } catch {
                 let duration = Self.milliseconds(ProcessInfo.processInfo.systemUptime - start)
@@ -349,14 +386,16 @@ final class PhotoProcessingPipeline {
             $0.planID == selected.planID ? $0.markingSelected() : $0
         }
         let selectionReason = String(
-            format: "%@；最终按实测选择：状态=%@，得分=%.1f，问题改善=%.1f%%，保真=%.1f%%。",
+            format: "%@；最终按实测选择：状态=%@，得分=%.1f，问题改善=%.1f%%，主体改善=%.1f%%，区域协调=%.1f%%，保真=%.1f%%。",
             selected.reason,
             selected.status.rawValue,
             selected.score,
             selected.problemImprovement * 100,
+            selected.subjectPriorityScore * 100,
+            selected.harmonyScore * 100,
             selected.preservationScore * 100
         )
-        return (selectedPlan, selectedEvaluations, selectionReason)
+        return (selectedPlan, selectedEvaluations, candidatePreviews, selectionReason)
     }
 
     private func preservationScore(

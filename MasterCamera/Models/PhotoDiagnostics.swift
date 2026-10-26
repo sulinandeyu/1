@@ -87,7 +87,10 @@ struct PhotoDiagnosticSection: Identifiable, Equatable, Sendable {
                     label: "人物蒙版",
                     value: "\(analysis.personMask.maskSummary) · 人物覆盖 \(analysis.personCoverage.percentText) · 最大人脸 \(analysis.largestFaceCoverage.percentText)"
                 ),
-                PhotoDiagnosticItem(label: "主体蒙版", value: analysis.salientSubjectMask.maskSummary),
+                PhotoDiagnosticItem(
+                    label: "主体蒙版",
+                    value: "\(analysis.salientSubjectMask.maskSummary) · 覆盖 \(analysis.salientSubjectCoverage.percentText) · 摄影优先置信度 \(analysis.salientSubjectPriorityConfidence.percentText)"
+                ),
                 PhotoDiagnosticItem(label: "皮肤蒙版", value: analysis.skinMask.maskSummary),
                 PhotoDiagnosticItem(
                     label: "天空蒙版",
@@ -110,6 +113,7 @@ struct PhotoDiagnosticSection: Identifiable, Equatable, Sendable {
                     label: "天空区域实测",
                     value: analysis.skyStatistics.regionStatisticsSummary
                 ),
+                PhotoDiagnosticItem(label: "主体区域实测", value: analysis.salientSubjectStatistics.regionStatisticsSummary),
                 PhotoDiagnosticItem(label: "地面区域实测", value: analysis.groundStatistics.regionStatisticsSummary),
                 PhotoDiagnosticItem(label: "植被区域实测", value: analysis.vegetationStatistics.regionStatisticsSummary),
                 PhotoDiagnosticItem(label: "水面区域实测", value: analysis.waterStatistics.regionStatisticsSummary),
@@ -135,6 +139,16 @@ struct PhotoDiagnosticSection: Identifiable, Equatable, Sendable {
                 PhotoDiagnosticItem(
                     label: "多维场景",
                     value: decision.context.sceneFacets.map(\.rawValue).joined(separator: "、")
+                ),
+                PhotoDiagnosticItem(
+                    label: "V8.1 Scene Profile 权重",
+                    value: decision.context.sceneProfile.weightSummary
+                ),
+                PhotoDiagnosticItem(
+                    label: "主体优先级模式",
+                    value: decision.context.primarySubjectConfidence >= 0.54
+                        ? "主体优先 · 置信度 \(Int((decision.context.primarySubjectConfidence * 100).rounded()))%"
+                        : "整图协调 · 主体证据不足"
                 ),
                 PhotoDiagnosticItem(
                     label: "光照条件",
@@ -399,12 +413,14 @@ struct PhotoDiagnosticSection: Identifiable, Equatable, Sendable {
                                 )
                             }.joined(separator: ",")
                             return String(
-                                format: "%@%@ · %@ · %.1f分 · 问题改善 %.0f%% · 保真 %.0f%% · %@",
+                                format: "%@%@ · %@ · %.1f分 · 问题改善 %.0f%% · 主体改善 %.0f%% · 区域协调 %.0f%% · 保真 %.0f%% · %@",
                                 candidate.title,
                                 candidate.selected ? "（已选）" : "",
                                 candidate.status.rawValue,
                                 candidate.score,
                                 candidate.problemImprovement * 100,
+                                candidate.subjectPriorityScore * 100,
+                                candidate.harmonyScore * 100,
                                 candidate.preservationScore * 100,
                                 candidate.reason
                             ) + (impactText.isEmpty ? "" : " · 区域[\(impactText)]")

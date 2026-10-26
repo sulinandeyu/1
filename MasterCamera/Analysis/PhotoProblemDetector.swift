@@ -210,6 +210,7 @@ final class PhotoProblemDetector {
         problems: inout [PhotoProblem]
     ) {
         let regions: [(TreatmentRegion, NormalizedPhotoMask?, PhotoRegionStatistics?)] = [
+            (.subject, analysis.salientSubjectMask, analysis.salientSubjectStatistics),
             (.sky, analysis.skyMask, analysis.skyStatistics),
             (.ground, analysis.groundMask, analysis.groundStatistics),
             (.vegetation, analysis.vegetationMask, analysis.vegetationStatistics),
@@ -225,7 +226,11 @@ final class PhotoProblemDetector {
                 mask.activeCoverage <= 0.82,
                 let statistics = optionalStatistics
             else { continue }
-            let confidence = min(0.95, max(0.58, mask.activeCoverage * 2.6))
+            let coverageConfidence = min(0.95, max(0.58, mask.activeCoverage * 2.6))
+            let confidence = region == .subject
+                ? min(coverageConfidence, analysis.salientSubjectPriorityConfidence)
+                : coverageConfidence
+            if region == .subject, confidence < 0.54 { continue }
             let darkLimit: Float = isNight ? 0.16 : 0.25
             if region != .sky,
                statistics.averageLuminance < darkLimit,

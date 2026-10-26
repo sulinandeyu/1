@@ -6,6 +6,7 @@ struct CapturedPhoto: Identifiable, Equatable, Sendable {
     let originalImageData: Data
     let editedImageData: Data
     let capturedAt: Date
+    let isDiagnosticImport: Bool
     let skinMask: NormalizedPhotoMask?
     let analysis: PhotoAnalysis?
     let problemReport: PhotoProblemReport?
@@ -19,6 +20,7 @@ struct CapturedPhoto: Identifiable, Equatable, Sendable {
         originalImageData: Data,
         editedImageData: Data? = nil,
         capturedAt: Date,
+        isDiagnosticImport: Bool = false,
         skinMask: NormalizedPhotoMask? = nil,
         analysis: PhotoAnalysis? = nil,
         problemReport: PhotoProblemReport? = nil,
@@ -34,6 +36,7 @@ struct CapturedPhoto: Identifiable, Equatable, Sendable {
         // like a valid edited deliverable to every downstream caller.
         self.editedImageData = editedImageData ?? Data()
         self.capturedAt = capturedAt
+        self.isDiagnosticImport = isDiagnosticImport
         self.skinMask = skinMask
         self.analysis = analysis
         self.problemReport = problemReport

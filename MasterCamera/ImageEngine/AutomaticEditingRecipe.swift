@@ -89,14 +89,24 @@ struct RegionalPixelAdjustment: Equatable, Sendable {
         analysis: PhotoAnalysis,
         recipe: AutomaticEditingRecipe
     ) -> RegionalPixelAdjustment? {
+        if region == .subject, analysis.faceCount > 0 {
+            // Generic saliency is not precise enough to touch a face. Portraits keep
+            // using the whole-person exposure path and the hard texture protections.
+            return nil
+        }
         guard analysis.faceCount == 0 || analysis.personMask?.isValid == true else {
             return nil
         }
-        guard analysis.segmentationDiagnostics.status != .failed else { return nil }
+        if region != .subject, analysis.segmentationDiagnostics.status == .failed {
+            return nil
+        }
 
         let mask: NormalizedPhotoMask?
         let statistics: PhotoRegionStatistics?
         switch region {
+        case .subject:
+            mask = analysis.salientSubjectMask
+            statistics = analysis.salientSubjectStatistics
         case .ground:
             mask = analysis.groundMask
             statistics = analysis.groundStatistics
@@ -120,10 +130,15 @@ struct RegionalPixelAdjustment: Equatable, Sendable {
             mask.activeCoverage <= 0.86,
             let statistics
         else { return nil }
+        let exclusions = [analysis.personMask, region == .subject ? nil : analysis.salientSubjectMask]
+            .compactMap { $0 }
+        guard mask.activeCoverage(excluding: exclusions) >= 0.004 else { return nil }
 
         let facets = Set(analysis.photographyContext.sceneFacets)
         let semanticMatch: Bool
         switch region {
+        case .subject:
+            semanticMatch = analysis.salientSubjectPriorityConfidence >= 0.54
         case .ground:
             semanticMatch = true
         case .vegetation:
@@ -150,6 +165,9 @@ struct RegionalPixelAdjustment: Equatable, Sendable {
         }
         let coverageConfidence = min(1, max(0.42, mask.activeCoverage * 3.2))
         let confidence = min(1, recognitionConfidence * coverageConfidence)
+        let resolvedConfidence = region == .subject
+            ? min(confidence, analysis.salientSubjectPriorityConfidence)
+            : confidence
         let isNight = analysis.photographyContext.lightingConditions.contains(.night)
 
         var exposureEV: Float = 0
@@ -162,6 +180,21 @@ struct RegionalPixelAdjustment: Equatable, Sendable {
         let reason: String
 
         switch region {
+        case .subject:
+            let targetLuminance: Float = isNight ? 0.3 : 0.43
+            exposureEV = ((targetLuminance - statistics.averageLuminance) * 0.46 + recipe.subjectExposureEV)
+                .clamped(to: -0.06...0.16)
+            shadowAmount = ((statistics.shadowRatio - 0.16) * 0.3)
+                .clamped(to: 0...0.15)
+            highlightAmount = (1 - max(0, statistics.highlightRatio - 0.1) * 0.72)
+                .clamped(to: 0.82...1)
+            contrast = 1 + ((0.54 - statistics.contrastRange) * 0.18)
+                .clamped(to: 0...0.095)
+            let saturationHeadroom = ((0.4 - statistics.averageSaturation) * 0.16)
+                .clamped(to: 0...0.06)
+            saturation = isNight ? 1 : 1 + saturationHeadroom
+            clarity = min(0.09, max(0.025, recipe.localContrastAmount * 0.72))
+            reason = "Vision 显著性、主体区域实测影调与环境分离共同确认摄影优先区域；只增强其局部层次，不宣称识别出具体物体。"
         case .ground:
             let targetLuminance: Float = isNight ? 0.24 : 0.38
             exposureEV = ((targetLuminance - statistics.averageLuminance) * 0.62)
@@ -205,17 +238,30 @@ struct RegionalPixelAdjustment: Equatable, Sendable {
             clarity = min(0.04, max(0, recipe.localContrastAmount * 0.28))
             reason = "依据水面自身高光、反射和饱和度控制层次，避免把真实反光压平或统一染蓝。"
         case .architecture:
-            let targetLuminance: Float = isNight ? 0.25 : 0.4
-            exposureEV = ((targetLuminance - statistics.averageLuminance) * 0.4)
-                .clamped(to: -0.06...0.09)
-            highlightAmount = (1 - max(0, statistics.highlightRatio - 0.06) * 1.25)
-                .clamped(to: 0.7...1)
-            shadowAmount = ((statistics.shadowRatio - 0.2) * 0.28)
-                .clamped(to: 0...0.13)
-            contrast = 1 + ((0.6 - statistics.contrastRange) * 0.16)
-                .clamped(to: 0...0.07)
-            clarity = min(0.075, max(0, recipe.localContrastAmount * 0.5))
-            reason = "依据建筑区域自身的光源、高光和结构对比增强线条与材质，不改变环境真实性。"
+            let profile = analysis.photographyContext.sceneProfile
+            let minorBackground = profile.architecturePresence < 0.12
+                && profile.urbanArchitectureTendency < 0.45
+            if minorBackground {
+                exposureEV = statistics.averageLuminance > analysis.averageLuminance ? -0.02 : 0
+                highlightAmount = (1 - max(0, statistics.highlightRatio - 0.08) * 0.75)
+                    .clamped(to: 0.82...1)
+                contrast = 1
+                saturation = 0.99
+                clarity = 0
+                reason = "建筑覆盖较小且 Scene Profile 不支持城市主导，只保护高光并轻度降低背景竞争，不把建筑强化成主体。"
+            } else {
+                let targetLuminance: Float = isNight ? 0.25 : 0.4
+                exposureEV = ((targetLuminance - statistics.averageLuminance) * 0.4)
+                    .clamped(to: -0.06...0.09)
+                highlightAmount = (1 - max(0, statistics.highlightRatio - 0.06) * 1.25)
+                    .clamped(to: 0.7...1)
+                shadowAmount = ((statistics.shadowRatio - 0.2) * 0.28)
+                    .clamped(to: 0...0.13)
+                contrast = 1 + ((0.6 - statistics.contrastRange) * 0.16)
+                    .clamped(to: 0...0.07)
+                clarity = min(0.075, max(0, recipe.localContrastAmount * 0.5))
+                reason = "建筑权重与覆盖达到主导阈值；依据区域光源、高光和结构对比增强线条与材质。"
+            }
         default:
             return nil
         }
@@ -227,16 +273,19 @@ struct RegionalPixelAdjustment: Equatable, Sendable {
                 0.72 + (recipe.luminanceMaskStrength * 0.42) + (recipe.localContrastAmount * 1.5)
             )
         )
+        let exposureLimit: ClosedRange<Float> = region == .subject ? -0.16...0.16 : -0.14...0.14
+        let clarityLimit: Float = region == .subject ? 0.09 : 0.075
+        let contrastLimit: Float = region == .subject ? 0.095 : 0.075
         let scaled = RegionalPixelAdjustment(
             region: region,
-            exposureEV: (exposureEV * confidence * regionalResponse).clamped(to: -0.14...0.14),
-            highlightAmount: max(0.65, 1 - ((1 - highlightAmount) * confidence * regionalResponse)),
-            shadowAmount: min(0.2, shadowAmount * confidence * regionalResponse),
-            contrast: 1 + min(0.075, (contrast - 1) * confidence * regionalResponse),
-            saturation: 1 + ((saturation - 1) * confidence),
-            temperatureShift: temperatureShift * confidence,
-            clarity: min(0.075, clarity * confidence * regionalResponse),
-            confidence: confidence,
+            exposureEV: (exposureEV * resolvedConfidence * regionalResponse).clamped(to: exposureLimit),
+            highlightAmount: max(0.65, 1 - ((1 - highlightAmount) * resolvedConfidence * regionalResponse)),
+            shadowAmount: min(0.2, shadowAmount * resolvedConfidence * regionalResponse),
+            contrast: 1 + min(contrastLimit, (contrast - 1) * resolvedConfidence * regionalResponse),
+            saturation: 1 + ((saturation - 1) * resolvedConfidence),
+            temperatureShift: temperatureShift * resolvedConfidence,
+            clarity: min(clarityLimit, clarity * resolvedConfidence * regionalResponse),
+            confidence: resolvedConfidence,
             reason: reason,
             fallback: "蒙版或置信度不足时跳过该区域，仅保留全局实测影调处理。"
         )
