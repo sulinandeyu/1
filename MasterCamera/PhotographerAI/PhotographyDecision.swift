@@ -8,6 +8,7 @@ struct PhotographyDecision: Equatable, Sendable {
     let actions: [PhotographyAction]
     let treatmentPlan: PhotographyTreatmentPlan
     let recipe: AutomaticEditingRecipe
+    let parameterEvidence: [PhotographyParameterEvidence]
 
     var summaryText: String {
         let actionText = actions.map(\.title).joined(separator: ", ")
@@ -69,8 +70,86 @@ struct PhotographyDecision: Equatable, Sendable {
                 regionalTreatments: refreshedTreatments,
                 portraitProtection: treatmentPlan.portraitProtection
             ),
-            recipe: recipe
+            recipe: recipe,
+            parameterEvidence: parameterEvidence.map { $0.refreshingActualValue(from: recipe) }
         )
+    }
+}
+
+/// V9 keeps the reason for every important pixel parameter beside the executable
+/// recipe. This is intentionally typed data instead of a free-form prompt so the
+/// diagnostic UI can show measurement -> target -> bounded value without claiming
+/// that a generated plan was rendered when it was not.
+enum PhotographyParameterKey: String, Equatable, Sendable {
+    case exposure
+    case highlights
+    case shadows
+    case contrast
+    case toneCurve
+    case whitePoint
+    case blackPoint
+    case temperature
+    case tint
+    case saturation
+    case vibrance
+    case localContrast
+    case noiseReduction
+    case sharpening
+    case luminanceMask
+    case orangeHSL
+    case greenHSL
+    case blueHSL
+}
+
+struct PhotographyParameterEvidence: Equatable, Sendable {
+    let key: PhotographyParameterKey
+    let purpose: String
+    let inputEvidence: String
+    let target: String
+    let minimumValue: Float
+    let maximumValue: Float
+    let actualValue: Float
+    let expectedResult: String
+    let fallbackBehavior: String
+
+    func refreshingActualValue(from recipe: AutomaticEditingRecipe) -> PhotographyParameterEvidence {
+        PhotographyParameterEvidence(
+            key: key,
+            purpose: purpose,
+            inputEvidence: inputEvidence,
+            target: target,
+            minimumValue: minimumValue,
+            maximumValue: maximumValue,
+            actualValue: Self.actualValue(for: key, recipe: recipe),
+            expectedResult: expectedResult,
+            fallbackBehavior: fallbackBehavior
+        )
+    }
+
+    static func actualValue(
+        for key: PhotographyParameterKey,
+        recipe: AutomaticEditingRecipe
+    ) -> Float {
+        switch key {
+        case .exposure: return recipe.exposureEV
+        case .highlights: return recipe.highlightAmount
+        case .shadows: return recipe.shadowAmount
+        case .contrast: return recipe.contrast
+        case .toneCurve: return recipe.toneCurveAmount
+        case .whitePoint: return recipe.whitePoint
+        case .blackPoint: return recipe.blackPoint
+        case .temperature: return recipe.temperatureShift
+        case .tint: return recipe.tintShift
+        case .saturation: return recipe.saturation
+        case .vibrance: return recipe.vibrance
+        case .localContrast: return recipe.localContrastAmount
+        case .noiseReduction: return recipe.noiseReductionAmount
+        case .sharpening: return recipe.sharpeningAmount
+        case .luminanceMask: return recipe.luminanceMaskStrength
+        case .orangeHSL: return recipe.hsl.orangeSaturation
+        case .greenHSL: return recipe.hsl.greenSaturation
+        case .blueHSL: return recipe.hsl.blueSaturation
+        }
     }
 }
 
@@ -226,6 +305,7 @@ struct PhotographyEditPlan: Equatable, Sendable {
     let adjustments: [PhotographyPlannedAdjustment]
     let recipe: AutomaticEditingRecipe
     let rationale: String
+    let parameterEvidence: [PhotographyParameterEvidence]
 }
 
 enum CandidateEvaluationStatus: String, Equatable, Sendable {

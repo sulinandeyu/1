@@ -59,6 +59,12 @@ final class PhotographyDecisionEngine {
             recipe: &recipe,
             actions: &actions
         )
+        let measuredParameterEvidence = PerPhotoParameterPlanner().refine(
+            recipe: &recipe,
+            analysis: analysis,
+            problems: problems,
+            actions: &actions
+        )
         applyAnalysisReliabilityLimits(
             analysis: analysis,
             recipe: &recipe,
@@ -66,6 +72,12 @@ final class PhotographyDecisionEngine {
         )
         applyProblemSafetyLimits(problems: problems, recipe: &recipe)
         reconcileQualitySignals(analysis: analysis, recipe: &recipe, actions: &actions)
+        applyColorIntegrityGuards(
+            analysis: analysis,
+            strategy: strategy,
+            recipe: &recipe,
+            actions: &actions
+        )
         enforcePortraitProtection(analysis: analysis, recipe: &recipe, actions: &actions)
 
         if actions.isEmpty {
@@ -90,7 +102,10 @@ final class PhotographyDecisionEngine {
                 context: context,
                 recipe: finalRecipe
             ),
-            recipe: finalRecipe
+            recipe: finalRecipe,
+            parameterEvidence: measuredParameterEvidence.map {
+                $0.refreshingActualValue(from: finalRecipe)
+            }
         )
     }
 
@@ -240,8 +255,18 @@ final class PhotographyDecisionEngine {
         recipe.noiseReductionAmount = min(recipe.noiseReductionAmount, 0.025)
         recipe.sharpeningAmount = min(recipe.sharpeningAmount, 0.085)
         recipe.localContrastAmount = min(recipe.localContrastAmount, 0.07)
+        recipe.temperatureShift = recipe.temperatureShift.clamped(to: -35...35)
+        recipe.tintShift = recipe.tintShift.clamped(to: -2...2)
+        recipe.saturation = min(recipe.saturation, 1)
+        recipe.vibrance = min(recipe.vibrance, 0.055)
+        recipe.colorGradeIntensity = min(recipe.colorGradeIntensity, 0.055)
+        recipe.shadowCoolAmount = min(recipe.shadowCoolAmount, 0.025)
+        recipe.midtoneWarmAmount = min(recipe.midtoneWarmAmount, 0.025)
+        recipe.highlightWarmAmount = min(recipe.highlightWarmAmount, 0.03)
+        recipe.colorContrast = min(recipe.colorContrast, 0.025)
+        recipe.hsl.orangeHue = 0
         recipe.hsl.orangeLuminance = 0
-        recipe.hsl.orangeSaturation = min(max(recipe.hsl.orangeSaturation, -0.02), 0.02)
+        recipe.hsl.orangeSaturation = 0
 
         actions.append(
             PhotographyAction(
@@ -249,6 +274,59 @@ final class PhotographyDecisionEngine {
                 reason: "禁止人脸专属提亮、几何变形、生成式修复和磨皮；只允许整个人物与环境的摄影光影关系调整，并保留真实皮肤纹理。"
             )
         )
+    }
+
+    /// Keeps white/grey materials and the source-relative skin relationship neutral.
+    /// This is deliberately applied after scene styling so a style cannot re-introduce
+    /// the orange skin, cyan sky or yellow-green neutral drift found in V8.1 captures.
+    private func applyColorIntegrityGuards(
+        analysis: PhotoAnalysis,
+        strategy: SceneStrategy,
+        recipe: inout AutomaticEditingRecipe,
+        actions: inout [PhotographyAction]
+    ) {
+        let context = analysis.photographyContext
+        let isOvercast = context.lightingConditions.contains(.overcast)
+        let neutralArchitecture = (analysis.architectureStatistics?.averageSaturation ?? 1) < 0.18
+            && (analysis.architectureMask?.activeCoverage ?? 0) >= 0.08
+        let neutralDominant = analysis.averageSaturation < 0.2 || neutralArchitecture
+
+        if isOvercast {
+            let gradeLimit: Float = strategy == .architecture ? 0.05 : 0.065
+            let coolLimit: Float = strategy == .architecture ? 0.018 : 0.025
+            recipe.temperatureShift = recipe.temperatureShift.clamped(to: -25...25)
+            recipe.tintShift = recipe.tintShift.clamped(to: -1.5...1.5)
+            recipe.colorGradeIntensity = min(recipe.colorGradeIntensity, gradeLimit)
+            recipe.shadowCoolAmount = min(recipe.shadowCoolAmount, coolLimit)
+            recipe.midtoneWarmAmount = min(recipe.midtoneWarmAmount, 0.025)
+            recipe.highlightWarmAmount = min(recipe.highlightWarmAmount, 0.03)
+            recipe.colorContrast = min(recipe.colorContrast, 0.035)
+            recipe.hsl.cyanSaturation = min(0, max(recipe.hsl.cyanSaturation, -0.035))
+            recipe.hsl.blueSaturation = min(0, max(recipe.hsl.blueSaturation, -0.035))
+            recipe.hsl.greenSaturation = min(0.01, recipe.hsl.greenSaturation)
+            recipe.skySaturation = min(recipe.skySaturation, 1)
+            recipe.exposureEV = max(recipe.exposureEV, -0.025)
+            actions.append(PhotographyAction(
+                title: "阴天中性色保护",
+                reason: "阴天与低色度天空不具备蓝天证据，因此禁止强制青蓝或暖黄分离，只保留动态范围、结构和局部层次。"
+            ))
+        }
+
+        if neutralDominant {
+            recipe.temperatureShift = recipe.temperatureShift.clamped(to: -45...45)
+            recipe.tintShift = recipe.tintShift.clamped(to: -2.5...2.5)
+            recipe.saturation = min(recipe.saturation, 1.005)
+            recipe.vibrance = min(recipe.vibrance, 0.075)
+            recipe.colorGradeIntensity = min(recipe.colorGradeIntensity, 0.09)
+            recipe.shadowCoolAmount = min(recipe.shadowCoolAmount, 0.04)
+            recipe.midtoneWarmAmount = min(recipe.midtoneWarmAmount, 0.035)
+            recipe.highlightWarmAmount = min(recipe.highlightWarmAmount, 0.045)
+            recipe.colorContrast = min(recipe.colorContrast, 0.045)
+            actions.append(PhotographyAction(
+                title: "白色与灰色材质保护",
+                reason: "画面包含大面积低色度或建筑中性色，限制全局色偏，避免白车、灰墙和阴天天空被染色。"
+            ))
+        }
     }
 
     private func treatmentPlan(
@@ -703,50 +781,50 @@ final class PhotographyDecisionEngine {
 
         switch intensity {
         case .natural:
-            recipe.shadowRollOff = max(recipe.shadowRollOff, 0.2)
-            recipe.lowerMidtoneLift = max(recipe.lowerMidtoneLift, 0.008)
-            recipe.upperMidtoneSeparation = max(recipe.upperMidtoneSeparation, 0.012)
-            recipe.highlightRollOff = max(recipe.highlightRollOff, 0.2)
-            recipe.whitePoint = min(recipe.whitePoint, 0.988)
-            recipe.colorGradeIntensity = max(recipe.colorGradeIntensity, 0.24)
-            recipe.shadowCoolAmount = max(recipe.shadowCoolAmount, 0.12)
-            recipe.midtoneWarmAmount = max(recipe.midtoneWarmAmount, 0.16)
-            recipe.highlightWarmAmount = max(recipe.highlightWarmAmount, 0.2)
-            recipe.colorContrast = max(recipe.colorContrast, 0.1)
-            recipe.bloomIntensity = max(recipe.bloomIntensity, 0.004)
-            recipe.backgroundSeparation = analysis.containsFaces ? 0.055 : 0.025
+            recipe.shadowRollOff = max(recipe.shadowRollOff, 0.1)
+            recipe.lowerMidtoneLift = max(recipe.lowerMidtoneLift, 0.004)
+            recipe.upperMidtoneSeparation = max(recipe.upperMidtoneSeparation, 0.008)
+            recipe.highlightRollOff = max(recipe.highlightRollOff, 0.12)
+            recipe.whitePoint = min(recipe.whitePoint, 0.995)
+            recipe.colorGradeIntensity = min(recipe.colorGradeIntensity, 0.1)
+            recipe.shadowCoolAmount = min(recipe.shadowCoolAmount, 0.04)
+            recipe.midtoneWarmAmount = min(recipe.midtoneWarmAmount, 0.04)
+            recipe.highlightWarmAmount = min(recipe.highlightWarmAmount, 0.05)
+            recipe.colorContrast = min(recipe.colorContrast, 0.05)
+            recipe.bloomIntensity = min(recipe.bloomIntensity, 0.002)
+            recipe.backgroundSeparation = min(recipe.backgroundSeparation, analysis.containsFaces ? 0.045 : 0.025)
         case .standard:
-            recipe.shadowRollOff = max(recipe.shadowRollOff, 0.38)
-            recipe.lowerMidtoneLift = max(recipe.lowerMidtoneLift, 0.012)
-            recipe.midtoneBias = max(recipe.midtoneBias, 0.004)
-            recipe.upperMidtoneSeparation = max(recipe.upperMidtoneSeparation, 0.025)
-            recipe.highlightRollOff = max(recipe.highlightRollOff, 0.42)
-            recipe.whitePoint = min(recipe.whitePoint, 0.976)
-            recipe.colorGradeIntensity = max(recipe.colorGradeIntensity, 0.4)
-            recipe.shadowCoolAmount = max(recipe.shadowCoolAmount, 0.28)
-            recipe.midtoneWarmAmount = max(recipe.midtoneWarmAmount, 0.24)
-            recipe.highlightWarmAmount = max(recipe.highlightWarmAmount, 0.34)
-            recipe.colorContrast = max(recipe.colorContrast, 0.22)
-            recipe.bloomIntensity = max(recipe.bloomIntensity, 0.008)
-            recipe.halationIntensity = max(recipe.halationIntensity, 0.003)
-            recipe.grainAmount = max(recipe.grainAmount, 0.012)
-            recipe.backgroundSeparation = 0.085
+            recipe.shadowRollOff = max(recipe.shadowRollOff, 0.22)
+            recipe.lowerMidtoneLift = max(recipe.lowerMidtoneLift, 0.007)
+            recipe.midtoneBias = max(recipe.midtoneBias, 0.002)
+            recipe.upperMidtoneSeparation = max(recipe.upperMidtoneSeparation, 0.016)
+            recipe.highlightRollOff = max(recipe.highlightRollOff, 0.28)
+            recipe.whitePoint = min(recipe.whitePoint, 0.988)
+            recipe.colorGradeIntensity = min(recipe.colorGradeIntensity, 0.18)
+            recipe.shadowCoolAmount = min(recipe.shadowCoolAmount, 0.09)
+            recipe.midtoneWarmAmount = min(recipe.midtoneWarmAmount, 0.08)
+            recipe.highlightWarmAmount = min(recipe.highlightWarmAmount, 0.11)
+            recipe.colorContrast = min(recipe.colorContrast, 0.09)
+            recipe.bloomIntensity = min(recipe.bloomIntensity, 0.004)
+            recipe.halationIntensity = min(recipe.halationIntensity, 0.0015)
+            recipe.grainAmount = min(recipe.grainAmount, 0.006)
+            recipe.backgroundSeparation = min(recipe.backgroundSeparation, 0.065)
         case .dramatic:
-            recipe.shadowRollOff = max(recipe.shadowRollOff, 0.52)
+            recipe.shadowRollOff = max(recipe.shadowRollOff, 0.36)
             recipe.lowerMidtoneLift = min(recipe.lowerMidtoneLift, -0.005)
             recipe.midtoneBias = min(recipe.midtoneBias, -0.008)
             recipe.upperMidtoneSeparation = max(recipe.upperMidtoneSeparation, 0.045)
             recipe.highlightRollOff = max(recipe.highlightRollOff, 0.58)
             recipe.whitePoint = min(recipe.whitePoint, 0.965)
-            recipe.colorGradeIntensity = max(recipe.colorGradeIntensity, 0.54)
-            recipe.shadowCoolAmount = max(recipe.shadowCoolAmount, 0.42)
-            recipe.midtoneWarmAmount = max(recipe.midtoneWarmAmount, 0.28)
-            recipe.highlightWarmAmount = max(recipe.highlightWarmAmount, 0.48)
-            recipe.colorContrast = max(recipe.colorContrast, 0.32)
-            recipe.bloomIntensity = max(recipe.bloomIntensity, 0.012)
-            recipe.halationIntensity = max(recipe.halationIntensity, 0.005)
-            recipe.grainAmount = max(recipe.grainAmount, 0.02)
-            recipe.backgroundSeparation = 0.11
+            recipe.colorGradeIntensity = min(recipe.colorGradeIntensity, 0.28)
+            recipe.shadowCoolAmount = min(recipe.shadowCoolAmount, 0.16)
+            recipe.midtoneWarmAmount = min(recipe.midtoneWarmAmount, 0.12)
+            recipe.highlightWarmAmount = min(recipe.highlightWarmAmount, 0.2)
+            recipe.colorContrast = min(recipe.colorContrast, 0.16)
+            recipe.bloomIntensity = min(recipe.bloomIntensity, 0.007)
+            recipe.halationIntensity = min(recipe.halationIntensity, 0.003)
+            recipe.grainAmount = min(recipe.grainAmount, 0.012)
+            recipe.backgroundSeparation = min(recipe.backgroundSeparation, 0.09)
         }
 
         switch strategy {
@@ -856,19 +934,20 @@ final class PhotographyDecisionEngine {
     ) {
         switch strategy {
         case .portrait:
-            recipe.hsl.orangeSaturation = 0.025
-            recipe.hsl.orangeLuminance = 0.018
+            recipe.hsl.orangeHue = 0
+            recipe.hsl.orangeSaturation = 0
+            recipe.hsl.orangeLuminance = 0
             recipe.hsl.cyanSaturation = -0.035
             recipe.saturation = min(recipe.saturation, 1.01)
-            recipe.vibrance = min(max(recipe.vibrance, 0.06), 0.12)
+            recipe.vibrance = min(max(recipe.vibrance, 0.035), 0.075)
             recipe.sharpeningAmount = min(max(recipe.sharpeningAmount, 0.1), 0.16)
             recipe.noiseReductionAmount = max(recipe.noiseReductionAmount, 0.012)
             recipe.skinTextureProtection = 0.56
             recipe.toneCurveAmount = max(recipe.toneCurveAmount, 0.38)
             recipe.toneCurveStyle = .portrait
-            recipe.colorGradeIntensity = max(recipe.colorGradeIntensity, 0.38)
-            recipe.highlightWarmAmount = max(recipe.highlightWarmAmount, 0.42)
-            recipe.shadowCoolAmount = max(recipe.shadowCoolAmount, 0.08)
+            recipe.colorGradeIntensity = min(recipe.colorGradeIntensity, 0.055)
+            recipe.highlightWarmAmount = min(recipe.highlightWarmAmount, 0.03)
+            recipe.shadowCoolAmount = min(recipe.shadowCoolAmount, 0.025)
             if let faceLuminance = analysis.faceAverageLuminance, faceLuminance < 0.44 {
                 let correction = min(max((0.46 - faceLuminance) * 0.9, 0.06), 0.24)
                 recipe.subjectExposureEV = analysis.personMask == nil
@@ -885,13 +964,14 @@ final class PhotographyDecisionEngine {
                 )
             )
         case .backlitPortrait:
-            recipe.hsl.orangeSaturation = 0.02
-            recipe.hsl.orangeLuminance = 0.022
+            recipe.hsl.orangeHue = 0
+            recipe.hsl.orangeSaturation = 0
+            recipe.hsl.orangeLuminance = 0
             recipe.exposureEV = min(recipe.exposureEV, -0.04)
             recipe.highlightAmount = min(recipe.highlightAmount, 0.5)
             recipe.shadowAmount = min(max(recipe.shadowAmount, 0.12), 0.28)
             recipe.saturation = min(recipe.saturation, 1.01)
-            recipe.vibrance = min(max(recipe.vibrance, 0.06), 0.12)
+            recipe.vibrance = min(max(recipe.vibrance, 0.035), 0.075)
             recipe.sharpeningAmount = min(max(recipe.sharpeningAmount, 0.1), 0.16)
             recipe.skinTextureProtection = 0.62
             let faceLuminance = analysis.faceAverageLuminance ?? analysis.averageLuminance
@@ -902,9 +982,9 @@ final class PhotographyDecisionEngine {
                 : min(max(0.1 + (backgroundSeparation * 0.42), 0.1), 0.26)
             recipe.toneCurveAmount = max(recipe.toneCurveAmount, 0.48)
             recipe.toneCurveStyle = .softHighlights
-            recipe.colorGradeIntensity = max(recipe.colorGradeIntensity, 0.42)
-            recipe.highlightWarmAmount = max(recipe.highlightWarmAmount, 0.38)
-            recipe.shadowCoolAmount = max(recipe.shadowCoolAmount, 0.12)
+            recipe.colorGradeIntensity = min(recipe.colorGradeIntensity, 0.06)
+            recipe.highlightWarmAmount = min(recipe.highlightWarmAmount, 0.035)
+            recipe.shadowCoolAmount = min(recipe.shadowCoolAmount, 0.025)
             actions.append(
                 PhotographyAction(
                     title: "保天空并协调人物与环境光比",
@@ -1212,6 +1292,245 @@ final class PhotographyDecisionEngine {
 
 }
 
+/// V9's authoritative technical planner. Scene labels may describe intent, but
+/// the values below come from this photograph's measured light, colour, detail,
+/// noise and reliable region statistics. It runs after the legacy scene language
+/// so those older defaults cannot silently overwrite the per-photo correction.
+struct PerPhotoParameterPlanner {
+    func refine(
+        recipe: inout AutomaticEditingRecipe,
+        analysis: PhotoAnalysis,
+        problems: PhotoProblemReport,
+        actions: inout [PhotographyAction]
+    ) -> [PhotographyParameterEvidence] {
+        let conditions = Set(analysis.photographyContext.lightingConditions)
+        let isNight = conditions.contains(.night)
+        let isOvercast = conditions.contains(.overcast)
+        let hasPerson = analysis.faceCount > 0
+        let reliability = analysis.sceneRecognitionDiagnostics.status == .failed ? Float(0.72) : 1
+
+        // The target is a range derived from how much of the current photograph
+        // already lives in the midtones. Night images intentionally keep a lower
+        // centre instead of being normalised into daylight.
+        let midtoneBias = (analysis.midtoneRatio - 0.58) * 0.08
+        let spatialProtection = min(0.035, analysis.spatialLuminanceVariance * 0.09)
+        let targetLuminance = bounded(
+            (isNight ? 0.31 : 0.47) + midtoneBias - spatialProtection,
+            isNight ? 0.27...0.35 : 0.41...0.52
+        )
+        let luminanceDelta = targetLuminance - analysis.averageLuminance
+        let needsExposure = problems.contains(.underexposed) || problems.contains(.overexposed)
+        recipe.exposureEV = needsExposure
+            ? bounded(luminanceDelta * (isNight ? 0.34 : 0.52) * reliability, -0.28...0.28)
+            : bounded(luminanceDelta * 0.18 * reliability, -0.045...0.045)
+
+        let recoverableHighlights = max(0, analysis.highlightRatio - analysis.whiteRatio)
+        let highlightCompression = min(0.5, recoverableHighlights * 1.8 + analysis.whiteRatio * 0.7)
+        recipe.highlightAmount = bounded(1 - highlightCompression, 0.46...1)
+        recipe.highlightRollOff = bounded(highlightCompression * 0.9, 0...0.55)
+        recipe.whitePoint = bounded(1 - analysis.whiteRatio * 0.18, 0.965...1)
+        recipe.blackPoint = analysis.blackRatio < 0.006 && contrastDeficitForBlackPoint(analysis) > 0.1
+            ? bounded((0.006 - analysis.blackRatio) * 0.55, 0...0.004)
+            : 0
+
+        let recoverableShadows = max(0, analysis.shadowRatio - analysis.blackRatio)
+        let noiseHeadroom = max(0.28, 1 - analysis.noiseEstimate * 2.4)
+        let shadowCeiling: Float = isNight ? 0.18 : 0.46
+        recipe.shadowAmount = bounded(recoverableShadows * 0.72 * noiseHeadroom, 0...shadowCeiling)
+        recipe.shadowRollOff = bounded(recoverableShadows * 0.55, 0...0.42)
+
+        let depthTarget = bounded(
+            0.54 + analysis.photographyContext.spatialDepthScore * 0.1,
+            0.54...0.64
+        )
+        let contrastDeficit = depthTarget - analysis.contrastRange
+        recipe.contrast = bounded(1 + contrastDeficit * 0.16, 0.97...1.095)
+        recipe.toneCurveAmount = bounded(abs(contrastDeficit) * 0.9, 0.04...0.62)
+        recipe.toneCurveStyle = contrastDeficit >= 0 ? .landscape : .softHighlights
+        recipe.localContrastAmount = bounded(
+            max(0, contrastDeficit) * 0.22 * noiseHeadroom,
+            0...0.13
+        )
+
+        let redBlueDelta = analysis.redAverage - analysis.blueAverage
+        let greenExcess = analysis.greenAverage - ((analysis.redAverage + analysis.blueAverage) * 0.5)
+        let mixedLightProtection = max(0.35, 1 - analysis.mixedLightScore * 1.8)
+        if problems.contains(.coolCast) || problems.contains(.warmCast) {
+            recipe.temperatureShift = bounded(
+                -redBlueDelta * 1_450 * mixedLightProtection,
+                -260...260
+            )
+        } else {
+            recipe.temperatureShift = 0
+        }
+        recipe.tintShift = problems.contains(.greenCast)
+            ? bounded(greenExcess * 92 * mixedLightProtection, -7...7)
+            : 0
+
+        if problems.contains(.oversaturated) {
+            recipe.saturation = bounded(1 - (analysis.averageSaturation - 0.5) * 0.22, 0.96...1)
+            recipe.vibrance = 0
+        } else {
+            recipe.saturation = 1
+            let colorHeadroom = max(0, 0.31 - analysis.averageSaturation)
+            recipe.vibrance = bounded(colorHeadroom * (hasPerson ? 0.2 : 0.42), 0...0.14)
+        }
+
+        recipe.noiseReductionAmount = bounded(
+            max(0, analysis.noiseEstimate - 0.055) * 0.24 + (isNight ? 0.008 : 0),
+            0...0.055
+        )
+        let detailDeficit = max(0, 0.2 - analysis.detailScore)
+        recipe.sharpeningAmount = bounded(
+            0.045 + detailDeficit * 0.28 - analysis.noiseEstimate * 0.12,
+            0.025...(hasPerson ? 0.075 : 0.13)
+        )
+
+        recipe.shadowZoneExposureEV = bounded(
+            recoverableShadows * 0.24 * noiseHeadroom,
+            0...(isNight ? 0.1 : 0.18)
+        )
+        recipe.highlightZoneExposureEV = -bounded(recoverableHighlights * 0.7, 0...0.2)
+        recipe.luminanceMaskStrength = bounded(
+            (recoverableShadows + recoverableHighlights) * 1.1,
+            0.18...0.82
+        )
+
+        // HSL is rebuilt from measured regional colour. No scene name is allowed
+        // to inject a stock orange/teal/green treatment.
+        recipe.hsl = .neutral
+        if !hasPerson,
+           analysis.subjectPriorityProfile.confidence >= 0.54,
+           let subject = analysis.salientSubjectStatistics {
+            let orangeHeadroom = max(0, 0.42 - subject.averageSaturation)
+            recipe.hsl.orangeSaturation = bounded(orangeHeadroom * 0.16, 0...0.055)
+            recipe.hsl.orangeLuminance = bounded(
+                max(0, analysis.averageLuminance - subject.averageLuminance) * 0.09,
+                0...0.035
+            )
+        }
+        if let vegetation = analysis.vegetationStatistics {
+            recipe.hsl.greenSaturation = bounded(
+                (0.27 - vegetation.averageSaturation) * 0.14,
+                -0.045...0.035
+            )
+            recipe.hsl.greenLuminance = bounded(
+                (analysis.averageLuminance - 0.045 - vegetation.averageLuminance) * 0.08,
+                -0.025...0.025
+            )
+        }
+        if let sky = analysis.skyStatistics,
+           analysis.skyMask?.qualityAssessment.isUsable == true {
+            let skyColorHeadroom = (0.28 - sky.averageSaturation) * 0.12
+            let allowedBlueGain = isOvercast ? min(0, skyColorHeadroom) : skyColorHeadroom
+            recipe.hsl.cyanSaturation = bounded(allowedBlueGain * 0.6, -0.035...0.035)
+            recipe.hsl.blueSaturation = bounded(allowedBlueGain, -0.045...0.045)
+            let skyTarget = bounded(
+                analysis.averageLuminance + (isOvercast ? 0.12 : 0.08),
+                0.48...0.72
+            )
+            recipe.skyExposureEV = bounded((skyTarget - sky.averageLuminance) * 0.24, -0.12...0.045)
+            recipe.skyHighlightAmount = bounded(
+                1 - max(0, sky.highlightRatio - 0.08) * 1.1,
+                0.58...1
+            )
+            recipe.skySaturation = 1 + recipe.hsl.blueSaturation * 0.35
+        } else {
+            recipe.skyExposureEV = 0
+            recipe.skyHighlightAmount = 1
+            recipe.skySaturation = 1
+        }
+
+        // Optional styling may complement a measured correction but can never be
+        // stronger than the technical edit itself.
+        recipe.colorGradeIntensity = min(recipe.colorGradeIntensity, 0.08)
+        recipe.shadowCoolAmount = min(recipe.shadowCoolAmount, 0.03)
+        recipe.midtoneWarmAmount = min(recipe.midtoneWarmAmount, 0.03)
+        recipe.highlightWarmAmount = min(recipe.highlightWarmAmount, 0.035)
+        recipe.colorContrast = min(recipe.colorContrast, 0.035)
+        recipe.grainAmount = analysis.noiseEstimate < 0.055 ? min(recipe.grainAmount, 0.006) : 0
+
+        actions.append(PhotographyAction(
+            title: "V9 逐图参数规划",
+            reason: String(
+                format: "由本图亮度 %.1f%%→目标 %.1f%%、动态范围 %.1f%%、高光 %.1f%%、阴影 %.1f%%、饱和度 %.1f%%、噪声 %.1f%%分别求值；场景标签仅约束意图和安全边界。",
+                analysis.averageLuminance * 100,
+                targetLuminance * 100,
+                analysis.contrastRange * 100,
+                analysis.highlightRatio * 100,
+                analysis.shadowRatio * 100,
+                analysis.averageSaturation * 100,
+                analysis.noiseEstimate * 100
+            )
+        ))
+
+        return evidence(
+            recipe: recipe,
+            analysis: analysis,
+            targetLuminance: targetLuminance,
+            targetContrast: depthTarget,
+            noiseHeadroom: noiseHeadroom
+        )
+    }
+
+    private func evidence(
+        recipe: AutomaticEditingRecipe,
+        analysis: PhotoAnalysis,
+        targetLuminance: Float,
+        targetContrast: Float,
+        noiseHeadroom: Float
+    ) -> [PhotographyParameterEvidence] {
+        let entries: [(PhotographyParameterKey, String, String, String, Float, Float, String, String)] = [
+            (.exposure, "使整体亮度进入当前光照的自然区间", String(format: "实测亮度 %.3f", analysis.averageLuminance), String(format: "目标亮度 %.3f", targetLuminance), -0.35, 0.35, "整体中间调接近目标且不改变真实时段", "无明确曝光问题时限制为微调"),
+            (.highlights, "保护可恢复高光过渡", String(format: "高光 %.3f / 纯白 %.3f", analysis.highlightRatio, analysis.whiteRatio), "降低高光风险但不伪造已剪切细节", 0.32, 1, "亮部层次改善", "真实光源与纯白端点优先保护"),
+            (.shadows, "恢复可用阴影", String(format: "阴影 %.3f / 纯黑 %.3f", analysis.shadowRatio, analysis.blackRatio), String(format: "噪声余量 %.3f", noiseHeadroom), 0, 0.68, "暗部可读且不灰雾", "夜景与高噪声照片自动降低"),
+            (.contrast, "协调全局反差", String(format: "实测跨度 %.3f", analysis.contrastRange), String(format: "目标跨度 %.3f", targetContrast), 0.96, 1.14, "建立层次而不制造 HDR", "高反差时只压缩两端"),
+            (.toneCurve, "分离中间调", String(format: "跨度差 %+.3f", targetContrast - analysis.contrastRange), "按差值选择曲线幅度", 0, 1, "中间调层次改善", "差值很小时保持低强度"),
+            (.whitePoint, "保护白色端点与高光余量", String(format: "纯白占比 %.3f", analysis.whiteRatio), "有纯白风险时轻度收回端点", 0.88, 1, "白色保留层次且不过灰", "没有端点风险时保持 1"),
+            (.blackPoint, "避免灰雾同时保护真实黑位", String(format: "纯黑占比 %.3f", analysis.blackRatio), "只有黑位稀少且反差不足时轻微建立黑位", 0, 0.035, "暗部有锚点但不死黑", "夜景或已有黑位时保持 0"),
+            (.temperature, "只校正确认的非场景性色偏", String(format: "R-B %+.3f / 混合光 %.3f", analysis.redAverage - analysis.blueAverage, analysis.mixedLightScore), "中性关系或保留现场光", -600, 600, "不产生统一黄滤镜或蓝滤镜", "未诊断色偏时为 0"),
+            (.tint, "只校正确认的偏绿", String(format: "G-RB %+.3f", analysis.greenAverage - (analysis.redAverage + analysis.blueAverage) * 0.5), "中性色不偏绿", -15, 15, "白色和灰色保持中性", "未诊断偏绿时为 0"),
+            (.saturation, "限制全局色彩失真", String(format: "平均饱和度 %.3f", analysis.averageSaturation), "全局饱和只做保护性修正", 0.96, 1.08, "保持真实颜色关系", "低饱和照片改用自然饱和度"),
+            (.vibrance, "补充低饱和颜色分离", String(format: "颜色余量 %.3f", max(0, 0.31 - analysis.averageSaturation)), "优先作用于低饱和颜色", 0, 0.32, "色彩可感知但不荧光", "人物照片进一步限制"),
+            (.localContrast, "补充可恢复局部层次", String(format: "细节 %.3f / 噪声 %.3f", analysis.detailScore, analysis.noiseEstimate), "由反差缺口与噪声余量共同决定", 0, 0.28, "纹理更清楚且无光晕", "噪声高时降低"),
+            (.noiseReduction, "控制暗部高频残差", String(format: "噪声代理 %.3f", analysis.noiseEstimate), "仅超过基线后增加", 0, 0.06, "噪点受控并保留纹理", "人物皮肤与低噪照片保持低强度"),
+            (.sharpening, "补充真实边缘清晰度", String(format: "细节分数 %.3f", analysis.detailScore), "与噪声反向联动", 0, 0.22, "细节清晰且无白边", "噪声或人物照片降低上限"),
+            (.luminanceMask, "分开处理高光与阴影", String(format: "可恢复阴影 %.3f / 高光 %.3f", max(0, analysis.shadowRatio - analysis.blackRatio), max(0, analysis.highlightRatio - analysis.whiteRatio)), "强度随两端问题增加", 0, 1, "不依赖统一曝光解决局部问题", "区域分割失败时仍可安全使用亮度蒙版"),
+            (.orangeHSL, "只在可靠非人物主体中调整橙色关系", analysis.salientSubjectStatistics.map { String(format: "主体饱和度 %.3f", $0.averageSaturation) } ?? "无可靠主体统计", "按主体颜色余量求值", -0.18, 0.18, "果实等暖色主体与环境分离", "人物或主体不可靠时为 0"),
+            (.greenHSL, "协调植被颜色层次", analysis.vegetationStatistics.map { String(format: "植被饱和度 %.3f", $0.averageSaturation) } ?? "无可靠植被统计", "接近自然植被色彩范围", -0.2, 0.2, "绿色有层次且不荧光", "无可靠植被统计时为 0"),
+            (.blueHSL, "协调可靠天空颜色", analysis.skyStatistics.map { String(format: "天空饱和度 %.3f", $0.averageSaturation) } ?? "无可靠天空统计", "阴天不得增加蓝色，晴空按余量求值", -0.2, 0.16, "天空自然且不青蓝化", "无可靠天空统计时为 0")
+        ]
+        return entries.map { item in
+            PhotographyParameterEvidence(
+                key: item.0,
+                purpose: item.1,
+                inputEvidence: item.2,
+                target: item.3,
+                minimumValue: item.4,
+                maximumValue: item.5,
+                actualValue: actualValue(item.0, recipe: recipe),
+                expectedResult: item.6,
+                fallbackBehavior: item.7
+            )
+        }
+    }
+
+    private func actualValue(
+        _ key: PhotographyParameterKey,
+        recipe: AutomaticEditingRecipe
+    ) -> Float {
+        PhotographyParameterEvidence.actualValue(for: key, recipe: recipe)
+    }
+
+    private func bounded(_ value: Float, _ range: ClosedRange<Float>) -> Float {
+        min(max(value, range.lowerBound), range.upperBound)
+    }
+
+    private func contrastDeficitForBlackPoint(_ analysis: PhotoAnalysis) -> Float {
+        max(0, 0.54 - analysis.contrastRange)
+    }
+}
+
 /// 系统级摄影总监入口。上层管线只向总监提交分析与问题证据，
 /// 总监返回已经过人物保护硬约束的、可直接执行的摄影制作决策。
 final class PhotographyDirector {
@@ -1238,22 +1557,10 @@ struct PhotographyCandidatePlanner {
         analysis: PhotoAnalysis,
         problems: PhotoProblemReport
     ) -> [PhotographyEditPlan] {
-        let severity = aggregateSeverity(problems)
-        let naturalStrength = 0.76 + (severity * 0.1)
-        let dimensionalStrength = 0.94 + (severity * 0.14)
-        let targetedStrength = 1.0 + (severity * 0.2)
-
-        let variants: [(PhotographyCandidateIntent, Float)] = [
-            (.natural, naturalStrength),
-            (.dimensional, dimensionalStrength),
-            (.targeted, targetedStrength)
-        ]
-
-        return variants.map { intent, strength in
+        return PhotographyCandidateIntent.allCases.map { intent in
             let recipe = candidateRecipe(
                 from: decision.recipe,
                 intent: intent,
-                strength: strength,
                 analysis: analysis,
                 problems: problems
             )
@@ -1267,43 +1574,50 @@ struct PhotographyCandidatePlanner {
                     problems: problems
                 ),
                 recipe: recipe,
-                rationale: rationale(intent: intent, problems: problems)
+                rationale: rationale(intent: intent, analysis: analysis, problems: problems),
+                parameterEvidence: decision.parameterEvidence.map {
+                    $0.refreshingActualValue(from: recipe)
+                }
             )
         }
-    }
-
-    private func aggregateSeverity(_ report: PhotoProblemReport) -> Float {
-        guard !report.problems.isEmpty else { return 0 }
-        let total = report.problems.reduce(Float(0)) { partial, problem in
-            partial + Float(problem.severity.rawValue) * problem.confidence
-        }
-        return min(1, total / (Float(report.problems.count) * 3))
     }
 
     private func candidateRecipe(
         from base: AutomaticEditingRecipe,
         intent: PhotographyCandidateIntent,
-        strength: Float,
         analysis: PhotoAnalysis,
         problems: PhotoProblemReport
     ) -> AutomaticEditingRecipe {
-        var recipe = scaled(base, by: strength)
+        var recipe = base
         let kinds = Set(problems.problems.map(\.kind))
         let hasReliablePersonMask = analysis.personMask?.isValid == true
+        let contrastDeficit = max(0, 0.58 - analysis.contrastRange)
+        let subjectLuminanceDeficit = max(
+            0,
+            analysis.averageLuminance - (analysis.salientSubjectStatistics?.averageLuminance ?? analysis.averageLuminance)
+        )
+        let regionalRisk = min(1, analysis.noiseEstimate * 2.6 + analysis.spatialLuminanceVariance)
 
         switch intent {
         case .natural:
+            // Preserve measurement-driven technical correction. Only remove optional
+            // styling and limit local texture where the current photo has little
+            // noise/contrast headroom.
             recipe.grainAmount = 0
             recipe.bloomIntensity = min(recipe.bloomIntensity, 0.004)
             recipe.halationIntensity = min(recipe.halationIntensity, 0.002)
-            recipe.localContrastAmount = min(recipe.localContrastAmount, 0.075)
-            recipe.colorGradeIntensity = min(recipe.colorGradeIntensity, 0.16)
+            recipe.localContrastAmount *= max(0.58, 1 - regionalRisk * 0.45)
+            recipe.colorGradeIntensity = min(recipe.colorGradeIntensity, 0.035)
+            recipe.backgroundSeparation *= 0.55
         case .dimensional:
             if kinds.contains(.flatContrast) || analysis.photographyContext.spatialDepthScore < 0.5 {
-                recipe.toneCurveAmount = min(0.62, max(recipe.toneCurveAmount, 0.2 + strength * 0.1))
-                recipe.localContrastAmount = min(0.13, max(recipe.localContrastAmount, 0.055 + strength * 0.025))
-                recipe.upperMidtoneSeparation = min(0.07, max(recipe.upperMidtoneSeparation, 0.025))
-                recipe.backgroundSeparation = min(0.11, max(recipe.backgroundSeparation, 0.035))
+                recipe.toneCurveAmount = min(0.62, recipe.toneCurveAmount + contrastDeficit * 0.32)
+                recipe.localContrastAmount = min(0.13, recipe.localContrastAmount + contrastDeficit * 0.16)
+                recipe.upperMidtoneSeparation = min(0.07, contrastDeficit * 0.12)
+                recipe.backgroundSeparation = min(
+                    0.11,
+                    subjectLuminanceDeficit * analysis.subjectPriorityProfile.confidence * 0.42
+                )
             }
             if kinds.contains(.harshContrast) {
                 recipe.contrast = min(recipe.contrast, 1.025)
@@ -1317,22 +1631,28 @@ struct PhotographyCandidatePlanner {
         if analysis.faceCount == 0 {
             switch (analysis.subjectPriorityProfile.mode, intent) {
             case (.primarySubject, .dimensional):
-                recipe.subjectExposureEV = min(0.13, max(recipe.subjectExposureEV, 0.055))
-                recipe.localContrastAmount = min(0.125, max(recipe.localContrastAmount, 0.082))
-                recipe.backgroundSeparation = min(0.105, max(recipe.backgroundSeparation, 0.055))
+                recipe.subjectExposureEV = min(
+                    0.13,
+                    max(recipe.subjectExposureEV, subjectLuminanceDeficit * 0.42)
+                )
+                recipe.localContrastAmount = min(0.125, recipe.localContrastAmount + contrastDeficit * 0.12)
+                recipe.backgroundSeparation = min(0.105, subjectLuminanceDeficit * 0.38)
             case (.primarySubject, .targeted):
-                recipe.subjectExposureEV = min(0.15, max(recipe.subjectExposureEV, 0.075))
-                recipe.localContrastAmount = min(0.135, max(recipe.localContrastAmount, 0.09))
-                recipe.backgroundSeparation = min(0.115, max(recipe.backgroundSeparation, 0.065))
+                recipe.subjectExposureEV = min(
+                    0.15,
+                    max(recipe.subjectExposureEV, subjectLuminanceDeficit * 0.52)
+                )
+                recipe.localContrastAmount = min(0.135, recipe.localContrastAmount + contrastDeficit * 0.16)
+                recipe.backgroundSeparation = min(0.115, subjectLuminanceDeficit * 0.46)
             case (.globalHarmony, .dimensional):
-                recipe.toneCurveAmount = min(0.58, max(recipe.toneCurveAmount, 0.3))
-                recipe.localContrastAmount = min(0.115, max(recipe.localContrastAmount, 0.072))
-                recipe.luminanceMaskStrength = min(0.8, max(recipe.luminanceMaskStrength, 0.42))
+                recipe.toneCurveAmount = min(0.58, recipe.toneCurveAmount + contrastDeficit * 0.24)
+                recipe.localContrastAmount = min(0.115, recipe.localContrastAmount + contrastDeficit * 0.12)
             case (.globalHarmony, .targeted):
-                recipe.toneCurveAmount = min(0.64, max(recipe.toneCurveAmount, 0.34))
-                recipe.localContrastAmount = min(0.13, max(recipe.localContrastAmount, 0.08))
-                recipe.luminanceMaskStrength = min(0.84, max(recipe.luminanceMaskStrength, 0.48))
-                recipe.vibrance = min(0.2, max(recipe.vibrance, analysis.averageSaturation < 0.32 ? 0.09 : 0.04))
+                recipe.toneCurveAmount = min(0.64, recipe.toneCurveAmount + contrastDeficit * 0.3)
+                recipe.localContrastAmount = min(0.13, recipe.localContrastAmount + contrastDeficit * 0.15)
+                if kinds.contains(.regionalUnderexposure) || kinds.contains(.regionalHighlightRisk) {
+                    recipe.luminanceMaskStrength = min(0.84, recipe.luminanceMaskStrength + 0.08)
+                }
             case (_, .natural):
                 break
             }
@@ -1347,8 +1667,32 @@ struct PhotographyCandidatePlanner {
             recipe.localContrastAmount = min(recipe.localContrastAmount, 0.07)
             recipe.sharpeningAmount = min(recipe.sharpeningAmount, 0.085)
             recipe.noiseReductionAmount = min(recipe.noiseReductionAmount, 0.025)
+            recipe.temperatureShift = recipe.temperatureShift.clamped(to: -35...35)
+            recipe.tintShift = recipe.tintShift.clamped(to: -2...2)
+            recipe.saturation = min(recipe.saturation, 1)
+            recipe.vibrance = min(recipe.vibrance, 0.055)
+            recipe.colorGradeIntensity = min(recipe.colorGradeIntensity, 0.055)
+            recipe.shadowCoolAmount = min(recipe.shadowCoolAmount, 0.025)
+            recipe.midtoneWarmAmount = min(recipe.midtoneWarmAmount, 0.025)
+            recipe.highlightWarmAmount = min(recipe.highlightWarmAmount, 0.03)
+            recipe.colorContrast = min(recipe.colorContrast, 0.025)
+            recipe.hsl.orangeHue = 0
             recipe.hsl.orangeLuminance = 0
-            recipe.hsl.orangeSaturation = min(0.02, max(-0.02, recipe.hsl.orangeSaturation))
+            recipe.hsl.orangeSaturation = 0
+        }
+
+        if analysis.photographyContext.lightingConditions.contains(.overcast) {
+            recipe.temperatureShift = recipe.temperatureShift.clamped(to: -25...25)
+            recipe.tintShift = recipe.tintShift.clamped(to: -1.5...1.5)
+            recipe.colorGradeIntensity = min(recipe.colorGradeIntensity, 0.065)
+            recipe.shadowCoolAmount = min(recipe.shadowCoolAmount, 0.025)
+            recipe.midtoneWarmAmount = min(recipe.midtoneWarmAmount, 0.025)
+            recipe.highlightWarmAmount = min(recipe.highlightWarmAmount, 0.03)
+            recipe.colorContrast = min(recipe.colorContrast, 0.035)
+            recipe.hsl.cyanSaturation = min(0, max(recipe.hsl.cyanSaturation, -0.035))
+            recipe.hsl.blueSaturation = min(0, max(recipe.hsl.blueSaturation, -0.035))
+            recipe.hsl.greenSaturation = min(0.01, recipe.hsl.greenSaturation)
+            recipe.skySaturation = min(recipe.skySaturation, 1)
         }
 
         if analysis.sceneRecognitionDiagnostics.status == .failed {
@@ -1362,51 +1706,6 @@ struct PhotographyCandidatePlanner {
             recipe.skySaturation = 1
         }
         return recipe.clamped()
-    }
-
-    private func scaled(
-        _ base: AutomaticEditingRecipe,
-        by strength: Float
-    ) -> AutomaticEditingRecipe {
-        var recipe = base
-        recipe.exposureEV *= strength
-        recipe.highlightAmount = 1 - ((1 - base.highlightAmount) * strength)
-        recipe.shadowAmount *= strength
-        recipe.brightness *= strength
-        recipe.contrast = 1 + ((base.contrast - 1) * strength)
-        recipe.blackPoint *= strength
-        recipe.shadowRollOff *= strength
-        recipe.lowerMidtoneLift *= strength
-        recipe.midtoneBias *= strength
-        recipe.upperMidtoneSeparation *= strength
-        recipe.highlightRollOff *= strength
-        recipe.whitePoint = 1 - ((1 - base.whitePoint) * strength)
-        recipe.localContrastAmount *= strength
-        recipe.saturation = 1 + ((base.saturation - 1) * strength)
-        recipe.vibrance *= strength
-        recipe.temperatureShift *= strength
-        recipe.tintShift *= strength
-        recipe.toneCurveAmount *= strength
-        recipe.shadowCoolAmount *= strength
-        recipe.midtoneWarmAmount *= strength
-        recipe.highlightWarmAmount *= strength
-        recipe.colorGradeIntensity *= strength
-        recipe.colorContrast *= strength
-        recipe.sharpeningAmount *= min(1.08, strength)
-        recipe.vignetteIntensity *= strength
-        recipe.subjectExposureEV *= strength
-        recipe.faceExposureEV = 0
-        recipe.skyExposureEV *= strength
-        recipe.skyHighlightAmount = 1 - ((1 - base.skyHighlightAmount) * strength)
-        recipe.skySaturation = 1 + ((base.skySaturation - 1) * strength)
-        recipe.grainAmount *= strength
-        recipe.bloomIntensity *= strength
-        recipe.halationIntensity *= strength
-        recipe.backgroundSeparation *= strength
-        recipe.shadowZoneExposureEV *= strength
-        recipe.highlightZoneExposureEV *= strength
-        recipe.luminanceMaskStrength *= min(1.1, strength)
-        return recipe
     }
 
     private func applyTargetedProblems(
@@ -1612,12 +1911,21 @@ struct PhotographyCandidatePlanner {
 
     private func rationale(
         intent: PhotographyCandidateIntent,
+        analysis: PhotoAnalysis,
         problems: PhotoProblemReport
     ) -> String {
         let evidence = problems.problems
             .map { "\($0.kind.title)(\($0.severity.title))" }
             .joined(separator: "、")
-        return "\(intent.rawValue)候选由当前照片问题[\(evidence.isEmpty ? "无明显问题" : evidence)]派生，不使用固定 LUT。"
+        return String(
+            format: "%@候选由本图问题[%@]与实测亮度 %.1f%%、动态范围 %.1f%%、噪声 %.1f%%、主体置信度 %.0f%%共同派生；只改变有证据的轴，不统一缩放白平衡、HSL 或全部参数。",
+            intent.rawValue,
+            evidence.isEmpty ? "无明显问题" : evidence,
+            analysis.averageLuminance * 100,
+            analysis.contrastRange * 100,
+            analysis.noiseEstimate * 100,
+            analysis.subjectPriorityProfile.confidence * 100
+        )
     }
 }
 

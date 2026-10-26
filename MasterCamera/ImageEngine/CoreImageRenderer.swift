@@ -534,21 +534,21 @@ final class CoreImageRenderer {
         switch recipe.toneCurveStyle {
         case .neutral:
             targetPoints = [
-                CGPoint(x: 0, y: 0.012), CGPoint(x: 0.25, y: 0.23),
+                CGPoint(x: 0, y: 0), CGPoint(x: 0.25, y: 0.23),
                 CGPoint(x: 0.5, y: 0.515), CGPoint(x: 0.75, y: 0.78),
-                CGPoint(x: 1, y: 0.985)
+                CGPoint(x: 1, y: 0.99)
             ]
         case .portrait:
             targetPoints = [
-                CGPoint(x: 0, y: 0.018), CGPoint(x: 0.25, y: 0.265),
-                CGPoint(x: 0.5, y: 0.535), CGPoint(x: 0.75, y: 0.77),
-                CGPoint(x: 1, y: 0.975)
+                CGPoint(x: 0, y: 0), CGPoint(x: 0.25, y: 0.258),
+                CGPoint(x: 0.5, y: 0.525), CGPoint(x: 0.75, y: 0.775),
+                CGPoint(x: 1, y: 0.99)
             ]
         case .landscape:
             targetPoints = [
-                CGPoint(x: 0, y: 0.006), CGPoint(x: 0.25, y: 0.215),
+                CGPoint(x: 0, y: 0), CGPoint(x: 0.25, y: 0.22),
                 CGPoint(x: 0.5, y: 0.515), CGPoint(x: 0.75, y: 0.805),
-                CGPoint(x: 1, y: 0.985)
+                CGPoint(x: 1, y: 0.99)
             ]
         case .cinematic:
             targetPoints = [
@@ -558,21 +558,21 @@ final class CoreImageRenderer {
             ]
         case .softHighlights:
             targetPoints = [
-                CGPoint(x: 0, y: 0.012), CGPoint(x: 0.25, y: 0.255),
-                CGPoint(x: 0.5, y: 0.525), CGPoint(x: 0.75, y: 0.765),
-                CGPoint(x: 1, y: 0.955)
+                CGPoint(x: 0, y: 0), CGPoint(x: 0.25, y: 0.252),
+                CGPoint(x: 0.5, y: 0.52), CGPoint(x: 0.75, y: 0.77),
+                CGPoint(x: 1, y: 0.975)
             ]
         case .interior:
             targetPoints = [
-                CGPoint(x: 0, y: 0.01), CGPoint(x: 0.25, y: 0.285),
-                CGPoint(x: 0.5, y: 0.535), CGPoint(x: 0.75, y: 0.775),
-                CGPoint(x: 1, y: 0.955)
+                CGPoint(x: 0, y: 0), CGPoint(x: 0.25, y: 0.275),
+                CGPoint(x: 0.5, y: 0.525), CGPoint(x: 0.75, y: 0.78),
+                CGPoint(x: 1, y: 0.975)
             ]
         case .workspace:
             targetPoints = [
-                CGPoint(x: 0, y: 0.004), CGPoint(x: 0.25, y: 0.235),
+                CGPoint(x: 0, y: 0), CGPoint(x: 0.25, y: 0.235),
                 CGPoint(x: 0.5, y: 0.52), CGPoint(x: 0.75, y: 0.79),
-                CGPoint(x: 1, y: 0.965)
+                CGPoint(x: 1, y: 0.98)
             ]
         }
 

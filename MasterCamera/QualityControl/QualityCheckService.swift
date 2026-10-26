@@ -88,6 +88,11 @@ final class QualityCheckService {
             original: originalImage,
             edited: editedImage
         )
+        let colorIntegrity = colorIntegrity(
+            original: originalImage,
+            edited: editedImage,
+            sourceAnalysis: sourceAnalysis
+        )
         let hasPortrait = sourceAnalysis?.faceRegions.isEmpty == false
         let expectsLocalTreatment = expectedRegions.contains {
             ![.global, .person, .background].contains($0)
@@ -136,6 +141,35 @@ final class QualityCheckService {
             issues.append(.abnormalColorCast)
         }
 
+        let originalWarmBalance = originalAnalysis.redAverage - originalAnalysis.blueAverage
+        let editedWarmBalance = editedAnalysis.redAverage - editedAnalysis.blueAverage
+        if editedWarmBalance - originalWarmBalance > 0.055 {
+            issues.append(.globalWarmCast)
+        }
+        let originalGreenBalance = originalAnalysis.greenAverage
+            - ((originalAnalysis.redAverage + originalAnalysis.blueAverage) * 0.5)
+        let editedGreenBalance = editedAnalysis.greenAverage
+            - ((editedAnalysis.redAverage + editedAnalysis.blueAverage) * 0.5)
+        if editedGreenBalance - originalGreenBalance > 0.05 {
+            issues.append(.globalGreenCast)
+        }
+
+        if colorIntegrity.neutralCoverage >= 0.015 {
+            if colorIntegrity.neutralChromaIncrease > 0.035
+                || abs(colorIntegrity.neutralWarmShift) > 0.035
+                || abs(colorIntegrity.neutralGreenShift) > 0.03 {
+                issues.append(.neutralColorDrift)
+            }
+            if colorIntegrity.neutralLuminanceShift < -0.065 {
+                issues.append(.neutralLuminanceLoss)
+            }
+        }
+        if colorIntegrity.skinCoverage >= 0.004,
+           colorIntegrity.skinColorDifference > 0.035
+            || abs(colorIntegrity.skinWarmShift) > 0.038 {
+            issues.append(.skinToneDrift)
+        }
+
         if let sourceAnalysis, !sourceAnalysis.faceRegions.isEmpty {
             let integrity = try portraitIntegrity(
                 original: originalImage,
@@ -180,7 +214,8 @@ final class QualityCheckService {
             issues: issues,
             measuredAnalysis: editedAnalysis,
             fallbackApplied: false,
-            processingImpact: processingImpact
+            processingImpact: processingImpact,
+            colorIntegrity: colorIntegrity
         )
     }
 
@@ -305,6 +340,11 @@ final class QualityCheckService {
             .expandedPureWhite,
             .portraitRegionOverAltered,
             .portraitTextureAltered,
+            .skinToneDrift,
+            .neutralColorDrift,
+            .neutralLuminanceLoss,
+            .globalWarmCast,
+            .globalGreenCast,
             .localMaskBoundaryArtifact,
             .missingExpectedSceneTreatment
         ]
@@ -409,6 +449,109 @@ final class QualityCheckService {
             normalizedMeanAbsoluteRGBDifference: totalDifference / pixelCount,
             changedPixelRatio: Float(changedPixels) / pixelCount
         )
+    }
+
+    private func colorIntegrity(
+        original: CIImage,
+        edited: CIImage,
+        sourceAnalysis: PhotoAnalysis?
+    ) -> ColorIntegrityMetrics {
+        let width = 112
+        let height = max(1, Int((CGFloat(width) * original.extent.height / original.extent.width).rounded()))
+        let originalPixels = rgbaPixels(from: original, width: width, height: height)
+        let editedPixels = rgbaPixels(from: edited, width: width, height: height)
+        guard originalPixels.count == editedPixels.count, !originalPixels.isEmpty else {
+            return .neutral
+        }
+
+        var neutralCount: Float = 0
+        var neutralChromaIncrease: Float = 0
+        var neutralWarmShift: Float = 0
+        var neutralGreenShift: Float = 0
+        var neutralLuminanceShift: Float = 0
+        var skinCount: Float = 0
+        var skinColorDifference: Float = 0
+        var skinWarmShift: Float = 0
+
+        for y in 0..<height {
+            for x in 0..<width {
+                let index = ((y * width) + x) * 4
+                let source = rgb(at: index, in: originalPixels)
+                let result = rgb(at: index, in: editedPixels)
+                let sourceLuminance = luminance(source)
+                let resultLuminance = luminance(result)
+                let sourceChroma = max(source.0, max(source.1, source.2))
+                    - min(source.0, min(source.1, source.2))
+                let resultChroma = max(result.0, max(result.1, result.2))
+                    - min(result.0, min(result.1, result.2))
+
+                if sourceLuminance >= 0.18, sourceLuminance <= 0.96, sourceChroma <= 0.095 {
+                    neutralCount += 1
+                    neutralChromaIncrease += resultChroma - sourceChroma
+                    neutralWarmShift += (result.0 - result.2) - (source.0 - source.2)
+                    neutralGreenShift += (result.1 - ((result.0 + result.2) * 0.5))
+                        - (source.1 - ((source.0 + source.2) * 0.5))
+                    neutralLuminanceShift += resultLuminance - sourceLuminance
+                }
+
+                guard isProtectedSkinSample(
+                    x: x,
+                    y: y,
+                    width: width,
+                    height: height,
+                    source: source,
+                    analysis: sourceAnalysis
+                ) else { continue }
+                skinCount += 1
+                skinColorDifference += chromaDifference(source, result)
+                skinWarmShift += (result.0 - result.2) - (source.0 - source.2)
+            }
+        }
+
+        let pixelCount = Float(width * height)
+        return ColorIntegrityMetrics(
+            neutralCoverage: neutralCount / pixelCount,
+            neutralChromaIncrease: neutralCount > 0 ? neutralChromaIncrease / neutralCount : 0,
+            neutralWarmShift: neutralCount > 0 ? neutralWarmShift / neutralCount : 0,
+            neutralGreenShift: neutralCount > 0 ? neutralGreenShift / neutralCount : 0,
+            neutralLuminanceShift: neutralCount > 0 ? neutralLuminanceShift / neutralCount : 0,
+            skinCoverage: skinCount / pixelCount,
+            skinColorDifference: skinCount > 0 ? skinColorDifference / skinCount : 0,
+            skinWarmShift: skinCount > 0 ? skinWarmShift / skinCount : 0
+        )
+    }
+
+    private func isProtectedSkinSample(
+        x: Int,
+        y: Int,
+        width: Int,
+        height: Int,
+        source: (Float, Float, Float),
+        analysis: PhotoAnalysis?
+    ) -> Bool {
+        guard let analysis, !analysis.faceRegions.isEmpty else { return false }
+        let normalizedX = (Float(x) + 0.5) / Float(width)
+        let normalizedY = (Float(y) + 0.5) / Float(height)
+        let inFace = analysis.faceRegions.contains {
+            normalizedX >= $0.x && normalizedX <= $0.x + $0.width
+                && normalizedY >= $0.y && normalizedY <= $0.y + $0.height
+        }
+        guard inFace else { return false }
+
+        if let skinMask = analysis.skinMask, skinMask.isValid {
+            let maskX = min(skinMask.width - 1, max(0, Int(normalizedX * Float(skinMask.width))))
+            let maskY = min(skinMask.height - 1, max(0, Int(normalizedY * Float(skinMask.height))))
+            return skinMask.pixels[(maskY * skinMask.width) + maskX] >= 96
+        }
+
+        // Conservative fallback inside the detected face: discard hair, eyes,
+        // deep shadows and highlights instead of assuming one universal skin tone.
+        let chroma = max(source.0, max(source.1, source.2)) - min(source.0, min(source.1, source.2))
+        let lightness = luminance(source)
+        return lightness >= 0.16 && lightness <= 0.9
+            && chroma >= 0.035 && chroma <= 0.52
+            && source.0 >= source.1 * 0.88
+            && source.1 >= source.2 * 0.78
     }
 
     private func portraitIntegrity(

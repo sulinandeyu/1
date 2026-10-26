@@ -52,8 +52,13 @@ final class PhotoProcessingPipeline {
                 "\(treatment.region.rawValue){confidence=\(String(format: "%.2f", treatment.confidence)); \(treatment.parameters)}"
             }
             .joined(separator: "；")
+        let parameterEvidenceTrace = decision.parameterEvidence
+            .map {
+                "\($0.key.rawValue){input=\($0.inputEvidence); target=\($0.target); range=\($0.minimumValue)...\($0.maximumValue); value=\($0.actualValue)}"
+            }
+            .joined(separator: "；")
         AppLogger.imageEngine.info(
-            "摄影总监决策完成 \(Self.milliseconds(decisionDuration))ms：策略=\(decision.sceneStrategy.rawValue)，目标=\(decision.aestheticTarget.rawValue)，区域计划=[\(treatmentTrace, privacy: .public)]，人物保护=\(decision.treatmentPlan.portraitProtection.isActive)，问题=[\(problemReport.problems.map { $0.kind.rawValue }.joined(separator: ","), privacy: .public)]，配方=\(decision.recipe.traceSummary, privacy: .public)"
+            "摄影总监决策完成 \(Self.milliseconds(decisionDuration))ms：策略=\(decision.sceneStrategy.rawValue)，目标=\(decision.aestheticTarget.rawValue)，区域计划=[\(treatmentTrace, privacy: .public)]，逐图参数=[\(parameterEvidenceTrace, privacy: .public)]，人物保护=\(decision.treatmentPlan.portraitProtection.isActive)，问题=[\(problemReport.problems.map { $0.kind.rawValue }.joined(separator: ","), privacy: .public)]，配方=\(decision.recipe.traceSummary, privacy: .public)"
         )
         // 5. 先在低分辨率预览上比较由同一摄影决策派生的候选。
         let candidateStart = ProcessInfo.processInfo.systemUptime
@@ -116,7 +121,7 @@ final class PhotoProcessingPipeline {
         let totalDuration = ProcessInfo.processInfo.systemUptime - totalStart
         let finishingMemory = Self.memoryFootprint()
         AppLogger.imageEngine.info(
-            "处理完成：渲染=\(Self.milliseconds(renderDuration))ms，质检/回退=\(Self.milliseconds(qualityDuration))ms，总计=\(Self.milliseconds(totalDuration))ms，状态=\(finalEdit.qualityCheck.status.rawValue)，安全回退=\(finalEdit.qualityCheck.fallbackApplied)，RGB_MAE=\(finalEdit.qualityCheck.processingImpact.normalizedMeanAbsoluteRGBDifference)，变化像素=\(finalEdit.qualityCheck.processingImpact.changedPixelRatio)，最终配方=\(finalEdit.recipe.traceSummary, privacy: .public)"
+            "处理完成：渲染=\(Self.milliseconds(renderDuration))ms，质检/回退=\(Self.milliseconds(qualityDuration))ms，总计=\(Self.milliseconds(totalDuration))ms，状态=\(finalEdit.qualityCheck.status.rawValue)，安全回退=\(finalEdit.qualityCheck.fallbackApplied)，RGB_MAE=\(finalEdit.qualityCheck.processingImpact.normalizedMeanAbsoluteRGBDifference)，变化像素=\(finalEdit.qualityCheck.processingImpact.changedPixelRatio)，肤色偏移=\(finalEdit.qualityCheck.colorIntegrity.skinColorDifference)，中性色染色=\(finalEdit.qualityCheck.colorIntegrity.neutralChromaIncrease)，最终配方=\(finalEdit.recipe.traceSummary, privacy: .public)"
         )
 
         let stageRecords = [
@@ -175,6 +180,12 @@ final class PhotoProcessingPipeline {
                     for: finalEdit.recipe,
                     analysis: finalEdit.analysis
                 ),
+                parameterExecutionResults: parameterExecutionResults(
+                    decision: finalDecision,
+                    source: analysis,
+                    edited: finalEdit.qualityCheck.measuredAnalysis,
+                    regionImpacts: finalRegionImpacts
+                ),
                 candidateEvaluations: candidateResult.evaluations,
                 finalRegionImpacts: finalRegionImpacts,
                 stages: stageRecords,
@@ -224,6 +235,47 @@ final class PhotoProcessingPipeline {
             differenceImageData: diagnosticsResult?.differenceImageData,
             processingStagePreviews: stagePreviews
         )
+    }
+
+    private func parameterExecutionResults(
+        decision: PhotographyDecision,
+        source: PhotoAnalysis,
+        edited: PhotoAnalysis,
+        regionImpacts: [PhotographyRegionImpact]
+    ) -> [String] {
+        decision.parameterEvidence.map { evidence in
+            let result: String
+            switch evidence.key {
+            case .exposure:
+                result = String(format: "平均亮度 %.3f→%.3f", source.averageLuminance, edited.averageLuminance)
+            case .highlights, .whitePoint:
+                result = String(format: "高光 %.3f→%.3f，纯白 %.3f→%.3f", source.highlightRatio, edited.highlightRatio, source.whiteRatio, edited.whiteRatio)
+            case .shadows, .blackPoint:
+                result = String(format: "阴影 %.3f→%.3f，纯黑 %.3f→%.3f", source.shadowRatio, edited.shadowRatio, source.blackRatio, edited.blackRatio)
+            case .contrast, .toneCurve, .localContrast:
+                result = String(format: "亮度跨度 %.3f→%.3f，细节 %.3f→%.3f", source.contrastRange, edited.contrastRange, source.detailScore, edited.detailScore)
+            case .temperature, .tint:
+                result = String(format: "RGB %.3f/%.3f/%.3f→%.3f/%.3f/%.3f", source.redAverage, source.greenAverage, source.blueAverage, edited.redAverage, edited.greenAverage, edited.blueAverage)
+            case .saturation, .vibrance, .orangeHSL, .greenHSL, .blueHSL:
+                result = String(format: "平均饱和度 %.3f→%.3f", source.averageSaturation, edited.averageSaturation)
+            case .noiseReduction, .sharpening:
+                result = String(format: "噪声代理 %.3f→%.3f，细节 %.3f→%.3f", source.noiseEstimate, edited.noiseEstimate, source.detailScore, edited.detailScore)
+            case .luminanceMask:
+                result = regionImpacts.isEmpty
+                    ? "无可靠区域影响可测；全局高光/阴影结果见直方图"
+                    : regionImpacts.map {
+                        String(format: "%@亮度%+.3f/对比%+.3f", $0.region.rawValue, $0.luminanceDelta, $0.contrastDelta)
+                    }.joined(separator: ",")
+            }
+            return String(
+                format: "%@ value=%.3f range=%.3f...%.3f · %@",
+                evidence.key.rawValue,
+                evidence.actualValue,
+                evidence.minimumValue,
+                evidence.maximumValue,
+                result
+            )
+        }
     }
 
     private func evaluateCandidates(
@@ -276,7 +328,7 @@ final class PhotoProcessingPipeline {
                 )
                 if retainPreviews {
                     candidatePreviews.append(ProcessingStagePreview(
-                        name: "D V8.1候选-\(plan.intent.rawValue)",
+                        name: "D V9逐图候选-\(plan.intent.rawValue)",
                         imageData: preview
                     ))
                 }
@@ -328,6 +380,7 @@ final class PhotoProcessingPipeline {
                     && !aestheticProgress.hasMeaningfulProgress
                     ? 14
                     : 0
+                let colorIntegrityPenalty = quality.colorIntegrity.riskPenalty * 34
                 let score = (improvement * 42)
                     + (preservation * 22)
                     + (aestheticProgress.subjectPriority * 18)
@@ -335,6 +388,7 @@ final class PhotoProcessingPipeline {
                     + 10
                     - technicalPenalty
                     - insufficientImprovementPenalty
+                    - colorIntegrityPenalty
                     - Float(quality.issues.count) * 3
                 let duration = Self.milliseconds(ProcessInfo.processInfo.systemUptime - start)
                 let evaluation = PhotographyCandidateEvaluation(
@@ -348,13 +402,13 @@ final class PhotoProcessingPipeline {
                     harmonyScore: aestheticProgress.regionalHarmony,
                     issues: quality.issues.map(\.rawValue),
                     regionImpacts: regionImpacts,
-                    reason: "\(plan.rationale) 技术质检=\(quality.status.rawValue)；主体改善=\(Int((aestheticProgress.subjectPriority * 100).rounded()))%，区域协调=\(Int((aestheticProgress.regionalHarmony * 100).rounded()))%，弱改善惩罚=\(Int(insufficientImprovementPenalty))；不以像素差异大小单独判优。",
+                    reason: "\(plan.rationale) 技术质检=\(quality.status.rawValue)；主体改善=\(Int((aestheticProgress.subjectPriority * 100).rounded()))%，区域协调=\(Int((aestheticProgress.regionalHarmony * 100).rounded()))%，肤色/中性色风险=\(Int((quality.colorIntegrity.riskPenalty * 100).rounded()))%，弱改善惩罚=\(Int(insufficientImprovementPenalty))；不以像素差异大小单独判优。",
                     durationMilliseconds: duration,
                     selected: false
                 )
                 evaluations.append(evaluation)
                 AppLogger.imageEngine.info(
-                    "候选 \(plan.intent.rawValue, privacy: .public)：status=\(status.rawValue, privacy: .public) score=\(score) improvement=\(improvement) subject=\(aestheticProgress.subjectPriority) harmony=\(aestheticProgress.regionalHarmony) preservation=\(preservation) weakPenalty=\(insufficientImprovementPenalty) duration=\(duration)ms recipe=\(plan.recipe.traceSummary, privacy: .public)"
+                    "候选 \(plan.intent.rawValue, privacy: .public)：status=\(status.rawValue, privacy: .public) score=\(score) improvement=\(improvement) subject=\(aestheticProgress.subjectPriority) harmony=\(aestheticProgress.regionalHarmony) preservation=\(preservation) colorRisk=\(quality.colorIntegrity.riskPenalty) weakPenalty=\(insufficientImprovementPenalty) duration=\(duration)ms recipe=\(plan.recipe.traceSummary, privacy: .public)"
                 )
             } catch {
                 let duration = Self.milliseconds(ProcessInfo.processInfo.systemUptime - start)
@@ -535,28 +589,53 @@ final class PhotoProcessingPipeline {
             recipe.toneCurveAmount = min(recipe.toneCurveAmount, 0.34)
         }
 
-        if set.contains(.oversaturated) || set.contains(.abnormalColorCast) {
+        if !set.isDisjoint(with: [
+            .oversaturated,
+            .abnormalColorCast,
+            .neutralColorDrift,
+            .globalWarmCast,
+            .globalGreenCast
+        ]) {
             recipe.saturation = min(recipe.saturation, 0.995)
             recipe.vibrance = min(recipe.vibrance, 0.055)
-            recipe.temperatureShift *= 0.45
-            recipe.tintShift *= 0.45
-            recipe.colorGradeIntensity = min(recipe.colorGradeIntensity, 0.1)
-            recipe.shadowCoolAmount = min(recipe.shadowCoolAmount, 0.025)
-            recipe.midtoneWarmAmount = min(recipe.midtoneWarmAmount, 0.04)
-            recipe.highlightWarmAmount = min(recipe.highlightWarmAmount, 0.05)
-            recipe.colorContrast = min(recipe.colorContrast, 0.04)
+            recipe.temperatureShift *= 0.2
+            recipe.tintShift *= 0.2
+            recipe.colorGradeIntensity = min(recipe.colorGradeIntensity, 0.04)
+            recipe.shadowCoolAmount = min(recipe.shadowCoolAmount, 0.015)
+            recipe.midtoneWarmAmount = min(recipe.midtoneWarmAmount, 0.015)
+            recipe.highlightWarmAmount = min(recipe.highlightWarmAmount, 0.02)
+            recipe.colorContrast = min(recipe.colorContrast, 0.02)
+            recipe.hsl.cyanHue = 0
+            recipe.hsl.blueHue = 0
+            recipe.hsl.greenHue = 0
+            recipe.hsl.cyanSaturation = min(recipe.hsl.cyanSaturation, 0)
+            recipe.hsl.blueSaturation = min(recipe.hsl.blueSaturation, 0)
+            recipe.hsl.greenSaturation = min(recipe.hsl.greenSaturation, 0)
         }
 
-        if !set.isDisjoint(with: [.portraitRegionOverAltered, .portraitTextureAltered]) {
+        if !set.isDisjoint(with: [.portraitRegionOverAltered, .portraitTextureAltered, .skinToneDrift]) {
             recipe.faceExposureEV = 0
             recipe.subjectExposureEV = min(recipe.subjectExposureEV, 0.08)
+            recipe.temperatureShift *= 0.15
+            recipe.tintShift *= 0.15
+            recipe.hsl.orangeHue = 0
             recipe.hsl.orangeLuminance = 0
-            recipe.hsl.orangeSaturation = min(max(recipe.hsl.orangeSaturation, -0.01), 0.01)
-            recipe.colorGradeIntensity = min(recipe.colorGradeIntensity, 0.12)
+            recipe.hsl.orangeSaturation = 0
+            recipe.colorGradeIntensity = min(recipe.colorGradeIntensity, 0.025)
+            recipe.shadowCoolAmount = min(recipe.shadowCoolAmount, 0.01)
+            recipe.midtoneWarmAmount = min(recipe.midtoneWarmAmount, 0.01)
+            recipe.highlightWarmAmount = min(recipe.highlightWarmAmount, 0.015)
             recipe.noiseReductionAmount = min(recipe.noiseReductionAmount, 0.012)
             recipe.sharpeningAmount = min(recipe.sharpeningAmount, 0.055)
             recipe.localContrastAmount = min(recipe.localContrastAmount, 0.045)
             recipe.skinTextureProtection = max(recipe.skinTextureProtection, 0.76)
+        }
+
+        if set.contains(.neutralLuminanceLoss) {
+            recipe.exposureEV = max(recipe.exposureEV, 0)
+            recipe.highlightAmount = max(recipe.highlightAmount, 0.78)
+            recipe.whitePoint = max(recipe.whitePoint, 0.985)
+            recipe.highlightZoneExposureEV = max(recipe.highlightZoneExposureEV, -0.045)
         }
 
         if set.contains(.localMaskBoundaryArtifact) {

@@ -19,36 +19,56 @@ final class SceneAdaptationTests: XCTestCase {
         XCTAssertEqual(decision(for: analysis).sceneStrategy, .architecture)
     }
 
-    func testDifferentSceneEvidenceProducesDifferentExecutedRecipes() {
+    func testSceneLabelsDoNotInventDifferentTechnicalCorrectionsForIdenticalPixels() {
         let coast = decision(for: fixture(labels: ["outdoor", "seashore", "ocean", "sky"]))
         let plaza = decision(for: fixture(labels: ["outdoor", "building", "architecture", "sky"]))
 
         XCTAssertNotEqual(coast.sceneStrategy, plaza.sceneStrategy)
-        XCTAssertNotEqual(coast.recipe.hsl, plaza.recipe.hsl)
-        XCTAssertNotEqual(coast.recipe.colorGradeIntensity, plaza.recipe.colorGradeIntensity)
-        XCTAssertNotEqual(coast.recipe.shadowCoolAmount, plaza.recipe.shadowCoolAmount)
-        XCTAssertNotEqual(coast.recipe.traceSummary, plaza.recipe.traceSummary)
+        XCTAssertEqual(coast.recipe.hsl, plaza.recipe.hsl)
+        XCTAssertEqual(
+            coast.parameterEvidence.map(\.actualValue),
+            plaza.parameterEvidence.map(\.actualValue)
+        )
+        XCTAssertNotEqual(coast.treatmentPlan.finalLook, plaza.treatmentPlan.finalLook)
     }
 
     func testOvercastAndClearSkyDoNotReceiveOneFixedSkyPreset() {
-        let mask = NormalizedPhotoMask(width: 1, height: 1, pixels: Data([255]))
+        let mask = NormalizedPhotoMask(width: 2, height: 2, pixels: Data([255, 255, 0, 0]))
         let overcast = decision(for: fixture(
             luminance: 0.48,
             contrast: 0.40,
             saturation: 0.15,
             labels: ["outdoor", "seashore", "ocean", "sky"],
-            skyMask: mask
+            skyMask: mask,
+            skyStatistics: regionStatistics(
+                luminance: 0.7,
+                contrast: 0.2,
+                saturation: 0.08,
+                red: 0.68,
+                green: 0.7,
+                blue: 0.72,
+                highlightRatio: 0.22
+            )
         ))
         let clear = decision(for: fixture(
             luminance: 0.56,
             contrast: 0.68,
             saturation: 0.18,
             labels: ["outdoor", "landscape", "sky"],
-            skyMask: mask
+            skyMask: mask,
+            skyStatistics: regionStatistics(
+                luminance: 0.58,
+                contrast: 0.5,
+                saturation: 0.18,
+                red: 0.34,
+                green: 0.5,
+                blue: 0.68,
+                highlightRatio: 0.06
+            )
         ))
 
         XCTAssertTrue(overcast.context.lightingConditions.contains(.overcast))
-        XCTAssertLessThanOrEqual(overcast.recipe.skySaturation, 0.995)
+        XCTAssertLessThanOrEqual(overcast.recipe.skySaturation, 1)
         XCTAssertGreaterThan(clear.recipe.skySaturation, 1.0)
         XCTAssertNotEqual(overcast.recipe.skyExposureEV, clear.recipe.skyExposureEV)
         XCTAssertNotEqual(overcast.recipe.skyHighlightAmount, clear.recipe.skyHighlightAmount)
@@ -84,6 +104,62 @@ final class SceneAdaptationTests: XCTestCase {
         XCTAssertEqual(portrait.recipe.hsl.orangeLuminance, 0)
     }
 
+    func testV82PortraitDoesNotManufactureOrangeSkinOrWarmSplitTone() {
+        let personMask = NormalizedPhotoMask(width: 2, height: 2, pixels: Data([255, 255, 0, 0]))
+        let portrait = decision(for: fixture(
+            luminance: 0.53,
+            contrast: 0.66,
+            saturation: 0.25,
+            red: 0.49,
+            green: 0.48,
+            blue: 0.45,
+            labels: ["portrait", "person", "car", "indoor"],
+            faceCount: 1,
+            faceLuminance: 0.51,
+            backgroundLuminance: 0.49,
+            personMask: personMask
+        ))
+
+        XCTAssertEqual(portrait.recipe.hsl.orangeHue, 0)
+        XCTAssertEqual(portrait.recipe.hsl.orangeSaturation, 0)
+        XCTAssertEqual(portrait.recipe.hsl.orangeLuminance, 0)
+        XCTAssertLessThanOrEqual(portrait.recipe.colorGradeIntensity, 0.055)
+        XCTAssertLessThanOrEqual(portrait.recipe.highlightWarmAmount, 0.03)
+        XCTAssertLessThanOrEqual(abs(portrait.recipe.temperatureShift), 35)
+    }
+
+    func testV82OvercastArchitectureDoesNotCreateBlueSkyOrHeavySplitTone() {
+        let skyMask = NormalizedPhotoMask(width: 2, height: 2, pixels: Data([255, 255, 0, 0]))
+        let architectureMask = NormalizedPhotoMask(width: 2, height: 2, pixels: Data([0, 0, 255, 255]))
+        let result = decision(for: fixture(
+            luminance: 0.52,
+            contrast: 0.62,
+            saturation: 0.13,
+            red: 0.50,
+            green: 0.51,
+            blue: 0.52,
+            labels: ["outdoor", "building", "architecture", "sky", "cloudy"],
+            skyMask: skyMask,
+            architectureMask: architectureMask,
+            architectureStatistics: regionStatistics(
+                luminance: 0.48,
+                contrast: 0.58,
+                saturation: 0.08,
+                red: 0.47,
+                green: 0.48,
+                blue: 0.49
+            )
+        ))
+
+        XCTAssertTrue(result.context.lightingConditions.contains(.overcast))
+        XCTAssertLessThanOrEqual(result.recipe.skySaturation, 1)
+        XCTAssertLessThanOrEqual(result.recipe.hsl.cyanSaturation, 0)
+        XCTAssertLessThanOrEqual(result.recipe.hsl.blueSaturation, 0)
+        XCTAssertLessThanOrEqual(result.recipe.colorGradeIntensity, 0.05)
+        XCTAssertLessThanOrEqual(result.recipe.shadowCoolAmount, 0.018)
+        XCTAssertGreaterThanOrEqual(result.recipe.exposureEV, -0.025)
+    }
+
     func testRealReferenceMeasurementsCreateDifferentDirectorialPlans() {
         // Measurements are extracted from the supplied real JPEGs at 128 px long-edge.
         let autumnNightPath = decision(for: fixture(
@@ -109,9 +185,11 @@ final class SceneAdaptationTests: XCTestCase {
         XCTAssertEqual(warmBedroom.sceneStrategy, .workspace)
         XCTAssertNotEqual(autumnNightPath.aestheticTarget, warmBedroom.aestheticTarget)
         XCTAssertNotEqual(autumnNightPath.treatmentPlan.finalLook, warmBedroom.treatmentPlan.finalLook)
-        XCTAssertNotEqual(autumnNightPath.recipe.toneCurveStyle, warmBedroom.recipe.toneCurveStyle)
         XCTAssertNotEqual(autumnNightPath.recipe.temperatureShift, warmBedroom.recipe.temperatureShift)
-        XCTAssertNotEqual(autumnNightPath.recipe.hsl, warmBedroom.recipe.hsl)
+        XCTAssertNotEqual(
+            autumnNightPath.parameterEvidence.map(\.actualValue),
+            warmBedroom.parameterEvidence.map(\.actualValue)
+        )
     }
 
     func testNightCountryRoadKeepsLandscapeFacetTreatment() {
@@ -155,7 +233,7 @@ final class SceneAdaptationTests: XCTestCase {
         XCTAssertTrue(autumnNightPath.context.sceneFacets.contains(.countryRoad))
         XCTAssertTrue(autumnNightPath.context.sceneFacets.contains(.forest))
         XCTAssertGreaterThan(autumnNightPath.recipe.hsl.yellowSaturation, -0.015)
-        XCTAssertGreaterThan(autumnNightPath.recipe.hsl.orangeSaturation, 0)
+        XCTAssertEqual(autumnNightPath.recipe.temperatureShift, 0)
         XCTAssertTrue(autumnNightPath.treatmentPlan.regionalTreatments.contains { $0.region == .ground })
         XCTAssertTrue(autumnNightPath.treatmentPlan.regionalTreatments.contains { $0.region == .vegetation })
     }
@@ -256,7 +334,7 @@ final class SceneAdaptationTests: XCTestCase {
         XCTAssertEqual(result.context.style, .environmentalPortrait)
         XCTAssertTrue(result.treatmentPlan.portraitProtection.isActive)
         XCTAssertEqual(result.recipe.faceExposureEV, 0)
-        XCTAssertGreaterThan(result.recipe.skySaturation, 1)
+        XCTAssertLessThanOrEqual(result.recipe.skySaturation, 1)
         XCTAssertFalse(detector.detect(in: fixture(
             luminance: 0.50,
             contrast: 0.62,
@@ -579,7 +657,9 @@ final class SceneAdaptationTests: XCTestCase {
             XCTAssertLessThanOrEqual(plan.recipe.subjectExposureEV, 0.15)
             XCTAssertGreaterThanOrEqual(plan.recipe.skinTextureProtection, 0.72)
             XCTAssertEqual(plan.recipe.hsl.orangeLuminance, 0)
-            XCTAssertLessThanOrEqual(abs(plan.recipe.hsl.orangeSaturation), 0.02)
+            XCTAssertEqual(plan.recipe.hsl.orangeHue, 0)
+            XCTAssertEqual(plan.recipe.hsl.orangeSaturation, 0)
+            XCTAssertLessThanOrEqual(plan.recipe.colorGradeIntensity, 0.055)
         }
     }
 
@@ -977,6 +1057,214 @@ final class SceneAdaptationTests: XCTestCase {
         XCTAssertTrue(improved.hasMeaningfulProgress)
     }
 
+    func testV9SameSceneDifferentExposureProducesDifferentMeasuredTargets() throws {
+        let dark = fixture(
+            luminance: 0.2,
+            contrast: 0.42,
+            saturation: 0.2,
+            labels: ["outdoor", "landscape"],
+            shadowRatio: 0.55
+        )
+        let bright = fixture(
+            luminance: 0.79,
+            contrast: 0.42,
+            saturation: 0.2,
+            labels: ["outdoor", "landscape"],
+            highlightRatio: 0.24
+        )
+
+        let darkDecision = decision(for: dark)
+        let brightDecision = decision(for: bright)
+        let darkExposure = try XCTUnwrap(darkDecision.parameterEvidence.first { $0.key == .exposure })
+        let brightExposure = try XCTUnwrap(brightDecision.parameterEvidence.first { $0.key == .exposure })
+
+        XCTAssertGreaterThan(darkDecision.recipe.exposureEV, 0)
+        XCTAssertLessThan(brightDecision.recipe.exposureEV, 0)
+        XCTAssertNotEqual(darkExposure.inputEvidence, brightExposure.inputEvidence)
+        XCTAssertNotEqual(darkExposure.actualValue, brightExposure.actualValue)
+    }
+
+    func testV9SameIndoorSceneDifferentCastProducesOppositeWhiteBalance() {
+        let cool = fixture(
+            red: 0.34,
+            green: 0.46,
+            blue: 0.58,
+            labels: ["indoor", "room"]
+        )
+        let warm = fixture(
+            red: 0.58,
+            green: 0.46,
+            blue: 0.34,
+            labels: ["indoor", "room"]
+        )
+
+        let coolDecision = decision(for: cool)
+        let warmDecision = decision(for: warm)
+
+        XCTAssertGreaterThan(coolDecision.recipe.temperatureShift, 0)
+        XCTAssertLessThan(warmDecision.recipe.temperatureShift, 0)
+        XCTAssertNotEqual(coolDecision.recipe.temperatureShift, warmDecision.recipe.temperatureShift)
+    }
+
+    func testV9CandidatesDoNotUniformlyScaleWhiteBalanceOrHSL() {
+        let skyMask = NormalizedPhotoMask(width: 2, height: 2, pixels: Data([255, 255, 0, 0]))
+        let analysis = fixture(
+            luminance: 0.4,
+            contrast: 0.26,
+            saturation: 0.18,
+            red: 0.34,
+            green: 0.44,
+            blue: 0.57,
+            labels: ["outdoor", "sky", "landscape"],
+            skyMask: skyMask,
+            skyStatistics: regionStatistics(
+                luminance: 0.62,
+                contrast: 0.3,
+                saturation: 0.16,
+                red: 0.42,
+                green: 0.53,
+                blue: 0.66
+            )
+        )
+        let problems = detector.detect(in: analysis)
+        let plans = PhotographyCandidatePlanner().makePlans(
+            decision: engine.makeDecision(for: analysis, problems: problems),
+            analysis: analysis,
+            problems: problems
+        )
+
+        XCTAssertEqual(Set(plans.map { $0.recipe.temperatureShift }).count, 1)
+        XCTAssertEqual(Set(plans.map { $0.recipe.tintShift }).count, 1)
+        XCTAssertTrue(plans.dropFirst().allSatisfy { $0.recipe.hsl == plans[0].recipe.hsl })
+        XCTAssertGreaterThanOrEqual(Set(plans.map { $0.recipe.traceSummary }).count, 2)
+        XCTAssertTrue(plans.allSatisfy { !$0.parameterEvidence.isEmpty })
+    }
+
+    func testV9RegionalTargetFollowsGlobalRelationshipInsteadOfFixedPreset() throws {
+        let groundMask = NormalizedPhotoMask(width: 2, height: 2, pixels: Data([255, 255, 0, 0]))
+        let groundStats = regionStatistics(
+            luminance: 0.32,
+            contrast: 0.28,
+            saturation: 0.16,
+            red: 0.33,
+            green: 0.32,
+            blue: 0.3,
+            shadowRatio: 0.44
+        )
+        let darkerEnvironment = fixture(
+            luminance: 0.36,
+            contrast: 0.5,
+            saturation: 0.2,
+            labels: ["outdoor", "road"],
+            groundMask: groundMask,
+            groundStatistics: groundStats
+        )
+        let brighterEnvironment = fixture(
+            luminance: 0.58,
+            contrast: 0.5,
+            saturation: 0.2,
+            labels: ["outdoor", "road"],
+            groundMask: groundMask,
+            groundStatistics: groundStats
+        )
+
+        let darkAdjustment = try XCTUnwrap(RegionalPixelAdjustment.make(
+            region: .ground,
+            analysis: darkerEnvironment,
+            recipe: decision(for: darkerEnvironment).recipe
+        ))
+        let brightAdjustment = try XCTUnwrap(RegionalPixelAdjustment.make(
+            region: .ground,
+            analysis: brighterEnvironment,
+            recipe: decision(for: brighterEnvironment).recipe
+        ))
+
+        XCTAssertGreaterThan(brightAdjustment.exposureEV, darkAdjustment.exposureEV)
+        XCTAssertTrue(brightAdjustment.reason.contains("相对关系"))
+    }
+
+    func testV9MissingSubjectAndInvalidMaskUseAuditableSafeFallback() {
+        let invalidMask = NormalizedPhotoMask(width: 2, height: 2, pixels: Data([255]))
+        let analysis = fixture(
+            luminance: 0.26,
+            contrast: 0.3,
+            saturation: 0.18,
+            labels: ["outdoor"],
+            salientSubjectMask: invalidMask,
+            salientSubjectStatistics: regionStatistics(
+                luminance: 0.12,
+                contrast: 0.15,
+                saturation: 0.2,
+                red: 0.2,
+                green: 0.15,
+                blue: 0.12
+            ),
+            recognition: SceneRecognitionDiagnostics(
+                status: .failed,
+                topConfidence: 0,
+                acceptedLabelCount: 0,
+                reason: "fixture failure"
+            ),
+            segmentation: SceneSegmentationDiagnostics(
+                status: .failed,
+                reason: "fixture failure",
+                skyCoverage: 0,
+                groundCoverage: 0,
+                vegetationCoverage: 0,
+                waterCoverage: 0,
+                architectureCoverage: 0
+            )
+        )
+        let result = decision(for: analysis)
+
+        XCTAssertEqual(analysis.subjectPriorityProfile.mode, .globalHarmony)
+        XCTAssertNil(RegionalPixelAdjustment.make(region: .subject, analysis: analysis, recipe: result.recipe))
+        XCTAssertFalse(result.parameterEvidence.isEmpty)
+        XCTAssertGreaterThan(result.recipe.luminanceMaskStrength, 0)
+        XCTAssertTrue(result.actions.contains { $0.title.contains("场景识别失败") })
+        XCTAssertTrue(result.actions.contains { $0.title.contains("局部分割降级") })
+    }
+
+    func testV9ParameterEvidenceMatchesExecutableRecipe() throws {
+        let result = decision(for: fixture(
+            luminance: 0.24,
+            contrast: 0.27,
+            saturation: 0.17,
+            labels: ["indoor", "room"],
+            shadowRatio: 0.48,
+            detailScore: 0.1,
+            noiseEstimate: 0.16
+        ))
+
+        func value(_ key: PhotographyParameterKey) throws -> Float {
+            try XCTUnwrap(result.parameterEvidence.first { $0.key == key }).actualValue
+        }
+
+        XCTAssertEqual(try value(.exposure), result.recipe.exposureEV, accuracy: 0.0001)
+        XCTAssertEqual(try value(.highlights), result.recipe.highlightAmount, accuracy: 0.0001)
+        XCTAssertEqual(try value(.shadows), result.recipe.shadowAmount, accuracy: 0.0001)
+        XCTAssertEqual(try value(.whitePoint), result.recipe.whitePoint, accuracy: 0.0001)
+        XCTAssertEqual(try value(.blackPoint), result.recipe.blackPoint, accuracy: 0.0001)
+        XCTAssertEqual(try value(.noiseReduction), result.recipe.noiseReductionAmount, accuracy: 0.0001)
+        XCTAssertEqual(try value(.sharpening), result.recipe.sharpeningAmount, accuracy: 0.0001)
+    }
+
+    func testV9MaskQualityReportsInvalidBroadAndFragmentedMasks() {
+        let invalid = NormalizedPhotoMask(width: 2, height: 2, pixels: Data([255]))
+        let broad = NormalizedPhotoMask(width: 2, height: 2, pixels: Data(repeating: 255, count: 4))
+        let checkerboardPixels = (0..<64).map { index -> UInt8 in
+            let x = index % 8
+            let y = index / 8
+            return (x + y).isMultiple(of: 2) ? 255 : 0
+        }
+        let fragmented = NormalizedPhotoMask(width: 8, height: 8, pixels: Data(checkerboardPixels))
+
+        XCTAssertFalse(invalid.qualityAssessment.isUsable)
+        XCTAssertFalse(broad.qualityAssessment.isUsable)
+        XCTAssertLessThan(fragmented.qualityAssessment.reliability, 0.72)
+        XCTAssertTrue(fragmented.qualityAssessment.reason.contains("边界密度"))
+    }
+
     private func decision(for analysis: PhotoAnalysis) -> PhotographyDecision {
         engine.makeDecision(for: analysis, problems: detector.detect(in: analysis))
     }
@@ -1010,6 +1298,11 @@ final class SceneAdaptationTests: XCTestCase {
         highlightRatio: Float = 0.08,
         blackRatio: Float = 0.01,
         whiteRatio: Float = 0.01,
+        detailScore: Float = 0.22,
+        noiseEstimate: Float = 0.05,
+        midtoneRatio: Float = 0.7,
+        mixedLightScore: Float = 0.05,
+        spatialLuminanceVariance: Float = 0.08,
         recognition: SceneRecognitionDiagnostics = SceneRecognitionDiagnostics(
             status: .recognized,
             topConfidence: 0.8,
@@ -1027,17 +1320,17 @@ final class SceneAdaptationTests: XCTestCase {
             shadowRatio: shadowRatio,
             highlightRatio: highlightRatio,
             averageSaturation: saturation,
-            detailScore: 0.22,
-            noiseEstimate: 0.05,
+            detailScore: detailScore,
+            noiseEstimate: noiseEstimate,
             blackRatio: blackRatio,
             whiteRatio: whiteRatio,
-            midtoneRatio: 0.7,
-            mixedLightScore: 0.05,
+            midtoneRatio: midtoneRatio,
+            mixedLightScore: mixedLightScore,
             highlightConcentration: 0.05,
             highlightSourceCount: 0,
             highlightCentroidX: 0.5,
             highlightCentroidY: 0.5,
-            spatialLuminanceVariance: 0.08,
+            spatialLuminanceVariance: spatialLuminanceVariance,
             faceCount: faceCount,
             faceRegions: faceCount > 0
                 ? [NormalizedPhotoRegion(x: 0.3, y: 0.35, width: 0.25, height: 0.25)]

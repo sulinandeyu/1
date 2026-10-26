@@ -51,11 +51,11 @@ final class CinematicToneMappingEngine {
     private func baseAnchors(for style: CinematicToneStyle) -> [Float] {
         switch style {
         case .natural:
-            return [0.006, 0.07, 0.225, 0.51, 0.745, 0.91, 0.985]
+            return [0, 0.08, 0.22, 0.5, 0.72, 0.9, 1]
         case .bright:
-            return [0.012, 0.09, 0.25, 0.535, 0.765, 0.925, 0.992]
+            return [0, 0.085, 0.23, 0.515, 0.735, 0.905, 1]
         case .lowKey:
-            return [0.008, 0.075, 0.215, 0.5, 0.73, 0.9, 0.98]
+            return [0.002, 0.075, 0.21, 0.49, 0.71, 0.895, 0.995]
         }
     }
 
@@ -103,18 +103,32 @@ final class ProfessionalHSLProcessor {
         for blueIndex in 0..<dimension {
             for greenIndex in 0..<dimension {
                 for redIndex in 0..<dimension {
-                    let rgb = SIMD3<Float>(
+                    // Core Image supplies the cube in the renderer's extended-linear
+                    // working space. HSL controls are perceptual, so measure them in
+                    // encoded sRGB and convert the result back to linear RGB.
+                    let linearRGB = SIMD3<Float>(
                         Float(redIndex) / denominator,
                         Float(greenIndex) / denominator,
                         Float(blueIndex) / denominator
                     )
-                    var hsv = rgbToHSV(rgb)
+                    var hsv = rgbToHSV(SIMD3(
+                        linearToSRGB(linearRGB.x),
+                        linearToSRGB(linearRGB.y),
+                        linearToSRGB(linearRGB.z)
+                    ))
                     let orange = hueWeight(hsv.x, center: 0.075, width: 0.095)
                     let yellow = hueWeight(hsv.x, center: 0.155, width: 0.09)
                     let green = hueWeight(hsv.x, center: 0.33, width: 0.13)
                     let cyan = hueWeight(hsv.x, center: 0.50, width: 0.10)
                     let blue = hueWeight(hsv.x, center: 0.64, width: 0.13)
                     let chromaGuard = min(1, hsv.y * 3.2)
+                    let hueDelta = (
+                        orange * adjustment.orangeHue +
+                        yellow * adjustment.yellowHue +
+                        green * adjustment.greenHue +
+                        cyan * adjustment.cyanHue +
+                        blue * adjustment.blueHue
+                    ) * chromaGuard
                     let saturationDelta = (
                         orange * adjustment.orangeSaturation +
                         yellow * adjustment.yellowSaturation +
@@ -129,10 +143,16 @@ final class ProfessionalHSLProcessor {
                         cyan * adjustment.cyanLuminance +
                         blue * adjustment.blueLuminance
                     ) * chromaGuard
+                    hsv.x = wrappedHue(hsv.x + hueDelta)
                     hsv.y = clamp(hsv.y * (1 + saturationDelta))
                     hsv.z = clamp(hsv.z + luminanceDelta)
-                    let output = hsvToRGB(hsv)
-                    cube.append(contentsOf: [output.x, output.y, output.z, 1])
+                    let encodedOutput = hsvToRGB(hsv)
+                    cube.append(contentsOf: [
+                        sRGBToLinear(encodedOutput.x),
+                        sRGBToLinear(encodedOutput.y),
+                        sRGBToLinear(encodedOutput.z),
+                        1
+                    ])
                 }
             }
         }
@@ -183,6 +203,25 @@ final class ProfessionalHSLProcessor {
     }
 
     private func clamp(_ value: Float) -> Float { min(max(value, 0), 1) }
+
+    private func wrappedHue(_ value: Float) -> Float {
+        let wrapped = value.truncatingRemainder(dividingBy: 1)
+        return wrapped < 0 ? wrapped + 1 : wrapped
+    }
+
+    private func linearToSRGB(_ value: Float) -> Float {
+        let bounded = clamp(value)
+        return bounded <= 0.0031308
+            ? bounded * 12.92
+            : 1.055 * pow(bounded, 1 / 2.4) - 0.055
+    }
+
+    private func sRGBToLinear(_ value: Float) -> Float {
+        let bounded = clamp(value)
+        return bounded <= 0.04045
+            ? bounded / 12.92
+            : pow((bounded + 0.055) / 1.055, 2.4)
+    }
 }
 
 /// 以连续亮度蒙版分别处理可恢复阴影和高光，避免全局 HDR 把黑色抬灰或压暗主体。

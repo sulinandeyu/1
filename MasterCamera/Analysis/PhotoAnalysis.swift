@@ -120,8 +120,7 @@ struct PhotoAnalysis: Equatable, Sendable {
         guard
             faceCount == 0,
             let mask = salientSubjectMask,
-            mask.isValid,
-            mask.activeCoverage >= 0.004,
+            mask.qualityAssessment.isUsable,
             mask.activeCoverage <= 0.72,
             let statistics = salientSubjectStatistics
         else { return 0 }
@@ -415,6 +414,74 @@ struct NormalizedPhotoMask: Equatable, Sendable {
         return Float(active) / Float(pixels.count)
     }
 
+    var qualityAssessment: PhotoMaskQualityAssessment {
+        guard isValid, !pixels.isEmpty else {
+            return PhotoMaskQualityAssessment(
+                coverage: 0,
+                softEdgeRatio: 0,
+                boundaryDensity: 1,
+                reliability: 0,
+                isUsable: false,
+                reason: "蒙版尺寸或像素数据无效"
+            )
+        }
+        let coverage = activeCoverage
+        var activeCount = 0
+        var softCount = 0
+        var boundaryCount = 0
+        var adjacencyCount = 0
+        for y in 0..<height {
+            for x in 0..<width {
+                let value = pixels[(y * width) + x]
+                let active = value >= 32
+                if active {
+                    activeCount += 1
+                    if value < 224 { softCount += 1 }
+                }
+                if x + 1 < width {
+                    adjacencyCount += 1
+                    if active != (pixels[(y * width) + x + 1] >= 32) { boundaryCount += 1 }
+                }
+                if y + 1 < height {
+                    adjacencyCount += 1
+                    if active != (pixels[((y + 1) * width) + x] >= 32) { boundaryCount += 1 }
+                }
+            }
+        }
+        let softEdgeRatio = activeCount > 0 ? Float(softCount) / Float(activeCount) : 0
+        let boundaryDensity = adjacencyCount > 0 ? Float(boundaryCount) / Float(adjacencyCount) : 0
+        let coverageReliability: Float
+        if coverage < 0.004 || coverage > 0.86 {
+            coverageReliability = 0
+        } else if coverage < 0.015 || coverage > 0.8 {
+            coverageReliability = 0.58
+        } else {
+            coverageReliability = 0.94
+        }
+        let fragmentationReliability: Float = width * height < 64
+            ? 1
+            : max(0.5, 1 - max(0, boundaryDensity - 0.38) * 1.25)
+        let edgeReliability = min(1, 0.92 + softEdgeRatio * 0.08)
+        let reliability = coverageReliability * fragmentationReliability * edgeReliability
+        let usable = reliability >= 0.42
+        let reason: String
+        if coverageReliability == 0 {
+            reason = String(format: "覆盖率 %.2f%% 超出安全范围", coverage * 100)
+        } else if fragmentationReliability < 0.72 {
+            reason = String(format: "边界密度 %.1f%%，存在碎片或误伤风险", boundaryDensity * 100)
+        } else {
+            reason = "覆盖率与边界结构可用于有边界的局部调整"
+        }
+        return PhotoMaskQualityAssessment(
+            coverage: coverage,
+            softEdgeRatio: softEdgeRatio,
+            boundaryDensity: boundaryDensity,
+            reliability: reliability,
+            isUsable: usable,
+            reason: reason
+        )
+    }
+
     func activeCoverage(excluding exclusions: [NormalizedPhotoMask]) -> Float {
         guard isValid else { return 0 }
         var remaining = 0
@@ -445,6 +512,27 @@ struct NormalizedPhotoMask: Equatable, Sendable {
             width: width,
             height: height,
             pixels: Data(pixels.map { 255 - $0 })
+        )
+    }
+}
+
+struct PhotoMaskQualityAssessment: Equatable, Sendable {
+    let coverage: Float
+    let softEdgeRatio: Float
+    let boundaryDensity: Float
+    let reliability: Float
+    let isUsable: Bool
+    let reason: String
+
+    var traceSummary: String {
+        String(
+            format: "coverage=%.3f softEdge=%.3f boundary=%.3f reliability=%.3f usable=%@ reason=%@",
+            coverage,
+            softEdgeRatio,
+            boundaryDensity,
+            reliability,
+            isUsable ? "yes" : "no",
+            reason
         )
     }
 }
@@ -510,7 +598,7 @@ struct SubjectPriorityProfile: Equatable, Sendable {
         }
 
         var secondary: [SubjectMaskLayer] = []
-        if let vegetation = analysis.vegetationMask, vegetation.isValid {
+        if let vegetation = analysis.vegetationMask, vegetation.qualityAssessment.isUsable {
             secondary.append(SubjectMaskLayer(
                 role: "vegetation",
                 mask: vegetation,
@@ -518,7 +606,7 @@ struct SubjectPriorityProfile: Equatable, Sendable {
                 reason: "植被构成主体环境或画面结构。"
             ))
         }
-        if let ground = analysis.groundMask, ground.isValid {
+        if let ground = analysis.groundMask, ground.qualityAssessment.isUsable {
             secondary.append(SubjectMaskLayer(
                 role: "ground/road",
                 mask: ground,
@@ -529,7 +617,7 @@ struct SubjectPriorityProfile: Equatable, Sendable {
 
         var distractors: [SubjectMaskLayer] = []
         if let architecture = analysis.architectureMask,
-           architecture.isValid,
+           architecture.qualityAssessment.isUsable,
            architecture.activeCoverage < 0.12,
            primary != nil {
             distractors.append(SubjectMaskLayer(
@@ -784,9 +872,9 @@ struct PhotographyContext: Equatable, Sendable {
         // These facets come only from the bundled semantic model's validated masks.
         // They are stronger evidence than color thresholds, but still do not claim a
         // more specific object such as "forest" or "road" without classifier support.
-        if analysis.vegetationMask?.isValid == true { facets.insert(.nature) }
-        if analysis.waterMask?.isValid == true { facets.insert(.water) }
-        if analysis.architectureMask?.isValid == true { facets.insert(.architecture) }
+        if analysis.vegetationMask?.qualityAssessment.isUsable == true { facets.insert(.nature) }
+        if analysis.waterMask?.qualityAssessment.isUsable == true { facets.insert(.water) }
+        if analysis.architectureMask?.qualityAssessment.isUsable == true { facets.insert(.architecture) }
         if labels.containsKeyword(["nature", "landscape", "field", "scenery", "park"]) { facets.insert(.nature) }
         if labels.containsKeyword(["mountain", "hill", "valley"]) { facets.insert(.mountain) }
         if labels.containsKeyword(["water", "lake", "river", "ocean", "sea"]) { facets.insert(.water) }

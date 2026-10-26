@@ -110,6 +110,30 @@ struct PhotoDiagnosticSection: Identifiable, Equatable, Sendable {
                     )
                 ),
                 PhotoDiagnosticItem(
+                    label: "蒙版质量",
+                    value: [
+                        ("人物", analysis.personMask),
+                        ("主体", analysis.salientSubjectMask),
+                        ("天空", analysis.skyMask),
+                        ("地面", analysis.groundMask),
+                        ("植被", analysis.vegetationMask),
+                        ("水面", analysis.waterMask),
+                        ("建筑", analysis.architectureMask)
+                    ].map { name, mask in
+                        guard let mask else { return "\(name)：无" }
+                        let quality = mask.qualityAssessment
+                        return String(
+                            format: "%@：覆盖 %.1f%% / 软边 %.1f%% / 边界 %.1f%% / 可靠度 %.0f%% / %@",
+                            name,
+                            quality.coverage * 100,
+                            quality.softEdgeRatio * 100,
+                            quality.boundaryDensity * 100,
+                            quality.reliability * 100,
+                            quality.reason
+                        )
+                    }.joined(separator: "；")
+                ),
+                PhotoDiagnosticItem(
                     label: "天空区域实测",
                     value: analysis.skyStatistics.regionStatisticsSummary
                 ),
@@ -141,7 +165,7 @@ struct PhotoDiagnosticSection: Identifiable, Equatable, Sendable {
                     value: decision.context.sceneFacets.map(\.rawValue).joined(separator: "、")
                 ),
                 PhotoDiagnosticItem(
-                    label: "V8.1 Scene Profile 权重",
+                    label: "V9 场景证据权重",
                     value: decision.context.sceneProfile.weightSummary
                 ),
                 PhotoDiagnosticItem(
@@ -189,6 +213,23 @@ struct PhotoDiagnosticSection: Identifiable, Equatable, Sendable {
                     value: "\(decision.recipe.cinematicIntensity.title) · \(decision.recipe.cinematicToneStyle.rawValue)"
                 ),
                 PhotoDiagnosticItem(label: "意图", value: decision.intent),
+                PhotoDiagnosticItem(
+                    label: "逐图参数证据",
+                    value: decision.parameterEvidence.map { evidence in
+                        String(
+                            format: "%@：%@；输入=%@；目标=%@；范围 %.3f…%.3f；实际 %.3f；预期=%@；降级=%@",
+                            evidence.key.rawValue,
+                            evidence.purpose,
+                            evidence.inputEvidence,
+                            evidence.target,
+                            evidence.minimumValue,
+                            evidence.maximumValue,
+                            evidence.actualValue,
+                            evidence.expectedResult,
+                            evidence.fallbackBehavior
+                        )
+                    }.joined(separator: "；")
+                ),
                 PhotoDiagnosticItem(
                     label: "明暗参数",
                     value: String(
@@ -260,15 +301,20 @@ struct PhotoDiagnosticSection: Identifiable, Equatable, Sendable {
                 PhotoDiagnosticItem(
                     label: "分区 HSL",
                     value: String(
-                        format: "橙 S%+.2f/L%+.2f · 黄 S%+.2f/L%+.2f · 绿 S%+.2f/L%+.2f · 青 S%+.2f/L%+.2f · 蓝 S%+.2f/L%+.2f",
+                        format: "橙 H%+.3f/S%+.2f/L%+.2f · 黄 H%+.3f/S%+.2f/L%+.2f · 绿 H%+.3f/S%+.2f/L%+.2f · 青 H%+.3f/S%+.2f/L%+.2f · 蓝 H%+.3f/S%+.2f/L%+.2f",
+                        decision.recipe.hsl.orangeHue,
                         decision.recipe.hsl.orangeSaturation,
                         decision.recipe.hsl.orangeLuminance,
+                        decision.recipe.hsl.yellowHue,
                         decision.recipe.hsl.yellowSaturation,
                         decision.recipe.hsl.yellowLuminance,
+                        decision.recipe.hsl.greenHue,
                         decision.recipe.hsl.greenSaturation,
                         decision.recipe.hsl.greenLuminance,
+                        decision.recipe.hsl.cyanHue,
                         decision.recipe.hsl.cyanSaturation,
                         decision.recipe.hsl.cyanLuminance,
+                        decision.recipe.hsl.blueHue,
                         decision.recipe.hsl.blueSaturation,
                         decision.recipe.hsl.blueLuminance
                     )
@@ -325,7 +371,27 @@ struct PhotoDiagnosticSection: Identifiable, Equatable, Sendable {
                 PhotoDiagnosticItem(label: "问题", value: issueText),
                 PhotoDiagnosticItem(label: "安全回退", value: qualityCheck.fallbackApplied ? "已启用" : "未启用"),
                 PhotoDiagnosticItem(label: "成片亮度", value: qualityCheck.measuredAnalysis.averageLuminance.percentText),
-                PhotoDiagnosticItem(label: "成片对比", value: qualityCheck.measuredAnalysis.contrastRange.percentText)
+                PhotoDiagnosticItem(label: "成片对比", value: qualityCheck.measuredAnalysis.contrastRange.percentText),
+                PhotoDiagnosticItem(
+                    label: "肤色保护",
+                    value: String(
+                        format: "采样 %.1f%% · 色彩偏移 %.2f%% · 冷暖偏移 %+.2f%%",
+                        qualityCheck.colorIntegrity.skinCoverage * 100,
+                        qualityCheck.colorIntegrity.skinColorDifference * 100,
+                        qualityCheck.colorIntegrity.skinWarmShift * 100
+                    )
+                ),
+                PhotoDiagnosticItem(
+                    label: "中性色保护",
+                    value: String(
+                        format: "采样 %.1f%% · 染色 %+.2f%% · 冷暖 %+.2f%% · 绿偏 %+.2f%% · 亮度 %+.2f%%",
+                        qualityCheck.colorIntegrity.neutralCoverage * 100,
+                        qualityCheck.colorIntegrity.neutralChromaIncrease * 100,
+                        qualityCheck.colorIntegrity.neutralWarmShift * 100,
+                        qualityCheck.colorIntegrity.neutralGreenShift * 100,
+                        qualityCheck.colorIntegrity.neutralLuminanceShift * 100
+                    )
+                )
             ]
         )
     }
@@ -429,6 +495,12 @@ struct PhotoDiagnosticSection: Identifiable, Equatable, Sendable {
                 PhotoDiagnosticItem(
                     label: "局部执行回执",
                     value: diagnostics.regionalExecutionDetails.joined(separator: "；")
+                ),
+                PhotoDiagnosticItem(
+                    label: "逐图参数执行结果",
+                    value: diagnostics.parameterExecutionResults.isEmpty
+                        ? "未生成参数执行结果"
+                        : diagnostics.parameterExecutionResults.joined(separator: "；")
                 ),
                 PhotoDiagnosticItem(
                     label: "最终成片区域变化",

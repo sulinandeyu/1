@@ -221,7 +221,7 @@ final class PhotoProblemDetector {
         for (region, optionalMask, optionalStatistics) in regions {
             guard
                 let mask = optionalMask,
-                mask.isValid,
+                mask.qualityAssessment.isUsable,
                 mask.activeCoverage >= 0.01,
                 mask.activeCoverage <= 0.82,
                 let statistics = optionalStatistics

@@ -166,9 +166,12 @@ final class LocalAdjustmentProcessor {
             return "\(name)：跳过（场景证据、区域统计或调整幅度不足）"
         }
         return String(
-            format: "%@：已执行（覆盖率 %.2f%%；%@）",
+            format: "%@：已执行（覆盖率 %.2f%%；软边 %.1f%%；边界 %.1f%%；可靠度 %.0f%%；%@）",
             name,
             effectiveCoverage * 100,
+            mask.qualityAssessment.softEdgeRatio * 100,
+            mask.qualityAssessment.boundaryDensity * 100,
+            mask.qualityAssessment.reliability * 100,
             adjustment.traceSummary
         )
     }
@@ -199,7 +202,7 @@ final class LocalAdjustmentProcessor {
 
     private func isUsableRegionMask(_ mask: NormalizedPhotoMask?) -> Bool {
         guard let mask, mask.isValid else { return false }
-        return mask.activeCoverage >= 0.004 && mask.activeCoverage <= 0.86
+        return mask.qualityAssessment.isUsable
     }
 
     private func applySubjectRelighting(

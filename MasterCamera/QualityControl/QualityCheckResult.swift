@@ -6,6 +6,7 @@ struct QualityCheckResult: Equatable, Sendable {
     let measuredAnalysis: PhotoAnalysis
     let fallbackApplied: Bool
     let processingImpact: ProcessingImpactMetrics
+    let colorIntegrity: ColorIntegrityMetrics
 
     var passed: Bool {
         status == .passed
@@ -27,7 +28,8 @@ struct QualityCheckResult: Equatable, Sendable {
             issues: issues,
             measuredAnalysis: measuredAnalysis,
             fallbackApplied: true,
-            processingImpact: processingImpact
+            processingImpact: processingImpact,
+            colorIntegrity: colorIntegrity
         )
     }
 }
@@ -35,6 +37,48 @@ struct QualityCheckResult: Equatable, Sendable {
 struct ProcessingImpactMetrics: Equatable, Sendable {
     let normalizedMeanAbsoluteRGBDifference: Float
     let changedPixelRatio: Float
+}
+
+/// Source-relative color safety evidence. It never assumes one ideal skin color
+/// or one universal grey point; it measures whether pixels that were skin-like
+/// or neutral in the original were pushed away from their own recorded color.
+struct ColorIntegrityMetrics: Equatable, Sendable {
+    let neutralCoverage: Float
+    let neutralChromaIncrease: Float
+    let neutralWarmShift: Float
+    let neutralGreenShift: Float
+    let neutralLuminanceShift: Float
+    let skinCoverage: Float
+    let skinColorDifference: Float
+    let skinWarmShift: Float
+
+    static let neutral = ColorIntegrityMetrics(
+        neutralCoverage: 0,
+        neutralChromaIncrease: 0,
+        neutralWarmShift: 0,
+        neutralGreenShift: 0,
+        neutralLuminanceShift: 0,
+        skinCoverage: 0,
+        skinColorDifference: 0,
+        skinWarmShift: 0
+    )
+
+    var riskPenalty: Float {
+        let neutralRisk: Float = neutralCoverage >= 0.015
+            ? max(0, neutralChromaIncrease - 0.012) * 9
+                + max(0, abs(neutralWarmShift) - 0.012) * 7
+                + max(0, abs(neutralGreenShift) - 0.012) * 7
+                + max(0, -neutralLuminanceShift - 0.025) * 5
+            : 0
+        let skinRisk: Float = skinCoverage >= 0.004
+            ? max(0, skinColorDifference - 0.016) * 8
+                + max(0, abs(skinWarmShift) - 0.014) * 7
+            : 0
+        return min(
+            1,
+            neutralRisk + skinRisk
+        )
+    }
 }
 
 enum QualityStatus: String, Equatable, Sendable {
@@ -77,6 +121,11 @@ enum QualityIssue: String, Equatable, Hashable, Sendable {
     case expandedPureWhite
     case portraitRegionOverAltered
     case portraitTextureAltered
+    case skinToneDrift
+    case neutralColorDrift
+    case neutralLuminanceLoss
+    case globalWarmCast
+    case globalGreenCast
     case localMaskBoundaryArtifact
     case missingExpectedSceneTreatment
 
@@ -118,6 +167,16 @@ enum QualityIssue: String, Equatable, Hashable, Sendable {
             return "人物面部被局部过度改变"
         case .portraitTextureAltered:
             return "人物皮肤纹理变化异常"
+        case .skinToneDrift:
+            return "人物肤色相对原图发生异常漂移"
+        case .neutralColorDrift:
+            return "白色或灰色材质出现异常染色"
+        case .neutralLuminanceLoss:
+            return "中性亮部被不必要压暗"
+        case .globalWarmCast:
+            return "画面新增明显橙黄偏色"
+        case .globalGreenCast:
+            return "画面新增明显黄绿色偏色"
         case .localMaskBoundaryArtifact:
             return "局部蒙版边界变化异常"
         case .missingExpectedSceneTreatment:
