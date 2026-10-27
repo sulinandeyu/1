@@ -4,6 +4,7 @@ struct PhotographyDecision: Equatable, Sendable {
     let sceneStrategy: SceneStrategy
     let context: PhotographyContext
     let aestheticTarget: AestheticTarget
+    let adaptiveTarget: AdaptivePhotographyTarget
     let intent: String
     let actions: [PhotographyAction]
     let treatmentPlan: PhotographyTreatmentPlan
@@ -62,6 +63,7 @@ struct PhotographyDecision: Equatable, Sendable {
             sceneStrategy: sceneStrategy,
             context: context,
             aestheticTarget: aestheticTarget,
+            adaptiveTarget: adaptiveTarget,
             intent: intent,
             actions: actions,
             treatmentPlan: PhotographyTreatmentPlan(
@@ -76,12 +78,49 @@ struct PhotographyDecision: Equatable, Sendable {
     }
 }
 
+/// A per-image destination expressed as measurable relationships.  It is not a
+/// scene preset: every value is derived from the current image statistics and is
+/// carried into candidate evaluation so the renderer can be judged against the
+/// same target that produced its parameters.
+struct AdaptivePhotographyTarget: Equatable, Sendable {
+    let luminance: Float
+    let luminanceMinimum: Float
+    let luminanceMaximum: Float
+    let contrast: Float
+    let shadowRatio: Float
+    let highlightRatio: Float
+    let saturation: Float
+    let atmosphereProtection: Float
+    let rationale: String
+
+    var summaryText: String {
+        String(
+            format: "亮度 %.3f（%.3f...%.3f）· 反差 %.3f · 阴影 %.3f · 高光 %.3f · 饱和度 %.3f · 氛围保护 %.0f%%",
+            luminance,
+            luminanceMinimum,
+            luminanceMaximum,
+            contrast,
+            shadowRatio,
+            highlightRatio,
+            saturation,
+            atmosphereProtection * 100
+        )
+    }
+}
+
+enum PhotographyParameterDecisionStatus: String, Equatable, Sendable {
+    case planned
+    case notNeeded
+    case disabledBySafety
+}
+
 /// V9 keeps the reason for every important pixel parameter beside the executable
 /// recipe. This is intentionally typed data instead of a free-form prompt so the
 /// diagnostic UI can show measurement -> target -> bounded value without claiming
 /// that a generated plan was rendered when it was not.
 enum PhotographyParameterKey: String, Equatable, Sendable {
     case exposure
+    case brightness
     case highlights
     case shadows
     case contrast
@@ -90,9 +129,19 @@ enum PhotographyParameterKey: String, Equatable, Sendable {
     case blackPoint
     case temperature
     case tint
+    case hue
     case saturation
     case vibrance
     case localContrast
+    case midtoneContrast
+    case shadowColor
+    case midtoneColor
+    case highlightColor
+    case localExposure
+    case localHighlights
+    case localShadows
+    case localColor
+    case localTexture
     case noiseReduction
     case sharpening
     case luminanceMask
@@ -111,18 +160,31 @@ struct PhotographyParameterEvidence: Equatable, Sendable {
     let actualValue: Float
     let expectedResult: String
     let fallbackBehavior: String
+    let affectedRegion: TreatmentRegion
+    let decisionStatus: PhotographyParameterDecisionStatus
 
     func refreshingActualValue(from recipe: AutomaticEditingRecipe) -> PhotographyParameterEvidence {
-        PhotographyParameterEvidence(
+        let refreshedValue = Self.actualValue(for: key, recipe: recipe)
+        let refreshedStatus: PhotographyParameterDecisionStatus
+        if decisionStatus == .disabledBySafety {
+            refreshedStatus = .disabledBySafety
+        } else {
+            refreshedStatus = abs(refreshedValue - Self.neutralValue(for: key)) > 0.0005
+                ? .planned
+                : .notNeeded
+        }
+        return PhotographyParameterEvidence(
             key: key,
             purpose: purpose,
             inputEvidence: inputEvidence,
             target: target,
             minimumValue: minimumValue,
             maximumValue: maximumValue,
-            actualValue: Self.actualValue(for: key, recipe: recipe),
+            actualValue: refreshedValue,
             expectedResult: expectedResult,
-            fallbackBehavior: fallbackBehavior
+            fallbackBehavior: fallbackBehavior,
+            affectedRegion: affectedRegion,
+            decisionStatus: refreshedStatus
         )
     }
 
@@ -132,6 +194,7 @@ struct PhotographyParameterEvidence: Equatable, Sendable {
     ) -> Float {
         switch key {
         case .exposure: return recipe.exposureEV
+        case .brightness: return recipe.brightness
         case .highlights: return recipe.highlightAmount
         case .shadows: return recipe.shadowAmount
         case .contrast: return recipe.contrast
@@ -140,15 +203,41 @@ struct PhotographyParameterEvidence: Equatable, Sendable {
         case .blackPoint: return recipe.blackPoint
         case .temperature: return recipe.temperatureShift
         case .tint: return recipe.tintShift
+        case .hue:
+            return [
+                abs(recipe.hsl.orangeHue),
+                abs(recipe.hsl.yellowHue),
+                abs(recipe.hsl.greenHue),
+                abs(recipe.hsl.cyanHue),
+                abs(recipe.hsl.blueHue)
+            ].max() ?? 0
         case .saturation: return recipe.saturation
         case .vibrance: return recipe.vibrance
         case .localContrast: return recipe.localContrastAmount
+        case .midtoneContrast: return recipe.upperMidtoneSeparation
+        case .shadowColor: return recipe.shadowCoolAmount
+        case .midtoneColor: return recipe.midtoneWarmAmount
+        case .highlightColor: return recipe.highlightWarmAmount
+        case .localExposure: return recipe.subjectExposureEV
+        case .localHighlights: return abs(recipe.highlightZoneExposureEV)
+        case .localShadows: return recipe.shadowZoneExposureEV
+        case .localColor: return max(abs(recipe.hsl.greenSaturation), abs(recipe.hsl.blueSaturation))
+        case .localTexture: return recipe.localContrastAmount
         case .noiseReduction: return recipe.noiseReductionAmount
         case .sharpening: return recipe.sharpeningAmount
         case .luminanceMask: return recipe.luminanceMaskStrength
         case .orangeHSL: return recipe.hsl.orangeSaturation
         case .greenHSL: return recipe.hsl.greenSaturation
         case .blueHSL: return recipe.hsl.blueSaturation
+        }
+    }
+
+    private static func neutralValue(for key: PhotographyParameterKey) -> Float {
+        switch key {
+        case .highlights, .whitePoint, .contrast, .saturation:
+            return 1
+        default:
+            return 0
         }
     }
 }
@@ -265,9 +354,9 @@ struct PhotographyAction: Equatable, Sendable {
 }
 
 enum PhotographyCandidateIntent: String, CaseIterable, Equatable, Hashable, Sendable {
-    case natural = "自然保守"
-    case dimensional = "层次增强"
-    case targeted = "问题定向"
+    case natural = "动态求解基线"
+    case dimensional = "影调残差修正"
+    case targeted = "局部残差修正"
 }
 
 enum PhotographyAdjustmentType: String, Equatable, Sendable {
@@ -321,6 +410,7 @@ struct PhotographyCandidateEvaluation: Equatable, Sendable {
     let status: CandidateEvaluationStatus
     let score: Float
     let problemImprovement: Float
+    let targetAttainmentScore: Float
     let preservationScore: Float
     let subjectPriorityScore: Float
     let harmonyScore: Float
@@ -336,6 +426,7 @@ struct PhotographyCandidateEvaluation: Equatable, Sendable {
         status: CandidateEvaluationStatus,
         score: Float,
         problemImprovement: Float,
+        targetAttainmentScore: Float = 0,
         preservationScore: Float,
         subjectPriorityScore: Float = 0,
         harmonyScore: Float = 0,
@@ -350,6 +441,7 @@ struct PhotographyCandidateEvaluation: Equatable, Sendable {
         self.status = status
         self.score = score
         self.problemImprovement = problemImprovement
+        self.targetAttainmentScore = targetAttainmentScore
         self.preservationScore = preservationScore
         self.subjectPriorityScore = subjectPriorityScore
         self.harmonyScore = harmonyScore
@@ -367,6 +459,7 @@ struct PhotographyCandidateEvaluation: Equatable, Sendable {
             status: status,
             score: score,
             problemImprovement: problemImprovement,
+            targetAttainmentScore: targetAttainmentScore,
             preservationScore: preservationScore,
             subjectPriorityScore: subjectPriorityScore,
             harmonyScore: harmonyScore,
@@ -406,6 +499,57 @@ struct PhotographyCandidateSelector {
             }
             return left.durationMilliseconds > right.durationMilliseconds
         }
+    }
+}
+
+/// Measures whether rendered pixels moved toward the per-photo destination. This
+/// complements problem flags and prevents the selector from winning merely by
+/// producing the smallest change.
+struct AdaptiveTargetAttainmentScorer {
+    func score(
+        target: AdaptivePhotographyTarget,
+        source: PhotoAnalysis,
+        edited: PhotoAnalysis
+    ) -> Float {
+        let luminance = rangeAttainment(
+            edited.averageLuminance,
+            minimum: target.luminanceMinimum,
+            maximum: target.luminanceMaximum,
+            scale: 0.16
+        )
+        let contrast = pointAttainment(edited.contrastRange, target: target.contrast, scale: 0.18)
+        let shadows = pointAttainment(edited.shadowRatio, target: target.shadowRatio, scale: 0.16)
+        let highlights = pointAttainment(edited.highlightRatio, target: target.highlightRatio, scale: 0.12)
+        let saturation = pointAttainment(edited.averageSaturation, target: target.saturation, scale: 0.2)
+        let sourceDistance = abs(source.averageLuminance - target.luminance)
+            + abs(source.contrastRange - target.contrast)
+        let editedDistance = abs(edited.averageLuminance - target.luminance)
+            + abs(edited.contrastRange - target.contrast)
+        let directionBonus: Float = editedDistance < sourceDistance ? 0.08 : 0
+        return min(
+            1,
+            luminance * 0.28
+                + contrast * 0.24
+                + shadows * 0.18
+                + highlights * 0.18
+                + saturation * 0.12
+                + directionBonus
+        )
+    }
+
+    private func pointAttainment(_ value: Float, target: Float, scale: Float) -> Float {
+        max(0, 1 - abs(value - target) / max(0.001, scale))
+    }
+
+    private func rangeAttainment(
+        _ value: Float,
+        minimum: Float,
+        maximum: Float,
+        scale: Float
+    ) -> Float {
+        if (minimum...maximum).contains(value) { return 1 }
+        let distance = value < minimum ? minimum - value : value - maximum
+        return max(0, 1 - distance / max(0.001, scale))
     }
 }
 

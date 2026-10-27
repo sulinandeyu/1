@@ -191,7 +191,8 @@ struct PhotoDiagnosticSection: Identifiable, Equatable, Sendable {
                     label: "摄影风格判断",
                     value: "\(decision.context.style.rawValue)：\(decision.context.styleReason)"
                 ),
-                PhotoDiagnosticItem(label: "审美目标", value: decision.aestheticTarget.title),
+                PhotoDiagnosticItem(label: "逐图摄影目标", value: decision.adaptiveTarget.summaryText),
+                PhotoDiagnosticItem(label: "目标计算依据", value: decision.adaptiveTarget.rationale),
                 PhotoDiagnosticItem(label: "最终摄影观感", value: decision.treatmentPlan.finalLook),
                 PhotoDiagnosticItem(label: "光线设计", value: decision.treatmentPlan.lightingDesign),
                 PhotoDiagnosticItem(
@@ -209,15 +210,15 @@ struct PhotoDiagnosticSection: Identifiable, Equatable, Sendable {
                         : "当前照片未检测到人物保护触发条件"
                 ),
                 PhotoDiagnosticItem(
-                    label: "电影模式",
-                    value: "\(decision.recipe.cinematicIntensity.title) · \(decision.recipe.cinematicToneStyle.rawValue)"
+                    label: "影调求解模式",
+                    value: "自适应七段影调 · \(decision.recipe.cinematicIntensity.title)"
                 ),
                 PhotoDiagnosticItem(label: "意图", value: decision.intent),
                 PhotoDiagnosticItem(
                     label: "逐图参数证据",
                     value: decision.parameterEvidence.map { evidence in
                         String(
-                            format: "%@：%@；输入=%@；目标=%@；范围 %.3f…%.3f；实际 %.3f；预期=%@；降级=%@",
+                            format: "%@：%@；输入=%@；目标=%@；范围 %.3f…%.3f；实际 %.3f；区域=%@；状态=%@；预期=%@；降级=%@",
                             evidence.key.rawValue,
                             evidence.purpose,
                             evidence.inputEvidence,
@@ -225,6 +226,8 @@ struct PhotoDiagnosticSection: Identifiable, Equatable, Sendable {
                             evidence.minimumValue,
                             evidence.maximumValue,
                             evidence.actualValue,
+                            evidence.affectedRegion.rawValue,
+                            evidence.decisionStatus.rawValue,
                             evidence.expectedResult,
                             evidence.fallbackBehavior
                         )
@@ -479,12 +482,13 @@ struct PhotoDiagnosticSection: Identifiable, Equatable, Sendable {
                                 )
                             }.joined(separator: ",")
                             return String(
-                                format: "%@%@ · %@ · %.1f分 · 问题改善 %.0f%% · 主体改善 %.0f%% · 区域协调 %.0f%% · 保真 %.0f%% · %@",
+                                format: "%@%@ · %@ · %.1f分 · 问题改善 %.0f%% · 逐图目标 %.0f%% · 主体改善 %.0f%% · 区域协调 %.0f%% · 保真 %.0f%% · %@",
                                 candidate.title,
                                 candidate.selected ? "（已选）" : "",
                                 candidate.status.rawValue,
                                 candidate.score,
                                 candidate.problemImprovement * 100,
+                                candidate.targetAttainmentScore * 100,
                                 candidate.subjectPriorityScore * 100,
                                 candidate.harmonyScore * 100,
                                 candidate.preservationScore * 100,

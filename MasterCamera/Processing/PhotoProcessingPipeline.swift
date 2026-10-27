@@ -44,7 +44,7 @@ final class PhotoProcessingPipeline {
         // 2. 找问题
         let decisionStart = ProcessInfo.processInfo.systemUptime
         let problemReport = problemDetector.detect(in: analysis)
-        // 3–4. 判断摄影风格并制定处理策略
+        // 3–4. 生成逐图摄影目标并动态求解参数
         let decision = photographyDirector.direct(analysis: analysis, problems: problemReport)
         let decisionDuration = ProcessInfo.processInfo.systemUptime - decisionStart
         let treatmentTrace = decision.treatmentPlan.regionalTreatments
@@ -54,11 +54,11 @@ final class PhotoProcessingPipeline {
             .joined(separator: "；")
         let parameterEvidenceTrace = decision.parameterEvidence
             .map {
-                "\($0.key.rawValue){input=\($0.inputEvidence); target=\($0.target); range=\($0.minimumValue)...\($0.maximumValue); value=\($0.actualValue)}"
+                "\($0.key.rawValue){input=\($0.inputEvidence); target=\($0.target); range=\($0.minimumValue)...\($0.maximumValue); value=\($0.actualValue); region=\($0.affectedRegion.rawValue); status=\($0.decisionStatus.rawValue)}"
             }
             .joined(separator: "；")
         AppLogger.imageEngine.info(
-            "摄影总监决策完成 \(Self.milliseconds(decisionDuration))ms：策略=\(decision.sceneStrategy.rawValue)，目标=\(decision.aestheticTarget.rawValue)，区域计划=[\(treatmentTrace, privacy: .public)]，逐图参数=[\(parameterEvidenceTrace, privacy: .public)]，人物保护=\(decision.treatmentPlan.portraitProtection.isActive)，问题=[\(problemReport.problems.map { $0.kind.rawValue }.joined(separator: ","), privacy: .public)]，配方=\(decision.recipe.traceSummary, privacy: .public)"
+            "摄影总监决策完成 \(Self.milliseconds(decisionDuration))ms：场景仅作分析=\(decision.sceneStrategy.rawValue)，逐图目标=\(decision.adaptiveTarget.summaryText, privacy: .public)，目标依据=\(decision.adaptiveTarget.rationale, privacy: .public)，区域计划=[\(treatmentTrace, privacy: .public)]，逐图参数=[\(parameterEvidenceTrace, privacy: .public)]，人物保护=\(decision.treatmentPlan.portraitProtection.isActive)，问题=[\(problemReport.problems.map { $0.kind.rawValue }.joined(separator: ","), privacy: .public)]，配方=\(decision.recipe.traceSummary, privacy: .public)"
         )
         // 5. 先在低分辨率预览上比较由同一摄影决策派生的候选。
         let candidateStart = ProcessInfo.processInfo.systemUptime
@@ -110,6 +110,7 @@ final class PhotoProcessingPipeline {
             initialEditedData: initialEditedData,
             initialQualityCheck: initialQualityCheck,
             initialRecipe: selectedDecision.recipe,
+            target: selectedDecision.adaptiveTarget,
             analysis: analysis,
             expectedRegions: selectedDecision.treatmentPlan.regionalTreatments.map(\.region)
         )
@@ -246,21 +247,21 @@ final class PhotoProcessingPipeline {
         decision.parameterEvidence.map { evidence in
             let result: String
             switch evidence.key {
-            case .exposure:
+            case .exposure, .brightness:
                 result = String(format: "平均亮度 %.3f→%.3f", source.averageLuminance, edited.averageLuminance)
             case .highlights, .whitePoint:
                 result = String(format: "高光 %.3f→%.3f，纯白 %.3f→%.3f", source.highlightRatio, edited.highlightRatio, source.whiteRatio, edited.whiteRatio)
             case .shadows, .blackPoint:
                 result = String(format: "阴影 %.3f→%.3f，纯黑 %.3f→%.3f", source.shadowRatio, edited.shadowRatio, source.blackRatio, edited.blackRatio)
-            case .contrast, .toneCurve, .localContrast:
+            case .contrast, .toneCurve, .localContrast, .midtoneContrast, .localTexture:
                 result = String(format: "亮度跨度 %.3f→%.3f，细节 %.3f→%.3f", source.contrastRange, edited.contrastRange, source.detailScore, edited.detailScore)
-            case .temperature, .tint:
+            case .temperature, .tint, .shadowColor, .midtoneColor, .highlightColor:
                 result = String(format: "RGB %.3f/%.3f/%.3f→%.3f/%.3f/%.3f", source.redAverage, source.greenAverage, source.blueAverage, edited.redAverage, edited.greenAverage, edited.blueAverage)
-            case .saturation, .vibrance, .orangeHSL, .greenHSL, .blueHSL:
+            case .hue, .saturation, .vibrance, .orangeHSL, .greenHSL, .blueHSL, .localColor:
                 result = String(format: "平均饱和度 %.3f→%.3f", source.averageSaturation, edited.averageSaturation)
             case .noiseReduction, .sharpening:
                 result = String(format: "噪声代理 %.3f→%.3f，细节 %.3f→%.3f", source.noiseEstimate, edited.noiseEstimate, source.detailScore, edited.detailScore)
-            case .luminanceMask:
+            case .luminanceMask, .localExposure, .localHighlights, .localShadows:
                 result = regionImpacts.isEmpty
                     ? "无可靠区域影响可测；全局高光/阴影结果见直方图"
                     : regionImpacts.map {
@@ -268,11 +269,13 @@ final class PhotoProcessingPipeline {
                     }.joined(separator: ",")
             }
             return String(
-                format: "%@ value=%.3f range=%.3f...%.3f · %@",
+                format: "%@ value=%.3f range=%.3f...%.3f region=%@ status=%@ · %@",
                 evidence.key.rawValue,
                 evidence.actualValue,
                 evidence.minimumValue,
                 evidence.maximumValue,
+                evidence.affectedRegion.rawValue,
+                evidence.decisionStatus.rawValue,
                 result
             )
         }
@@ -358,6 +361,11 @@ final class PhotoProcessingPipeline {
                     edited: quality.measuredAnalysis,
                     regionImpacts: regionImpacts
                 )
+                let targetAttainment = AdaptiveTargetAttainmentScorer().score(
+                    target: decision.adaptiveTarget,
+                    source: analysis,
+                    edited: quality.measuredAnalysis
+                )
                 let aestheticProgress = PhotographyAestheticProgressScorer().score(
                     source: analysis,
                     regionImpacts: regionImpacts
@@ -381,10 +389,11 @@ final class PhotoProcessingPipeline {
                     ? 14
                     : 0
                 let colorIntegrityPenalty = quality.colorIntegrity.riskPenalty * 34
-                let score = (improvement * 42)
-                    + (preservation * 22)
-                    + (aestheticProgress.subjectPriority * 18)
-                    + (aestheticProgress.regionalHarmony * 18)
+                let score = (improvement * 32)
+                    + (targetAttainment * 26)
+                    + (preservation * 16)
+                    + (aestheticProgress.subjectPriority * 13)
+                    + (aestheticProgress.regionalHarmony * 13)
                     + 10
                     - technicalPenalty
                     - insufficientImprovementPenalty
@@ -397,18 +406,19 @@ final class PhotoProcessingPipeline {
                     status: status,
                     score: score,
                     problemImprovement: improvement,
+                    targetAttainmentScore: targetAttainment,
                     preservationScore: preservation,
                     subjectPriorityScore: aestheticProgress.subjectPriority,
                     harmonyScore: aestheticProgress.regionalHarmony,
                     issues: quality.issues.map(\.rawValue),
                     regionImpacts: regionImpacts,
-                    reason: "\(plan.rationale) 技术质检=\(quality.status.rawValue)；主体改善=\(Int((aestheticProgress.subjectPriority * 100).rounded()))%，区域协调=\(Int((aestheticProgress.regionalHarmony * 100).rounded()))%，肤色/中性色风险=\(Int((quality.colorIntegrity.riskPenalty * 100).rounded()))%，弱改善惩罚=\(Int(insufficientImprovementPenalty))；不以像素差异大小单独判优。",
+                    reason: "\(plan.rationale) 技术质检=\(quality.status.rawValue)；逐图目标达成=\(Int((targetAttainment * 100).rounded()))%，主体改善=\(Int((aestheticProgress.subjectPriority * 100).rounded()))%，区域协调=\(Int((aestheticProgress.regionalHarmony * 100).rounded()))%，肤色/中性色风险=\(Int((quality.colorIntegrity.riskPenalty * 100).rounded()))%，弱改善惩罚=\(Int(insufficientImprovementPenalty))；不以像素差异大小单独判优。",
                     durationMilliseconds: duration,
                     selected: false
                 )
                 evaluations.append(evaluation)
                 AppLogger.imageEngine.info(
-                    "候选 \(plan.intent.rawValue, privacy: .public)：status=\(status.rawValue, privacy: .public) score=\(score) improvement=\(improvement) subject=\(aestheticProgress.subjectPriority) harmony=\(aestheticProgress.regionalHarmony) preservation=\(preservation) colorRisk=\(quality.colorIntegrity.riskPenalty) weakPenalty=\(insufficientImprovementPenalty) duration=\(duration)ms recipe=\(plan.recipe.traceSummary, privacy: .public)"
+                    "候选 \(plan.intent.rawValue, privacy: .public)：status=\(status.rawValue, privacy: .public) score=\(score) improvement=\(improvement) target=\(targetAttainment) subject=\(aestheticProgress.subjectPriority) harmony=\(aestheticProgress.regionalHarmony) preservation=\(preservation) colorRisk=\(quality.colorIntegrity.riskPenalty) weakPenalty=\(insufficientImprovementPenalty) duration=\(duration)ms recipe=\(plan.recipe.traceSummary, privacy: .public)"
                 )
             } catch {
                 let duration = Self.milliseconds(ProcessInfo.processInfo.systemUptime - start)
@@ -440,11 +450,12 @@ final class PhotoProcessingPipeline {
             $0.planID == selected.planID ? $0.markingSelected() : $0
         }
         let selectionReason = String(
-            format: "%@；最终按实测选择：状态=%@，得分=%.1f，问题改善=%.1f%%，主体改善=%.1f%%，区域协调=%.1f%%，保真=%.1f%%。",
+            format: "%@；最终按实测选择：状态=%@，得分=%.1f，问题改善=%.1f%%，逐图目标达成=%.1f%%，主体改善=%.1f%%，区域协调=%.1f%%，保真=%.1f%%。",
             selected.reason,
             selected.status.rawValue,
             selected.score,
             selected.problemImprovement * 100,
+            selected.targetAttainmentScore * 100,
             selected.subjectPriorityScore * 100,
             selected.harmonyScore * 100,
             selected.preservationScore * 100
@@ -468,6 +479,7 @@ final class PhotoProcessingPipeline {
         initialEditedData: Data,
         initialQualityCheck: QualityCheckResult,
         initialRecipe: AutomaticEditingRecipe,
+        target: AdaptivePhotographyTarget,
         analysis: PhotoAnalysis,
         expectedRegions: [TreatmentRegion]
     ) throws -> (
@@ -485,10 +497,16 @@ final class PhotoProcessingPipeline {
             "初版成片质检失败，原因：\(initialQualityCheck.issues.map(\.rawValue).joined(separator: ","))；开始一次有边界的针对性重算"
         )
 
+        if initialQualityCheck.issues.contains(.canvasMismatch) {
+            throw PhotoProcessingError.qualityValidationFailed("最终画布与原图不一致；拒绝用固定回退配方掩盖输出链错误。")
+        }
+
         do {
             let correctiveRecipe = correctionRecipe(
                 from: initialRecipe,
-                issues: initialQualityCheck.issues
+                issues: initialQualityCheck.issues,
+                target: target,
+                measured: initialQualityCheck.measuredAnalysis
             )
             let correctiveData = try renderer.renderAutomaticEdit(
                 from: originalData,
@@ -535,51 +553,56 @@ final class PhotoProcessingPipeline {
     /// reused and at most one issue-specific correction render is attempted.
     private func correctionRecipe(
         from original: AutomaticEditingRecipe,
-        issues: [QualityIssue]
+        issues: [QualityIssue],
+        target: AdaptivePhotographyTarget,
+        measured: PhotoAnalysis
     ) -> AutomaticEditingRecipe {
-        if issues.contains(.canvasMismatch) {
-            return .safeFallback
-        }
-
         var recipe = original
         let set = Set(issues)
 
         if !set.isDisjoint(with: [.possibleRenderFallback, .insufficientProcessingImpact]) {
-            // The first render completed but did not visibly move decoded pixels. Keep the
-            // scene recipe and strengthen only the photographic controls that are already
-            // selected instead of replacing it with one shared fallback preset.
-            recipe.toneCurveAmount = max(recipe.toneCurveAmount, 0.42)
-            recipe.localContrastAmount = max(recipe.localContrastAmount, 0.065)
-            recipe.vibrance = max(recipe.vibrance, 0.085)
-            recipe.contrast = max(recipe.contrast, 1.025)
-            recipe.shadowZoneExposureEV = max(recipe.shadowZoneExposureEV, 0.055)
-            recipe.highlightZoneExposureEV = min(recipe.highlightZoneExposureEV, -0.055)
-            recipe.luminanceMaskStrength = max(recipe.luminanceMaskStrength, 0.42)
+            let luminanceResidual = target.luminance - measured.averageLuminance
+            let contrastResidual = target.contrast - measured.contrastRange
+            let saturationResidual = target.saturation - measured.averageSaturation
+            recipe.exposureEV += (luminanceResidual * 0.32).clamped(to: -0.08...0.08)
+            recipe.brightness += (luminanceResidual * 0.06).clamped(to: -0.018...0.018)
+            recipe.contrast += (contrastResidual * 0.1).clamped(to: -0.025...0.025)
+            recipe.toneCurveAmount += (abs(contrastResidual) * 0.28).clamped(to: 0...0.12)
+            recipe.localContrastAmount += (max(0, contrastResidual) * 0.12).clamped(to: 0...0.045)
+            if saturationResidual > 0 {
+                recipe.vibrance += (saturationResidual * 0.24).clamped(to: 0...0.045)
+            } else {
+                recipe.saturation += (saturationResidual * 0.1).clamped(to: -0.025...0)
+            }
         }
 
         if !set.isDisjoint(with: [.tooDark, .crushedShadows, .abnormalBlackCoverage]) {
-            recipe.exposureEV = max(recipe.exposureEV, 0.04)
-            recipe.shadowAmount = max(recipe.shadowAmount, 0.2)
-            recipe.shadowRollOff = max(recipe.shadowRollOff, 0.24)
-            recipe.shadowZoneExposureEV = min(0.16, max(recipe.shadowZoneExposureEV, 0.08))
+            let residual = max(0, target.luminanceMinimum - measured.averageLuminance)
+            let shadowResidual = max(0, measured.shadowRatio - target.shadowRatio)
+            recipe.exposureEV += (residual * 0.38).clamped(to: 0...0.1)
+            recipe.shadowAmount += (shadowResidual * 0.5).clamped(to: 0...0.16)
+            recipe.shadowRollOff += (shadowResidual * 0.35).clamped(to: 0...0.12)
+            recipe.shadowZoneExposureEV += (shadowResidual * 0.22).clamped(to: 0...0.07)
             recipe.blackPoint = min(recipe.blackPoint, 0.004)
-            recipe.contrast = min(recipe.contrast, 1.025)
         }
 
         if !set.isDisjoint(with: [.tooBright, .clippedHighlights, .expandedPureWhite, .excessiveHighlightSpread]) {
-            recipe.exposureEV = min(recipe.exposureEV, -0.035)
-            recipe.highlightAmount = min(recipe.highlightAmount, 0.52)
-            recipe.highlightRollOff = max(recipe.highlightRollOff, 0.32)
-            recipe.highlightZoneExposureEV = max(-0.2, min(recipe.highlightZoneExposureEV, -0.1))
-            recipe.whitePoint = min(recipe.whitePoint, 0.97)
+            let residual = max(0, measured.averageLuminance - target.luminanceMaximum)
+            let highlightResidual = max(0, measured.highlightRatio - target.highlightRatio)
+            recipe.exposureEV -= (residual * 0.35).clamped(to: 0...0.1)
+            recipe.highlightAmount -= (highlightResidual * 0.8).clamped(to: 0...0.2)
+            recipe.highlightRollOff += (highlightResidual * 0.6).clamped(to: 0...0.18)
+            recipe.highlightZoneExposureEV -= (highlightResidual * 0.28).clamped(to: 0...0.08)
+            recipe.whitePoint -= (highlightResidual * 0.08).clamped(to: 0...0.018)
             recipe.bloomIntensity = 0
             recipe.halationIntensity = 0
         }
 
         if set.contains(.tooFlat) {
-            recipe.toneCurveAmount = max(recipe.toneCurveAmount, 0.26)
-            recipe.contrast = max(recipe.contrast, 1.025)
-            recipe.localContrastAmount = min(0.08, max(recipe.localContrastAmount, 0.04))
+            let residual = max(0, target.contrast - measured.contrastRange)
+            recipe.toneCurveAmount += (residual * 0.5).clamped(to: 0...0.18)
+            recipe.contrast += (residual * 0.12).clamped(to: 0...0.035)
+            recipe.localContrastAmount += (residual * 0.16).clamped(to: 0...0.055)
         }
 
         if set.contains(.tooHarsh) || set.contains(.overprocessedDetail) {

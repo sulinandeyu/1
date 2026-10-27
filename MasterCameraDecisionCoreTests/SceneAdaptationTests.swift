@@ -29,7 +29,7 @@ final class SceneAdaptationTests: XCTestCase {
             coast.parameterEvidence.map(\.actualValue),
             plaza.parameterEvidence.map(\.actualValue)
         )
-        XCTAssertNotEqual(coast.treatmentPlan.finalLook, plaza.treatmentPlan.finalLook)
+        XCTAssertEqual(coast.treatmentPlan.finalLook, plaza.treatmentPlan.finalLook)
     }
 
     func testOvercastAndClearSkyDoNotReceiveOneFixedSkyPreset() {
@@ -183,9 +183,9 @@ final class SceneAdaptationTests: XCTestCase {
 
         XCTAssertEqual(autumnNightPath.sceneStrategy, .night)
         XCTAssertEqual(warmBedroom.sceneStrategy, .workspace)
-        XCTAssertNotEqual(autumnNightPath.aestheticTarget, warmBedroom.aestheticTarget)
+        XCTAssertNotEqual(autumnNightPath.adaptiveTarget, warmBedroom.adaptiveTarget)
         XCTAssertNotEqual(autumnNightPath.treatmentPlan.finalLook, warmBedroom.treatmentPlan.finalLook)
-        XCTAssertNotEqual(autumnNightPath.recipe.temperatureShift, warmBedroom.recipe.temperatureShift)
+        XCTAssertNotEqual(autumnNightPath.recipe, warmBedroom.recipe)
         XCTAssertNotEqual(
             autumnNightPath.parameterEvidence.map(\.actualValue),
             warmBedroom.parameterEvidence.map(\.actualValue)
@@ -563,14 +563,15 @@ final class SceneAdaptationTests: XCTestCase {
             problems: brightProblems
         )
 
-        XCTAssertEqual(darkPlans.count, 3)
-        XCTAssertEqual(Set(darkPlans.map(\.intent)), Set(PhotographyCandidateIntent.allCases))
+        XCTAssertGreaterThanOrEqual(darkPlans.count, 2)
+        XCTAssertEqual(darkPlans.first?.intent, .natural)
+        XCTAssertTrue(darkPlans.contains { $0.intent == .dimensional })
         XCTAssertGreaterThanOrEqual(Set(darkPlans.map { $0.recipe.traceSummary }).count, 2)
-        let darkTargeted = try XCTUnwrap(darkPlans.first { $0.intent == .targeted })
-        let brightTargeted = try XCTUnwrap(brightPlans.first { $0.intent == .targeted })
-        XCTAssertGreaterThan(darkTargeted.recipe.exposureEV, brightTargeted.recipe.exposureEV)
-        XCTAssertNotEqual(darkTargeted.recipe.traceSummary, brightTargeted.recipe.traceSummary)
-        XCTAssertTrue(darkTargeted.adjustments.contains { $0.adjustmentType == .globalExposure })
+        let darkCorrection = try XCTUnwrap(darkPlans.first { $0.intent == .dimensional })
+        let brightCorrection = try XCTUnwrap(brightPlans.first { $0.intent == .dimensional })
+        XCTAssertGreaterThan(darkCorrection.recipe.exposureEV, brightCorrection.recipe.exposureEV)
+        XCTAssertNotEqual(darkCorrection.recipe.traceSummary, brightCorrection.recipe.traceSummary)
+        XCTAssertTrue(darkCorrection.adjustments.contains { $0.adjustmentType == .globalExposure })
     }
 
     func testV8RegionalProblemUsesMaskBackedMeasurements() throws {
@@ -1082,6 +1083,118 @@ final class SceneAdaptationTests: XCTestCase {
         XCTAssertLessThan(brightDecision.recipe.exposureEV, 0)
         XCTAssertNotEqual(darkExposure.inputEvidence, brightExposure.inputEvidence)
         XCTAssertNotEqual(darkExposure.actualValue, brightExposure.actualValue)
+    }
+
+    func testAdaptiveSolverProducesSameTechnicalRecipeForDifferentLabelsWithIdenticalPixels() {
+        let landscape = decision(for: fixture(
+            luminance: 0.39,
+            contrast: 0.43,
+            saturation: 0.21,
+            red: 0.43,
+            green: 0.45,
+            blue: 0.46,
+            labels: ["landscape", "mountain"]
+        ))
+        let architecture = decision(for: fixture(
+            luminance: 0.39,
+            contrast: 0.43,
+            saturation: 0.21,
+            red: 0.43,
+            green: 0.45,
+            blue: 0.46,
+            labels: ["building", "architecture"]
+        ))
+
+        XCTAssertNotEqual(landscape.sceneStrategy, architecture.sceneStrategy)
+        XCTAssertEqual(landscape.adaptiveTarget, architecture.adaptiveTarget)
+        XCTAssertEqual(landscape.recipe, architecture.recipe)
+    }
+
+    func testAdaptiveSolverLimitsShadowLiftWhenNoiseIsHigh() {
+        let clean = decision(for: fixture(
+            luminance: 0.24,
+            contrast: 0.36,
+            saturation: 0.18,
+            labels: ["outdoor"],
+            shadowRatio: 0.52,
+            noiseEstimate: 0.04
+        ))
+        let noisy = decision(for: fixture(
+            luminance: 0.24,
+            contrast: 0.36,
+            saturation: 0.18,
+            labels: ["outdoor"],
+            shadowRatio: 0.52,
+            noiseEstimate: 0.24
+        ))
+
+        XCTAssertGreaterThan(clean.recipe.shadowAmount, noisy.recipe.shadowAmount)
+        XCTAssertGreaterThan(clean.recipe.shadowZoneExposureEV, noisy.recipe.shadowZoneExposureEV)
+        XCTAssertGreaterThan(noisy.recipe.noiseReductionAmount, clean.recipe.noiseReductionAmount)
+    }
+
+    func testAdaptiveSolverMovesContrastInMeasuredDirection() {
+        let flat = decision(for: fixture(
+            luminance: 0.46,
+            contrast: 0.24,
+            saturation: 0.22,
+            labels: ["outdoor"]
+        ))
+        let harsh = decision(for: fixture(
+            luminance: 0.46,
+            contrast: 0.82,
+            saturation: 0.22,
+            labels: ["outdoor"],
+            shadowRatio: 0.3,
+            highlightRatio: 0.2
+        ))
+
+        XCTAssertGreaterThan(flat.recipe.contrast, 1)
+        XCTAssertGreaterThan(flat.recipe.localContrastAmount, 0)
+        XCTAssertLessThan(harsh.recipe.contrast, 1)
+        XCTAssertEqual(harsh.recipe.localContrastAmount, 0, accuracy: 0.0001)
+    }
+
+    func testBalancedImageDoesNotReceiveThreeFixedCandidates() {
+        let analysis = fixture(
+            luminance: 0.46,
+            contrast: 0.57,
+            saturation: 0.28,
+            red: 0.46,
+            green: 0.47,
+            blue: 0.47,
+            labels: ["outdoor"],
+            shadowRatio: 0.1,
+            highlightRatio: 0.06,
+            blackRatio: 0.01,
+            whiteRatio: 0.01,
+            detailScore: 0.22,
+            noiseEstimate: 0.04
+        )
+        let problems = detector.detect(in: analysis)
+        let plans = PhotographyCandidatePlanner().makePlans(
+            decision: engine.makeDecision(for: analysis, problems: problems),
+            analysis: analysis,
+            problems: problems
+        )
+
+        XCTAssertEqual(plans.first?.intent, .natural)
+        XCTAssertLessThan(plans.count, PhotographyCandidateIntent.allCases.count)
+    }
+
+    func testParameterEvidenceIncludesRegionAndDecisionState() {
+        let result = decision(for: fixture(
+            luminance: 0.25,
+            contrast: 0.3,
+            saturation: 0.18,
+            labels: ["outdoor"],
+            shadowRatio: 0.46
+        ))
+
+        XCTAssertTrue(result.parameterEvidence.contains {
+            $0.key == .exposure && $0.affectedRegion == .global && $0.decisionStatus == .planned
+        })
+        XCTAssertTrue(result.parameterEvidence.contains { $0.key == .localExposure })
     }
 
     func testV9SameIndoorSceneDifferentCastProducesOppositeWhiteBalance() {

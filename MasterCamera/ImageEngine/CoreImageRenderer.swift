@@ -268,7 +268,7 @@ final class CoreImageRenderer {
         return (finished, canvas, [
             ("A 原始照片", input),
             ("曝光与动态范围", blackAdjusted),
-            ("七段电影影调", curved),
+            ("自适应七段影调", curved),
             ("B 仅全局调整", graded),
             ("C 全局+局部蒙版", local),
             ("E 自动选择最终结果", finished)
@@ -452,13 +452,13 @@ final class CoreImageRenderer {
         var modules = ["方向/色彩空间", "曝光", "高光阴影"]
         if recipe.blackPoint > 0.001 { modules.append("黑位") }
         if recipe.toneCurveAmount > 0.001 { modules.append("\(recipe.toneCurveStyle.rawValue)曲线") }
-        modules.append("七段电影影调/\(recipe.cinematicIntensity.title)")
+        modules.append("自适应七段影调/\(recipe.cinematicIntensity.title)")
         if abs(recipe.temperatureShift) > 0.5 || abs(recipe.tintShift) > 0.01 { modules.append("白平衡") }
         modules.append("色彩控制")
         if recipe.vibrance > 0.001 { modules.append("自然饱和度") }
         if recipe.hsl != .neutral { modules.append("分区 HSL") }
         if recipe.luminanceMaskStrength > 0.001 { modules.append("亮度蒙版高光/阴影") }
-        if recipe.colorGradeIntensity > 0.001 { modules.append("阴影/中间调/高光电影分级") }
+        if recipe.colorGradeIntensity > 0.001 { modules.append("阴影/中间调/高光色彩协调") }
         if recipe.subjectExposureEV > 0.001 || recipe.faceExposureEV > 0.001 { modules.append("主体/人脸补光") }
         modules.append(contentsOf: regionalExecutionDetails(for: recipe, analysis: analysis)
             .filter { $0.contains("已执行") })

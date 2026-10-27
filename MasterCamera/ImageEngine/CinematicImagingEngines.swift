@@ -3,8 +3,9 @@ import CoreImage
 import CoreImage.CIFilterBuiltins
 import Foundation
 
-/// Seven-anchor, scene-selected filmic transfer curve. The lookup cube is applied to the
-/// full-resolution CIImage; it is not a preview-only display effect.
+/// Seven-anchor adaptive transfer curve. The neutral anchors are adjusted only by values
+/// produced from the current photo's measurements, then applied to the full-resolution
+/// CIImage. This is not a scene-selected LUT or a preview-only display effect.
 final class CinematicToneMappingEngine {
     private let cubeDimension = 32
 
