@@ -23,3 +23,13 @@ Package.resolved
 TestPhotos/
 图片/
 真实图片/
+
+# Licensed dataset pixels are local-only. Manifests, feature vectors, license
+# records and reports stay versionable, but third-party image bytes do not.
+PhotographyDataset/assets/
+PhotographyDataset/downloads/
+PhotographyDataset/reports/*contact-sheet*.jpg
+
+# Human preference exports may contain reviewer notes and local filenames.
+PhoneValidationDataset/evaluation/results/*.json
+!PhoneValidationDataset/evaluation/results/.gitkeep

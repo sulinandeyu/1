@@ -366,11 +366,11 @@ final class LocalAdjustmentProcessor {
         if abs(adjustment.temperatureShift) > 0.5 {
             let filter = CIFilter.temperatureAndTint()
             filter.inputImage = adjusted
-            filter.neutral = CIVector(x: 6500, y: 0)
-            filter.targetNeutral = CIVector(
+            filter.neutral = CIVector(
                 x: CGFloat(6500 + adjustment.temperatureShift),
                 y: 0
             )
+            filter.targetNeutral = CIVector(x: 6500, y: 0)
             adjusted = filter.outputImage ?? adjusted
         }
         adjusted = adjusted.applyingFilter("CIColorControls", parameters: [

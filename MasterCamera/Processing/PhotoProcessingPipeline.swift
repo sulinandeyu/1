@@ -9,6 +9,8 @@ final class PhotoProcessingPipeline {
     private let renderer: CoreImageRenderer
     private let qualityService: QualityCheckService
     private let diagnosticsService: ImageProcessingDiagnosticsService
+    private let configuration: ProcessingConfiguration
+    private let referenceMatcher: PhotographyReferenceMatcher?
 
     init(
         analyzer: PhotoAnalyzer = PhotoAnalyzer(),
@@ -17,7 +19,9 @@ final class PhotoProcessingPipeline {
         candidatePlanner: PhotographyCandidatePlanner = PhotographyCandidatePlanner(),
         renderer: CoreImageRenderer = CoreImageRenderer(),
         qualityService: QualityCheckService = QualityCheckService(),
-        diagnosticsService: ImageProcessingDiagnosticsService = ImageProcessingDiagnosticsService()
+        diagnosticsService: ImageProcessingDiagnosticsService = ImageProcessingDiagnosticsService(),
+        configuration: ProcessingConfiguration = .current,
+        referenceMatcher: PhotographyReferenceMatcher? = PhotographyReferenceMatcher.loadBundledForValidation()
     ) {
         self.analyzer = analyzer
         self.problemDetector = problemDetector
@@ -26,6 +30,8 @@ final class PhotoProcessingPipeline {
         self.renderer = renderer
         self.qualityService = qualityService
         self.diagnosticsService = diagnosticsService
+        self.configuration = configuration
+        self.referenceMatcher = referenceMatcher
     }
 
     func process(_ photo: CapturedPhoto) throws -> CapturedPhoto {
@@ -54,7 +60,8 @@ final class PhotoProcessingPipeline {
             .joined(separator: "；")
         let parameterEvidenceTrace = decision.parameterEvidence
             .map {
-                "\($0.key.rawValue){input=\($0.inputEvidence); target=\($0.target); range=\($0.minimumValue)...\($0.maximumValue); value=\($0.actualValue); region=\($0.affectedRegion.rawValue); status=\($0.decisionStatus.rawValue)}"
+                let rules = $0.knowledgeRuleIDs.map(\.rawValue).joined(separator: ",")
+                return "\($0.key.rawValue){rules=\(rules); input=\($0.inputEvidence); target=\($0.target); range=\($0.minimumValue)...\($0.maximumValue); value=\($0.actualValue); region=\($0.affectedRegion.rawValue); status=\($0.decisionStatus.rawValue)}"
             }
             .joined(separator: "；")
         AppLogger.imageEngine.info(
@@ -125,7 +132,16 @@ final class PhotoProcessingPipeline {
             "处理完成：渲染=\(Self.milliseconds(renderDuration))ms，质检/回退=\(Self.milliseconds(qualityDuration))ms，总计=\(Self.milliseconds(totalDuration))ms，状态=\(finalEdit.qualityCheck.status.rawValue)，安全回退=\(finalEdit.qualityCheck.fallbackApplied)，RGB_MAE=\(finalEdit.qualityCheck.processingImpact.normalizedMeanAbsoluteRGBDifference)，变化像素=\(finalEdit.qualityCheck.processingImpact.changedPixelRatio)，肤色偏移=\(finalEdit.qualityCheck.colorIntegrity.skinColorDifference)，中性色染色=\(finalEdit.qualityCheck.colorIntegrity.neutralChromaIncrease)，最终配方=\(finalEdit.recipe.traceSummary, privacy: .public)"
         )
 
-        let stageRecords = [
+        // The reference-driven path is an isolated experiment. It runs only for
+        // explicit diagnostic imports, produces candidate C, and never replaces B.
+        let referenceValidation = evaluateReferenceCandidate(
+            originalData: photo.originalImageData,
+            analysis: analysis,
+            problems: problemReport,
+            isDiagnosticImport: photo.isDiagnosticImport
+        )
+
+        var stageRecords = [
             ProcessingStageRecord(
                 name: "照片理解",
                 durationMilliseconds: Self.milliseconds(analysisDuration),
@@ -163,6 +179,9 @@ final class PhotoProcessingPipeline {
                 detail: Self.memorySummary(start: startingMemory, end: finishingMemory)
             )
         ]
+        if let referenceStage = referenceValidation?.stage {
+            stageRecords.append(referenceStage)
+        }
         let diagnosticsResult: ImageDiagnosticsResult?
         do {
             let finalRegionImpacts = try qualityService.measureRegionImpacts(
@@ -189,6 +208,7 @@ final class PhotoProcessingPipeline {
                 ),
                 candidateEvaluations: candidateResult.evaluations,
                 finalRegionImpacts: finalRegionImpacts,
+                referenceValidationDetails: referenceValidation?.details ?? [],
                 stages: stageRecords,
                 fallbackReason: finalEdit.fallbackReason
             )
@@ -210,14 +230,35 @@ final class PhotoProcessingPipeline {
                     analysis: analysis,
                     recipe: finalEdit.recipe
                 )
-                stagePreviews = candidateResult.previews + renderedStages + maskDiagnostics
+                var comparisonPreviews = [
+                    ProcessingStagePreview(name: "A 原始照片", imageData: photo.originalImageData),
+                    ProcessingStagePreview(name: "B 当前正式算法成片", imageData: finalEdit.data)
+                ]
+                if let referencePreview = referenceValidation?.preview {
+                    comparisonPreviews.append(referencePreview)
+                }
+                stagePreviews = comparisonPreviews
+                    + candidateResult.previews
+                    + renderedStages
+                    + maskDiagnostics
             } else {
                 stagePreviews = renderedStages
             }
         } catch {
             // Candidate previews were already rendered successfully and remain useful
             // even if a later full-stage or mask diagnostic preview fails.
-            stagePreviews = photo.isDiagnosticImport ? candidateResult.previews : []
+            if photo.isDiagnosticImport {
+                var comparisonPreviews = [
+                    ProcessingStagePreview(name: "A 原始照片", imageData: photo.originalImageData),
+                    ProcessingStagePreview(name: "B 当前正式算法成片", imageData: finalEdit.data)
+                ]
+                if let referencePreview = referenceValidation?.preview {
+                    comparisonPreviews.append(referencePreview)
+                }
+                stagePreviews = comparisonPreviews + candidateResult.previews
+            } else {
+                stagePreviews = []
+            }
             AppLogger.imageEngine.error("处理阶段预览生成失败：\(error.localizedDescription)")
         }
 
@@ -236,6 +277,148 @@ final class PhotoProcessingPipeline {
             differenceImageData: diagnosticsResult?.differenceImageData,
             processingStagePreviews: stagePreviews
         )
+    }
+
+    private func evaluateReferenceCandidate(
+        originalData: Data,
+        analysis: PhotoAnalysis,
+        problems: PhotoProblemReport,
+        isDiagnosticImport: Bool
+    ) -> ReferenceValidationCandidateResult? {
+        guard configuration.referenceValidation.isEnabled(
+            isDiagnosticImport: isDiagnosticImport
+        ) else { return nil }
+        let start = ProcessInfo.processInfo.systemUptime
+        guard let referenceMatcher else {
+            return ReferenceValidationCandidateResult(
+                preview: nil,
+                details: [
+                    "状态=indexUnavailable",
+                    "原因=App 包内没有可解码的许可过滤参考特征索引；B 仍由原逐图求解器生成",
+                    "未执行 Core Image 候选 C"
+                ],
+                stage: ProcessingStageRecord(
+                    name: "摄影参考验证候选 C",
+                    durationMilliseconds: Self.milliseconds(ProcessInfo.processInfo.systemUptime - start),
+                    executed: false,
+                    detail: "参考索引不可用；安全降级到 B，不伪装成参考驱动结果"
+                )
+            )
+        }
+
+        let match = referenceMatcher.match(
+            analysis: analysis,
+            maximumResults: configuration.referenceValidation.maximumMatches
+        )
+        let profile = PhotographyReferenceTargetGenerator().makeProfile(
+            analysis: analysis,
+            problems: problems,
+            matchResult: match
+        )
+        let matchTrace = match.matches.map { item in
+            "\(item.record.id){相似=\(String(format: "%.1f", item.similarity * 100))%；度量=\(String(format: "%.1f", item.metricSimilarity * 100))%；语义=\(String(format: "%.1f", item.semanticSimilarity * 100))%；许可=\(item.record.license.name)；依据=[\(item.reasons.joined(separator: "；"))]；不可迁移=[\(item.nonTransferableFeatures.joined(separator: ","))]}"
+        }.joined(separator: " | ")
+        guard profile.referenceApplied else {
+            let reason = match.fallbackReason ?? "参考适用性门控未通过"
+            AppLogger.imageEngine.info(
+                "摄影参考验证降级：status=\(match.status.rawValue, privacy: .public) confidence=\(match.confidence) reason=\(reason, privacy: .public)"
+            )
+            return ReferenceValidationCandidateResult(
+                preview: nil,
+                details: [
+                    "状态=\(match.status.rawValue)",
+                    "置信度=\(String(format: "%.1f", match.confidence * 100))%",
+                    "匹配=\(matchTrace.isEmpty ? "无" : matchTrace)",
+                    "降级=\(reason)",
+                    "候选 C 未渲染；B 保持原逐图测量结果"
+                ],
+                stage: ProcessingStageRecord(
+                    name: "摄影参考验证候选 C",
+                    durationMilliseconds: Self.milliseconds(ProcessInfo.processInfo.systemUptime - start),
+                    executed: false,
+                    detail: "适用性不足，安全降级；\(reason)"
+                )
+            )
+        }
+
+        do {
+            let referenceDecision = photographyDirector.direct(
+                analysis: analysis,
+                problems: problems,
+                targetProfile: profile
+            )
+            let candidateData = try renderer.renderAutomaticEdit(
+                from: originalData,
+                recipe: referenceDecision.recipe,
+                analysis: analysis
+            )
+            let regionalExecution = renderer.regionalExecutionDetails(
+                for: referenceDecision.recipe,
+                analysis: analysis
+            )
+            let quality = try qualityService.check(
+                originalData: originalData,
+                editedData: candidateData,
+                sourceAnalysis: analysis,
+                expectedRegions: referenceDecision.treatmentPlan.regionalTreatments.map(\.region),
+                regionalExecutionDetails: regionalExecution
+            )
+            let parameters = referenceDecision.parameterEvidence.map { evidence in
+                "\(evidence.key.rawValue)=\(String(format: "%.4f", evidence.actualValue)){rules=\(evidence.knowledgeRuleIDs.map(\.rawValue).joined(separator: ","));status=\(evidence.decisionStatus.rawValue)}"
+            }.joined(separator: ",")
+            let localPlan = referenceDecision.treatmentPlan.regionalTreatments.map { item in
+                "\(item.region.rawValue){confidence=\(String(format: "%.2f", item.confidence));\(item.parameters)}"
+            }.joined(separator: " | ")
+            let duration = Self.milliseconds(ProcessInfo.processInfo.systemUptime - start)
+            let details = [
+                "状态=matchedForValidation；仅诊断导入启用，不替换正式 B",
+                "置信度=\(String(format: "%.1f", match.confidence * 100))%；参考影响=\(String(format: "%.1f", profile.referenceInfluence * 100))%",
+                "匹配依据=\(matchTrace)",
+                "目标=\(profile.resolvedTarget.summaryText)；依据=\(profile.rationale.joined(separator: " "))",
+                "保护=\(profile.preservedProperties.joined(separator: ","))",
+                "参数=\(parameters)",
+                "局部计划=\(localPlan.isEmpty ? "无可靠局部区域" : localPlan)",
+                "区域执行=\(regionalExecution.joined(separator: " | "))",
+                "候选 C 质检=\(quality.status.rawValue)；问题=[\(quality.issues.map(\.rawValue).joined(separator: ","))]；RGB_MAE=\(String(format: "%.4f", quality.processingImpact.normalizedMeanAbsoluteRGBDifference))；肤色偏移=\(String(format: "%.4f", quality.colorIntegrity.skinColorDifference))；中性色染色=\(String(format: "%.4f", quality.colorIntegrity.neutralChromaIncrease))",
+                "耗时=\(duration)ms；iPhone 视觉审美=尚未人工验收"
+            ]
+            AppLogger.imageEngine.info(
+                "摄影参考验证候选 C 完成：\(details.joined(separator: "；"), privacy: .public)"
+            )
+            return ReferenceValidationCandidateResult(
+                preview: ProcessingStagePreview(
+                    name: "C 摄影参考校准候选（\(quality.status.rawValue)）",
+                    imageData: candidateData
+                ),
+                details: details,
+                stage: ProcessingStageRecord(
+                    name: "摄影参考验证候选 C",
+                    durationMilliseconds: duration,
+                    executed: true,
+                    detail: "Core Image 已渲染 · \(match.matches.count) 条参考 · 质检 \(quality.status.rawValue) · 未替换 B"
+                )
+            )
+        } catch {
+            let duration = Self.milliseconds(ProcessInfo.processInfo.systemUptime - start)
+            AppLogger.imageEngine.error(
+                "摄影参考验证候选 C 失败，正式 B 不受影响：\(error.localizedDescription, privacy: .public)"
+            )
+            return ReferenceValidationCandidateResult(
+                preview: nil,
+                details: [
+                    "状态=renderFailed",
+                    "匹配=\(matchTrace)",
+                    "错误=\(error.localizedDescription)",
+                    "B 保持当前正式算法结果；未把失败伪装成 C"
+                ],
+                stage: ProcessingStageRecord(
+                    name: "摄影参考验证候选 C",
+                    durationMilliseconds: duration,
+                    executed: false,
+                    detail: "渲染或质检失败：\(error.localizedDescription)"
+                )
+            )
+        }
     }
 
     private func parameterExecutionResults(
@@ -269,8 +452,9 @@ final class PhotoProcessingPipeline {
                     }.joined(separator: ",")
             }
             return String(
-                format: "%@ value=%.3f range=%.3f...%.3f region=%@ status=%@ · %@",
+                format: "%@ rules=%@ value=%.3f range=%.3f...%.3f region=%@ status=%@ · %@",
                 evidence.key.rawValue,
+                evidence.knowledgeRuleIDs.map(\.rawValue).joined(separator: ","),
                 evidence.actualValue,
                 evidence.minimumValue,
                 evidence.maximumValue,
@@ -709,6 +893,12 @@ final class PhotoProcessingPipeline {
             delta
         )
     }
+}
+
+private struct ReferenceValidationCandidateResult {
+    let preview: ProcessingStagePreview?
+    let details: [String]
+    let stage: ProcessingStageRecord
 }
 
 enum PhotoProcessingError: LocalizedError {

@@ -43,6 +43,10 @@ struct PhotoAnalysis: Equatable, Sendable {
     let semanticLabels: [SceneLabel]
     var sceneRecognitionDiagnostics: SceneRecognitionDiagnostics = .notEvaluated
     var segmentationDiagnostics: SceneSegmentationDiagnostics = .notEvaluated
+    /// Low-chroma, non-face pixels that may support a conservative illuminant
+    /// estimate. A nil or unreliable value means that global RGB averages must
+    /// not be presented as white-balance evidence.
+    var neutralColorStatistics: NeutralColorStatistics? = nil
 
     var exposureProfile: ExposureProfile {
         if averageLuminance < 0.32 {
@@ -69,18 +73,21 @@ struct PhotoAnalysis: Equatable, Sendable {
     }
 
     var colorCast: ColorCast {
-        let redBlueDelta = redAverage - blueAverage
-        let greenBalance = greenAverage - ((redAverage + blueAverage) * 0.5)
+        guard let neutral = neutralColorStatistics, neutral.isReliable else {
+            return .neutral
+        }
+        let redBlueDelta = neutral.warmBias
+        let greenBalance = neutral.greenBias
 
-        if redBlueDelta > 0.08 {
+        if redBlueDelta > 0.028 {
             return .warm
         }
 
-        if redBlueDelta < -0.08 {
+        if redBlueDelta < -0.028 {
             return .cool
         }
 
-        if greenBalance > 0.08 {
+        if greenBalance > 0.022 {
             return .green
         }
 
@@ -241,8 +248,9 @@ struct PhotoAnalysis: Equatable, Sendable {
             regionMetrics("water", waterStatistics),
             regionMetrics("architecture", architectureStatistics)
         ].joined(separator: ",")
+        let neutralMetrics = neutralColorStatistics?.traceSummary ?? "unavailable"
         let base = String(
-            format: "semantic=%@ recognition=%@/%.3f segmentation=%@ labels=[%@] facets=[%@] lighting=[%@] style=%@ luma=%.3f contrast=%.3f shadow=%.3f highlight=%.3f saturation=%.3f rgb=%.3f/%.3f/%.3f personCoverage=%.3f faceCoverage=%.3f subjectCoverage=%.3f subjectPriority=%.3f masks=person:%@,subject:%@,skin:%@,sky:%@(%.3f),ground:%@,vegetation:%@,water:%@,architecture:%@ regionMetrics=[%@]",
+            format: "semantic=%@ recognition=%@/%.3f segmentation=%@ labels=[%@] facets=[%@] lighting=[%@] style=%@ luma=%.3f contrast=%.3f shadow=%.3f highlight=%.3f saturation=%.3f rgb=%.3f/%.3f/%.3f neutral=[%@] personCoverage=%.3f faceCoverage=%.3f subjectCoverage=%.3f subjectPriority=%.3f masks=person:%@,subject:%@,skin:%@,sky:%@(%.3f),ground:%@,vegetation:%@,water:%@,architecture:%@ regionMetrics=[%@]",
             semanticScene.rawValue,
             sceneRecognitionDiagnostics.status.rawValue,
             sceneRecognitionDiagnostics.topConfidence,
@@ -259,6 +267,7 @@ struct PhotoAnalysis: Equatable, Sendable {
             redAverage,
             greenAverage,
             blueAverage,
+            neutralMetrics,
             personCoverage,
             largestFaceCoverage,
             salientSubjectCoverage,
@@ -318,6 +327,49 @@ struct PhotoAnalysis: Equatable, Sendable {
         architectureStatistics: nil,
         semanticLabels: []
     )
+}
+
+/// Evidence for a possible neutral reference in the current rendered image.
+/// This is deliberately not called an illuminant estimate: low-chroma image
+/// pixels are only a conservative clue, and the confidence must be respected.
+struct NeutralColorStatistics: Equatable, Sendable {
+    let sampleCount: Int
+    let coverage: Float
+    let spatialZoneCoverage: Float
+    let redAverage: Float
+    let greenAverage: Float
+    let blueAverage: Float
+    let averageLuminance: Float
+    let averageChroma: Float
+    let confidence: Float
+
+    var warmBias: Float { redAverage - blueAverage }
+    var greenBias: Float { greenAverage - ((redAverage + blueAverage) * 0.5) }
+
+    var isReliable: Bool {
+        sampleCount >= 24
+            && coverage >= 0.015
+            && spatialZoneCoverage >= (2.0 / 9.0)
+            && confidence >= 0.5
+    }
+
+    var traceSummary: String {
+        String(
+            format: "samples=%d coverage=%.3f zones=%.3f rgb=%.3f/%.3f/%.3f luma=%.3f chroma=%.3f warm=%+.3f green=%+.3f confidence=%.3f reliable=%@",
+            sampleCount,
+            coverage,
+            spatialZoneCoverage,
+            redAverage,
+            greenAverage,
+            blueAverage,
+            averageLuminance,
+            averageChroma,
+            warmBias,
+            greenBias,
+            confidence,
+            isReliable ? "yes" : "no"
+        )
+    }
 }
 
 struct PhotoRegionStatistics: Equatable, Sendable {

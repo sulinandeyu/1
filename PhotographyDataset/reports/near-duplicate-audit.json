@@ -1,0 +1,83 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-10-27T15:16:50.9256974+00:00",
+  "method": "64-bit dHash + 64-bit average hash + aspect-ratio gate",
+  "limitations": [
+    "This detects likely resized/re-encoded duplicates; aggressive crops or large geometric edits may evade it.",
+    "A flagged pair is not automatically leakage and requires visual review."
+  ],
+  "referenceCount": 220,
+  "validationCount": 30,
+  "pairCount": 6600,
+  "thresholds": {
+    "dHash": 8,
+    "aHash": 6
+  },
+  "potentialNearDuplicates": [
+    {
+      "validationId": "commons-201811187",
+      "referenceId": "commons-197740561",
+      "dHashDistance": 21,
+      "aHashDistance": 6,
+      "aspectRatioDelta": 0.0,
+      "status": "requires_visual_review"
+    },
+    {
+      "validationId": "commons-201811187",
+      "referenceId": "commons-198677683",
+      "dHashDistance": 15,
+      "aHashDistance": 5,
+      "aspectRatioDelta": 0.0,
+      "status": "requires_visual_review"
+    },
+    {
+      "validationId": "commons-201811187",
+      "referenceId": "commons-169091750",
+      "dHashDistance": 8,
+      "aHashDistance": 6,
+      "aspectRatioDelta": 0.0,
+      "status": "requires_visual_review"
+    },
+    {
+      "validationId": "commons-29604810",
+      "referenceId": "commons-29964997",
+      "dHashDistance": 22,
+      "aHashDistance": 5,
+      "aspectRatioDelta": 0.0,
+      "status": "requires_visual_review"
+    },
+    {
+      "validationId": "commons-29604810",
+      "referenceId": "commons-30016818",
+      "dHashDistance": 21,
+      "aHashDistance": 6,
+      "aspectRatioDelta": 0.0,
+      "status": "requires_visual_review"
+    },
+    {
+      "validationId": "commons-45925232",
+      "referenceId": "commons-28396162",
+      "dHashDistance": 24,
+      "aHashDistance": 4,
+      "aspectRatioDelta": 0.003552,
+      "status": "requires_visual_review"
+    },
+    {
+      "validationId": "commons-19190723",
+      "referenceId": "commons-19142816",
+      "dHashDistance": 5,
+      "aHashDistance": 4,
+      "aspectRatioDelta": 0.0,
+      "status": "requires_visual_review"
+    },
+    {
+      "validationId": "commons-31080984",
+      "referenceId": "commons-199714961",
+      "dHashDistance": 25,
+      "aHashDistance": 4,
+      "aspectRatioDelta": 0.038217,
+      "status": "requires_visual_review"
+    }
+  ],
+  "status": "visual_review_required"
+}

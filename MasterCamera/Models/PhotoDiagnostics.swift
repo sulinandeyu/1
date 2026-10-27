@@ -63,6 +63,10 @@ struct PhotoDiagnosticSection: Identifiable, Equatable, Sendable {
                 PhotoDiagnosticItem(label: "空间光比", value: analysis.spatialLuminanceVariance.percentText),
                 PhotoDiagnosticItem(label: "色彩倾向", value: analysis.colorCast.title),
                 PhotoDiagnosticItem(
+                    label: "中性色证据",
+                    value: analysis.neutralColorStatistics?.traceSummary ?? "不可用；不使用全图 RGB 均值猜测白平衡"
+                ),
+                PhotoDiagnosticItem(
                     label: "场景识别状态",
                     value: "\(analysis.sceneRecognitionDiagnostics.status.rawValue) · 最高置信度 \(analysis.sceneRecognitionDiagnostics.topConfidence.percentText) · \(analysis.sceneRecognitionDiagnostics.reason ?? "可靠识别")"
                 ),
@@ -218,9 +222,10 @@ struct PhotoDiagnosticSection: Identifiable, Equatable, Sendable {
                     label: "逐图参数证据",
                     value: decision.parameterEvidence.map { evidence in
                         String(
-                            format: "%@：%@；输入=%@；目标=%@；范围 %.3f…%.3f；实际 %.3f；区域=%@；状态=%@；预期=%@；降级=%@",
+                            format: "%@：%@；规则=%@；输入=%@；目标=%@；范围 %.3f…%.3f；实际 %.3f；区域=%@；状态=%@；预期=%@；降级=%@",
                             evidence.key.rawValue,
                             evidence.purpose,
+                            evidence.knowledgeRuleIDs.map(\.rawValue).joined(separator: ","),
                             evidence.inputEvidence,
                             evidence.target,
                             evidence.minimumValue,
@@ -521,6 +526,12 @@ struct PhotoDiagnosticSection: Identifiable, Equatable, Sendable {
                                 impact.changedPixelRatio * 100
                             )
                         }.joined(separator: "；")
+                ),
+                PhotoDiagnosticItem(
+                    label: "摄影参考验证 A/B/C",
+                    value: diagnostics.referenceValidationDetails.isEmpty
+                        ? "未执行；正式拍照默认不启用参考验证路径"
+                        : diagnostics.referenceValidationDetails.joined(separator: "；")
                 ),
                 PhotoDiagnosticItem(
                     label: "降级原因",

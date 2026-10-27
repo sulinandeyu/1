@@ -1,0 +1,47 @@
+{
+  "reviewedAt": "2026-10-27",
+  "sources": [
+    {
+      "id": "mit-adobe-fivek",
+      "officialUrl": "https://data.csail.mit.edu/graphics/fivek/",
+      "status": "blocked_commercial",
+      "downloaded": false,
+      "pairedData": true,
+      "reason": "Both official research licenses prohibit uses intended for commercial advantage or monetary compensation."
+    },
+    {
+      "id": "unsplash-lite",
+      "officialUrl": "https://unsplash.com/data",
+      "termsUrl": "https://github.com/unsplash/datasets/blob/master/TERMS.md",
+      "status": "eligible_local_only_after_terms_acceptance",
+      "downloaded": false,
+      "pairedData": false,
+      "reason": "Internal commercial ML is permitted, but data may not be disclosed, published, transferred or redistributed."
+    },
+    {
+      "id": "unsplash-full",
+      "officialUrl": "https://unsplash.com/data",
+      "status": "blocked_commercial",
+      "downloaded": false,
+      "pairedData": false,
+      "reason": "The Full Dataset and models processed with it are restricted to non-commercial use."
+    },
+    {
+      "id": "wikimedia-commons-featured",
+      "officialUrl": "https://commons.wikimedia.org/wiki/Commons:Featured_pictures",
+      "apiUrl": "https://commons.wikimedia.org/w/api.php",
+      "status": "file_level_review_required",
+      "downloaded": true,
+      "pairedData": false,
+      "reason": "Each file has its own open license and attribution/share-alike requirements; non-copyright rights remain separate."
+    },
+    {
+      "id": "open-images-v7",
+      "officialUrl": "https://storage.googleapis.com/openimages/web/factsfigures_v7.html",
+      "status": "not_selected_for_aesthetic_reference",
+      "downloaded": false,
+      "pairedData": false,
+      "reason": "Useful for recognition and segmentation, but not an expert-edited aesthetic corpus; official page requires per-image license verification."
+    }
+  ]
+}

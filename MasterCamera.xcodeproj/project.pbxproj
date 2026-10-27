@@ -42,6 +42,8 @@
 		B00000000000000000000003 /* DETRResnet50SemanticSegmentationF16P6.mlpackage in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000103 /* DETRResnet50SemanticSegmentationF16P6.mlpackage */; };
 		C00000000000000000000001 /* ImageProcessingDiagnostics.swift in Sources */ = {isa = PBXBuildFile; fileRef = C00000000000000000000101 /* ImageProcessingDiagnostics.swift */; };
 		D00000000000000000000001 /* CinematicImagingEngines.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00000000000000000000101 /* CinematicImagingEngines.swift */; };
+		E00000000000000000000001 /* PhotographyReferenceMatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = E00000000000000000000101 /* PhotographyReferenceMatcher.swift */; };
+		E00000000000000000000002 /* PhotographyReferenceIndex.v1.json in Resources */ = {isa = PBXBuildFile; fileRef = E00000000000000000000102 /* PhotographyReferenceIndex.v1.json */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -82,6 +84,8 @@
 		B00000000000000000000103 /* DETRResnet50SemanticSegmentationF16P6.mlpackage */ = {isa = PBXFileReference; lastKnownFileType = folder.mlpackage; path = DETRResnet50SemanticSegmentationF16P6.mlpackage; sourceTree = "<group>"; };
 		C00000000000000000000101 /* ImageProcessingDiagnostics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageProcessingDiagnostics.swift; sourceTree = "<group>"; };
 		D00000000000000000000101 /* CinematicImagingEngines.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CinematicImagingEngines.swift; sourceTree = "<group>"; };
+		E00000000000000000000101 /* PhotographyReferenceMatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotographyReferenceMatcher.swift; sourceTree = "<group>"; };
+		E00000000000000000000102 /* PhotographyReferenceIndex.v1.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = PhotographyReferenceIndex.v1.json; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -122,6 +126,7 @@
 				A0000000000000000000004E /* Processing */,
 				A0000000000000000000004F /* Configuration */,
 				B00000000000000000000200 /* MLModels */,
+				E00000000000000000000200 /* ReferenceData */,
 			);
 			path = MasterCamera;
 			sourceTree = "<group>";
@@ -228,6 +233,7 @@
 				A00000000000000000000032 /* PhotographyDecision.swift */,
 				A00000000000000000000033 /* SceneStrategy.swift */,
 				A00000000000000000000034 /* PhotographyDecisionEngine.swift */,
+				E00000000000000000000101 /* PhotographyReferenceMatcher.swift */,
 			);
 			path = PhotographerAI;
 			sourceTree = "<group>";
@@ -264,6 +270,14 @@
 				B00000000000000000000103 /* DETRResnet50SemanticSegmentationF16P6.mlpackage */,
 			);
 			path = MLModels;
+			sourceTree = "<group>";
+		};
+		E00000000000000000000200 /* ReferenceData */ = {
+			isa = PBXGroup;
+			children = (
+				E00000000000000000000102 /* PhotographyReferenceIndex.v1.json */,
+			);
+			path = ReferenceData;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -325,6 +339,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				A0000000000000000000001D /* Assets.xcassets in Resources */,
+				E00000000000000000000002 /* PhotographyReferenceIndex.v1.json in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -367,6 +382,7 @@
 				B00000000000000000000003 /* DETRResnet50SemanticSegmentationF16P6.mlpackage in Sources */,
 				C00000000000000000000001 /* ImageProcessingDiagnostics.swift in Sources */,
 				D00000000000000000000001 /* CinematicImagingEngines.swift in Sources */,
+				E00000000000000000000001 /* PhotographyReferenceMatcher.swift in Sources */,
 				A0000000000000000000000C /* PhotoLibraryManager.swift in Sources */,
 				A0000000000000000000000D /* Logger.swift in Sources */,
 			);

@@ -1,0 +1,1253 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-10-27T15:16:29.3041203+00:00",
+  "sourceDataset": "wikimedia-commons-featured",
+  "usageScope": "internal_testflight_diagnostic_only",
+  "distributionProfile": "testflight-internal",
+  "productionUseAllowed": false,
+  "modelTrainingAllowed": false,
+  "referencePixelsBundled": false,
+  "matchingRuleIds": [
+    "PT-REF-001",
+    "PT-REF-002",
+    "PT-REF-003"
+  ],
+  "notes": [
+    "Only precomputed numeric descriptors are bundled; reference image pixels stay outside the app.",
+    "A match can calibrate a per-image target only after applicability checks. It never supplies a preset.",
+    "Production activation requires separate human legal/content review and real iPhone visual validation.",
+    "Attribution-bearing CC BY and all CC BY-SA records are excluded from this distributed diagnostic index."
+  ],
+  "records": [
+    {
+      "id": "commons-72713517",
+      "usage": {
+        "validationModeAllowed": true,
+        "productionUseAllowed": false,
+        "modelTrainingAllowed": false,
+        "reason": "PD/CC0 numeric descriptor selected for isolated internal TestFlight diagnostics; production and model training remain prohibited."
+      },
+      "license": {
+        "name": "Public domain",
+        "url": "https://commons.wikimedia.org/wiki/File%3AAmerican_Pika_collecting_Antennaria%2C_Wallowa-Whitman_National_Forest_%2826528816780%29.jpg",
+        "attributionRequired": false,
+        "shareAlike": false
+      },
+      "source": {
+        "pageUrl": "https://commons.wikimedia.org/wiki/File%3AAmerican_Pika_collecting_Antennaria%2C_Wallowa-Whitman_National_Forest_%2826528816780%29.jpg",
+        "creator": "Mark Penninger, U.S. Forest Service - Pacific Northwest Region",
+        "title": "File:American Pika collecting Antennaria, Wallowa-Whitman National Forest (26528816780).jpg"
+      },
+      "semantics": {
+        "categories": [
+          "landscape",
+          "wildlife"
+        ],
+        "subjects": [
+          "natural_landscape",
+          "animal"
+        ],
+        "lighting": [
+          "unspecified_natural_light"
+        ],
+        "annotationStatus": "source_metadata_only"
+      },
+      "vector": {
+        "averageLuminance": 0.49217,
+        "contrastRange": 0.796078,
+        "shadowRatio": 0.129158,
+        "highlightRatio": 0.002604,
+        "averageSaturation": 0.333868,
+        "redAverage": 0.589884,
+        "greenAverage": 0.474798,
+        "blueAverage": 0.376526,
+        "neutralCoverage": 0.040707,
+        "warmPixelRatio": 0.77691,
+        "coolPixelRatio": 0.006625,
+        "localContrast": 0.180748,
+        "gradientEnergy": 0.026757,
+        "centerLuminanceDelta": 0.140116,
+        "centerSaturationDelta": 0.065043
+      },
+      "nonTransferable": [
+        "absolute white balance",
+        "absolute HSL values",
+        "histogram shape",
+        "tone curve",
+        "content-specific colors",
+        "center/border proxy as subject identity"
+      ]
+    },
+    {
+      "id": "commons-119467504",
+      "usage": {
+        "validationModeAllowed": true,
+        "productionUseAllowed": false,
+        "modelTrainingAllowed": false,
+        "reason": "PD/CC0 numeric descriptor selected for isolated internal TestFlight diagnostics; production and model training remain prohibited."
+      },
+      "license": {
+        "name": "CC0",
+        "url": "http://creativecommons.org/publicdomain/zero/1.0/deed.en",
+        "attributionRequired": false,
+        "shareAlike": false
+      },
+      "source": {
+        "pageUrl": "https://commons.wikimedia.org/wiki/File%3AApollo_lunar_mapping_camera.jpg",
+        "creator": "National Air and Space Museum",
+        "title": "File:Apollo lunar mapping camera.jpg"
+      },
+      "semantics": {
+        "categories": [
+          "documentary_or_other"
+        ],
+        "subjects": [
+          "unspecified"
+        ],
+        "lighting": [
+          "unspecified_natural_light"
+        ],
+        "annotationStatus": "source_metadata_only"
+      },
+      "vector": {
+        "averageLuminance": 0.536003,
+        "contrastRange": 0.760784,
+        "shadowRatio": 0.054504,
+        "highlightRatio": 0.008961,
+        "averageSaturation": 0.136368,
+        "redAverage": 0.561382,
+        "greenAverage": 0.532487,
+        "blueAverage": 0.496092,
+        "neutralCoverage": 0.236213,
+        "warmPixelRatio": 0.329596,
+        "coolPixelRatio": 0.013695,
+        "localContrast": 0.218187,
+        "gradientEnergy": 0.052629,
+        "centerLuminanceDelta": 0.080331,
+        "centerSaturationDelta": 0.02353
+      },
+      "nonTransferable": [
+        "absolute white balance",
+        "absolute HSL values",
+        "histogram shape",
+        "tone curve",
+        "content-specific colors",
+        "center/border proxy as subject identity"
+      ]
+    },
+    {
+      "id": "commons-53116580",
+      "usage": {
+        "validationModeAllowed": true,
+        "productionUseAllowed": false,
+        "modelTrainingAllowed": false,
+        "reason": "PD/CC0 numeric descriptor selected for isolated internal TestFlight diagnostics; production and model training remain prohibited."
+      },
+      "license": {
+        "name": "CC0",
+        "url": "http://creativecommons.org/publicdomain/zero/1.0/deed.en",
+        "attributionRequired": false,
+        "shareAlike": false
+      },
+      "source": {
+        "pageUrl": "https://commons.wikimedia.org/wiki/File%3AFish_farm_Amarynthos_Euboea_Greece.jpg",
+        "creator": "Jebulon",
+        "title": "File:Fish farm Amarynthos Euboea Greece.jpg"
+      },
+      "semantics": {
+        "categories": [
+          "wildlife"
+        ],
+        "subjects": [
+          "animal"
+        ],
+        "lighting": [
+          "unspecified_natural_light"
+        ],
+        "annotationStatus": "source_metadata_only"
+      },
+      "vector": {
+        "averageLuminance": 0.612448,
+        "contrastRange": 0.388235,
+        "shadowRatio": 0.000103,
+        "highlightRatio": 0.002121,
+        "averageSaturation": 0.292035,
+        "redAverage": 0.52836,
+        "greenAverage": 0.63098,
+        "blueAverage": 0.676477,
+        "neutralCoverage": 0.017979,
+        "warmPixelRatio": 0.113307,
+        "coolPixelRatio": 0.819588,
+        "localContrast": 0.091552,
+        "gradientEnergy": 0.035146,
+        "centerLuminanceDelta": -0.019065,
+        "centerSaturationDelta": -0.016967
+      },
+      "nonTransferable": [
+        "absolute white balance",
+        "absolute HSL values",
+        "histogram shape",
+        "tone curve",
+        "content-specific colors",
+        "center/border proxy as subject identity"
+      ]
+    },
+    {
+      "id": "commons-74264133",
+      "usage": {
+        "validationModeAllowed": true,
+        "productionUseAllowed": false,
+        "modelTrainingAllowed": false,
+        "reason": "PD/CC0 numeric descriptor selected for isolated internal TestFlight diagnostics; production and model training remain prohibited."
+      },
+      "license": {
+        "name": "CC0",
+        "url": "http://creativecommons.org/publicdomain/zero/1.0/deed.en",
+        "attributionRequired": false,
+        "shareAlike": false
+      },
+      "source": {
+        "pageUrl": "https://commons.wikimedia.org/wiki/File%3AField_with_mixed_intercropping_of_oat_and_rye.jpg",
+        "creator": "W.carter",
+        "title": "File:Field with mixed intercropping of oat and rye.jpg"
+      },
+      "semantics": {
+        "categories": [
+          "landscape",
+          "nature_detail",
+          "transport"
+        ],
+        "subjects": [
+          "natural_landscape",
+          "flora",
+          "vehicle"
+        ],
+        "lighting": [
+          "transitional_natural_light"
+        ],
+        "annotationStatus": "source_metadata_only"
+      },
+      "vector": {
+        "averageLuminance": 0.503579,
+        "contrastRange": 0.694118,
+        "shadowRatio": 0.011285,
+        "highlightRatio": 0.006442,
+        "averageSaturation": 0.388296,
+        "redAverage": 0.492863,
+        "greenAverage": 0.522132,
+        "blueAverage": 0.351342,
+        "neutralCoverage": 0.027252,
+        "warmPixelRatio": 0.640968,
+        "coolPixelRatio": 0.263935,
+        "localContrast": 0.14184,
+        "gradientEnergy": 0.045518,
+        "centerLuminanceDelta": -0.047192,
+        "centerSaturationDelta": 0.019371
+      },
+      "nonTransferable": [
+        "absolute white balance",
+        "absolute HSL values",
+        "histogram shape",
+        "tone curve",
+        "content-specific colors",
+        "center/border proxy as subject identity"
+      ]
+    },
+    {
+      "id": "commons-86493357",
+      "usage": {
+        "validationModeAllowed": true,
+        "productionUseAllowed": false,
+        "modelTrainingAllowed": false,
+        "reason": "PD/CC0 numeric descriptor selected for isolated internal TestFlight diagnostics; production and model training remain prohibited."
+      },
+      "license": {
+        "name": "CC0",
+        "url": "http://creativecommons.org/publicdomain/zero/1.0/deed.en",
+        "attributionRequired": false,
+        "shareAlike": false
+      },
+      "source": {
+        "pageUrl": "https://commons.wikimedia.org/wiki/File%3AField_and_silage_bales_in_%C3%96vre_Tuntorp_3.jpg",
+        "creator": "W.carter",
+        "title": "File:Field and silage bales in Övre Tuntorp 3.jpg"
+      },
+      "semantics": {
+        "categories": [
+          "landscape",
+          "transport"
+        ],
+        "subjects": [
+          "natural_landscape",
+          "vehicle"
+        ],
+        "lighting": [
+          "unspecified_natural_light"
+        ],
+        "annotationStatus": "source_metadata_only"
+      },
+      "vector": {
+        "averageLuminance": 0.548378,
+        "contrastRange": 0.666667,
+        "shadowRatio": 0.008009,
+        "highlightRatio": 0.018868,
+        "averageSaturation": 0.393279,
+        "redAverage": 0.572732,
+        "greenAverage": 0.557929,
+        "blueAverage": 0.382047,
+        "neutralCoverage": 0.121462,
+        "warmPixelRatio": 0.591662,
+        "coolPixelRatio": 0.144138,
+        "localContrast": 0.13681,
+        "gradientEnergy": 0.044974,
+        "centerLuminanceDelta": 0.017632,
+        "centerSaturationDelta": 0.018002
+      },
+      "nonTransferable": [
+        "absolute white balance",
+        "absolute HSL values",
+        "histogram shape",
+        "tone curve",
+        "content-specific colors",
+        "center/border proxy as subject identity"
+      ]
+    },
+    {
+      "id": "commons-22022215",
+      "usage": {
+        "validationModeAllowed": true,
+        "productionUseAllowed": false,
+        "modelTrainingAllowed": false,
+        "reason": "PD/CC0 numeric descriptor selected for isolated internal TestFlight diagnostics; production and model training remain prohibited."
+      },
+      "license": {
+        "name": "CC0",
+        "url": "http://creativecommons.org/publicdomain/zero/1.0/deed.en",
+        "attributionRequired": false,
+        "shareAlike": false
+      },
+      "source": {
+        "pageUrl": "https://commons.wikimedia.org/wiki/File%3APartal_pavilion_bassin_detail_1_edit.jpg",
+        "creator": "Jebulon",
+        "title": "File:Partal pavilion bassin detail 1 edit.jpg"
+      },
+      "semantics": {
+        "categories": [
+          "architecture"
+        ],
+        "subjects": [
+          "built_environment"
+        ],
+        "lighting": [
+          "unspecified_natural_light"
+        ],
+        "annotationStatus": "source_metadata_only"
+      },
+      "vector": {
+        "averageLuminance": 0.343185,
+        "contrastRange": 0.47451,
+        "shadowRatio": 0.001133,
+        "highlightRatio": 0.003097,
+        "averageSaturation": 0.192759,
+        "redAverage": 0.361925,
+        "greenAverage": 0.342378,
+        "blueAverage": 0.295995,
+        "neutralCoverage": 0.127658,
+        "warmPixelRatio": 0.543154,
+        "coolPixelRatio": 0.052931,
+        "localContrast": 0.117721,
+        "gradientEnergy": 0.03646,
+        "centerLuminanceDelta": 0.026016,
+        "centerSaturationDelta": -0.02284
+      },
+      "nonTransferable": [
+        "absolute white balance",
+        "absolute HSL values",
+        "histogram shape",
+        "tone curve",
+        "content-specific colors",
+        "center/border proxy as subject identity"
+      ]
+    },
+    {
+      "id": "commons-42594362",
+      "usage": {
+        "validationModeAllowed": true,
+        "productionUseAllowed": false,
+        "modelTrainingAllowed": false,
+        "reason": "PD/CC0 numeric descriptor selected for isolated internal TestFlight diagnostics; production and model training remain prohibited."
+      },
+      "license": {
+        "name": "CC0",
+        "url": "http://creativecommons.org/publicdomain/zero/1.0/deed.en",
+        "attributionRequired": false,
+        "shareAlike": false
+      },
+      "source": {
+        "pageUrl": "https://commons.wikimedia.org/wiki/File%3APortico_gallery_perspective_%C3%89cole_Militaire_Cour_d%27Honneur_Paris.jpg",
+        "creator": "Jebulon",
+        "title": "File:Portico gallery perspective École Militaire Cour d'Honneur Paris.jpg"
+      },
+      "semantics": {
+        "categories": [
+          "architecture"
+        ],
+        "subjects": [
+          "built_environment"
+        ],
+        "lighting": [
+          "unspecified_natural_light"
+        ],
+        "annotationStatus": "source_metadata_only"
+      },
+      "vector": {
+        "averageLuminance": 0.355851,
+        "contrastRange": 0.698039,
+        "shadowRatio": 0.044992,
+        "highlightRatio": 0.004046,
+        "averageSaturation": 0.463838,
+        "redAverage": 0.441434,
+        "greenAverage": 0.342981,
+        "blueAverage": 0.231335,
+        "neutralCoverage": 0.000326,
+        "warmPixelRatio": 0.992071,
+        "coolPixelRatio": 0.0,
+        "localContrast": 0.180481,
+        "gradientEnergy": 0.043442,
+        "centerLuminanceDelta": 0.059044,
+        "centerSaturationDelta": 0.042163
+      },
+      "nonTransferable": [
+        "absolute white balance",
+        "absolute HSL values",
+        "histogram shape",
+        "tone curve",
+        "content-specific colors",
+        "center/border proxy as subject identity"
+      ]
+    },
+    {
+      "id": "commons-43315781",
+      "usage": {
+        "validationModeAllowed": true,
+        "productionUseAllowed": false,
+        "modelTrainingAllowed": false,
+        "reason": "PD/CC0 numeric descriptor selected for isolated internal TestFlight diagnostics; production and model training remain prohibited."
+      },
+      "license": {
+        "name": "Public domain",
+        "url": "https://commons.wikimedia.org/wiki/File%3APiazzetta_San_Marco_Venice_BLS.jpg",
+        "attributionRequired": false,
+        "shareAlike": false
+      },
+      "source": {
+        "pageUrl": "https://commons.wikimedia.org/wiki/File%3APiazzetta_San_Marco_Venice_BLS.jpg",
+        "creator": "Benh LIEU SONG",
+        "title": "File:Piazzetta San Marco Venice BLS.jpg"
+      },
+      "semantics": {
+        "categories": [
+          "architecture",
+          "low_light"
+        ],
+        "subjects": [
+          "built_environment"
+        ],
+        "lighting": [
+          "night"
+        ],
+        "annotationStatus": "source_metadata_only"
+      },
+      "vector": {
+        "averageLuminance": 0.521174,
+        "contrastRange": 0.415687,
+        "shadowRatio": 0.004901,
+        "highlightRatio": 0.002557,
+        "averageSaturation": 0.400176,
+        "redAverage": 0.551679,
+        "greenAverage": 0.512948,
+        "blueAverage": 0.512829,
+        "neutralCoverage": 0.001527,
+        "warmPixelRatio": 0.460938,
+        "coolPixelRatio": 0.327734,
+        "localContrast": 0.116134,
+        "gradientEnergy": 0.043442,
+        "centerLuminanceDelta": 0.030667,
+        "centerSaturationDelta": -0.008845
+      },
+      "nonTransferable": [
+        "absolute white balance",
+        "absolute HSL values",
+        "histogram shape",
+        "tone curve",
+        "content-specific colors",
+        "center/border proxy as subject identity"
+      ]
+    },
+    {
+      "id": "commons-43441305",
+      "usage": {
+        "validationModeAllowed": true,
+        "productionUseAllowed": false,
+        "modelTrainingAllowed": false,
+        "reason": "PD/CC0 numeric descriptor selected for isolated internal TestFlight diagnostics; production and model training remain prohibited."
+      },
+      "license": {
+        "name": "CC0",
+        "url": "http://creativecommons.org/publicdomain/zero/1.0/deed.en",
+        "attributionRequired": false,
+        "shareAlike": false
+      },
+      "source": {
+        "pageUrl": "https://commons.wikimedia.org/wiki/File%3ACarrelet%2C_Esnandes%2C_Charente-Maritime%2C_august_2015.jpg",
+        "creator": "Jebulon",
+        "title": "File:Carrelet, Esnandes, Charente-Maritime, august 2015.jpg"
+      },
+      "semantics": {
+        "categories": [
+          "architecture",
+          "wildlife",
+          "transport"
+        ],
+        "subjects": [
+          "built_environment",
+          "animal",
+          "vehicle"
+        ],
+        "lighting": [
+          "unspecified_natural_light"
+        ],
+        "annotationStatus": "source_metadata_only"
+      },
+      "vector": {
+        "averageLuminance": 0.566692,
+        "contrastRange": 0.686274,
+        "shadowRatio": 0.0301,
+        "highlightRatio": 0.0,
+        "averageSaturation": 0.228115,
+        "redAverage": 0.576716,
+        "greenAverage": 0.567906,
+        "blueAverage": 0.525149,
+        "neutralCoverage": 0.048672,
+        "warmPixelRatio": 0.510473,
+        "coolPixelRatio": 0.298912,
+        "localContrast": 0.115818,
+        "gradientEnergy": 0.041633,
+        "centerLuminanceDelta": -0.132146,
+        "centerSaturationDelta": -0.037222
+      },
+      "nonTransferable": [
+        "absolute white balance",
+        "absolute HSL values",
+        "histogram shape",
+        "tone curve",
+        "content-specific colors",
+        "center/border proxy as subject identity"
+      ]
+    },
+    {
+      "id": "commons-50693422",
+      "usage": {
+        "validationModeAllowed": true,
+        "productionUseAllowed": false,
+        "modelTrainingAllowed": false,
+        "reason": "PD/CC0 numeric descriptor selected for isolated internal TestFlight diagnostics; production and model training remain prohibited."
+      },
+      "license": {
+        "name": "CC0",
+        "url": "http://creativecommons.org/publicdomain/zero/1.0/deed.en",
+        "attributionRequired": false,
+        "shareAlike": false
+      },
+      "source": {
+        "pageUrl": "https://commons.wikimedia.org/wiki/File%3ACourtyard_Zappeion_Athens%2C_Greece.jpg",
+        "creator": "Jebulon",
+        "title": "File:Courtyard Zappeion Athens, Greece.jpg"
+      },
+      "semantics": {
+        "categories": [
+          "architecture",
+          "transport"
+        ],
+        "subjects": [
+          "built_environment",
+          "vehicle"
+        ],
+        "lighting": [
+          "unspecified_natural_light"
+        ],
+        "annotationStatus": "source_metadata_only"
+      },
+      "vector": {
+        "averageLuminance": 0.512589,
+        "contrastRange": 0.77647,
+        "shadowRatio": 0.101366,
+        "highlightRatio": 0.012526,
+        "averageSaturation": 0.231467,
+        "redAverage": 0.543044,
+        "greenAverage": 0.506756,
+        "blueAverage": 0.480681,
+        "neutralCoverage": 0.34698,
+        "warmPixelRatio": 0.345125,
+        "coolPixelRatio": 0.109135,
+        "localContrast": 0.201444,
+        "gradientEnergy": 0.048816,
+        "centerLuminanceDelta": -0.172005,
+        "centerSaturationDelta": 0.15196
+      },
+      "nonTransferable": [
+        "absolute white balance",
+        "absolute HSL values",
+        "histogram shape",
+        "tone curve",
+        "content-specific colors",
+        "center/border proxy as subject identity"
+      ]
+    },
+    {
+      "id": "commons-1669175",
+      "usage": {
+        "validationModeAllowed": true,
+        "productionUseAllowed": false,
+        "modelTrainingAllowed": false,
+        "reason": "PD/CC0 numeric descriptor selected for isolated internal TestFlight diagnostics; production and model training remain prohibited."
+      },
+      "license": {
+        "name": "Public domain",
+        "url": "https://commons.wikimedia.org/wiki/File%3AComets_Kick_up_Dust_in_Helix_Nebula_%28PIA09178%29.jpg",
+        "attributionRequired": false,
+        "shareAlike": false
+      },
+      "source": {
+        "pageUrl": "https://commons.wikimedia.org/wiki/File%3AComets_Kick_up_Dust_in_Helix_Nebula_%28PIA09178%29.jpg",
+        "creator": "NASA/JPL-Caltech/Univ. of Ariz.",
+        "title": "File:Comets Kick up Dust in Helix Nebula (PIA09178).jpg"
+      },
+      "semantics": {
+        "categories": [
+          "wildlife"
+        ],
+        "subjects": [
+          "animal"
+        ],
+        "lighting": [
+          "unspecified_natural_light"
+        ],
+        "annotationStatus": "source_metadata_only"
+      },
+      "vector": {
+        "averageLuminance": 0.146436,
+        "contrastRange": 0.443137,
+        "shadowRatio": 0.555861,
+        "highlightRatio": 0.0,
+        "averageSaturation": 0.467305,
+        "redAverage": 0.075716,
+        "greenAverage": 0.165104,
+        "blueAverage": 0.169761,
+        "neutralCoverage": 0.001339,
+        "warmPixelRatio": 0.044344,
+        "coolPixelRatio": 0.572403,
+        "localContrast": 0.09263,
+        "gradientEnergy": 0.029713,
+        "centerLuminanceDelta": 0.234073,
+        "centerSaturationDelta": 0.059588
+      },
+      "nonTransferable": [
+        "absolute white balance",
+        "absolute HSL values",
+        "histogram shape",
+        "tone curve",
+        "content-specific colors",
+        "center/border proxy as subject identity"
+      ]
+    },
+    {
+      "id": "commons-3211862",
+      "usage": {
+        "validationModeAllowed": true,
+        "productionUseAllowed": false,
+        "modelTrainingAllowed": false,
+        "reason": "PD/CC0 numeric descriptor selected for isolated internal TestFlight diagnostics; production and model training remain prohibited."
+      },
+      "license": {
+        "name": "Public domain",
+        "url": "https://commons.wikimedia.org/wiki/File%3AFairy_of_Eagle_Nebula.jpg",
+        "attributionRequired": false,
+        "shareAlike": false
+      },
+      "source": {
+        "pageUrl": "https://commons.wikimedia.org/wiki/File%3AFairy_of_Eagle_Nebula.jpg",
+        "creator": "NASA, ESA, and The Hubble Heritage Team (STScI/AURA)",
+        "title": "File:Fairy of Eagle Nebula.jpg"
+      },
+      "semantics": {
+        "categories": [
+          "landscape",
+          "architecture",
+          "wildlife"
+        ],
+        "subjects": [
+          "natural_landscape",
+          "built_environment",
+          "animal"
+        ],
+        "lighting": [
+          "unspecified_natural_light"
+        ],
+        "annotationStatus": "source_metadata_only"
+      },
+      "vector": {
+        "averageLuminance": 0.308336,
+        "contrastRange": 0.537255,
+        "shadowRatio": 0.061136,
+        "highlightRatio": 0.001054,
+        "averageSaturation": 0.546696,
+        "redAverage": 0.396118,
+        "greenAverage": 0.289127,
+        "blueAverage": 0.240137,
+        "neutralCoverage": 0.003875,
+        "warmPixelRatio": 0.739955,
+        "coolPixelRatio": 0.161396,
+        "localContrast": 0.093771,
+        "gradientEnergy": 0.018844,
+        "centerLuminanceDelta": -0.02916,
+        "centerSaturationDelta": -0.021785
+      },
+      "nonTransferable": [
+        "absolute white balance",
+        "absolute HSL values",
+        "histogram shape",
+        "tone curve",
+        "content-specific colors",
+        "center/border proxy as subject identity"
+      ]
+    },
+    {
+      "id": "commons-8819141",
+      "usage": {
+        "validationModeAllowed": true,
+        "productionUseAllowed": false,
+        "modelTrainingAllowed": false,
+        "reason": "PD/CC0 numeric descriptor selected for isolated internal TestFlight diagnostics; production and model training remain prohibited."
+      },
+      "license": {
+        "name": "Public domain",
+        "url": "https://commons.wikimedia.org/wiki/File%3AGrand_star-forming_region_R136_in_NGC_2070_%28captured_by_the_Hubble_Space_Telescope%29.jpg",
+        "attributionRequired": false,
+        "shareAlike": false
+      },
+      "source": {
+        "pageUrl": "https://commons.wikimedia.org/wiki/File%3AGrand_star-forming_region_R136_in_NGC_2070_%28captured_by_the_Hubble_Space_Telescope%29.jpg",
+        "creator": "NASA, ESA, F. Paresce (INAF-IASF, Bologna, Italy), R. O'Connell (University of Virginia, Charlottesville), and the Wide Field Camera 3 Science Oversight Committee",
+        "title": "File:Grand star-forming region R136 in NGC 2070 (captured by the Hubble Space Telescope).jpg"
+      },
+      "semantics": {
+        "categories": [
+          "landscape"
+        ],
+        "subjects": [
+          "natural_landscape"
+        ],
+        "lighting": [
+          "unspecified_natural_light"
+        ],
+        "annotationStatus": "source_metadata_only"
+      },
+      "vector": {
+        "averageLuminance": 0.390748,
+        "contrastRange": 0.639215,
+        "shadowRatio": 0.017928,
+        "highlightRatio": 0.003424,
+        "averageSaturation": 0.35179,
+        "redAverage": 0.49471,
+        "greenAverage": 0.368225,
+        "blueAverage": 0.30773,
+        "neutralCoverage": 0.045443,
+        "warmPixelRatio": 0.730609,
+        "coolPixelRatio": 0.076631,
+        "localContrast": 0.15555,
+        "gradientEnergy": 0.04524,
+        "centerLuminanceDelta": -0.078458,
+        "centerSaturationDelta": -0.041197
+      },
+      "nonTransferable": [
+        "absolute white balance",
+        "absolute HSL values",
+        "histogram shape",
+        "tone curve",
+        "content-specific colors",
+        "center/border proxy as subject identity"
+      ]
+    },
+    {
+      "id": "commons-10514366",
+      "usage": {
+        "validationModeAllowed": true,
+        "productionUseAllowed": false,
+        "modelTrainingAllowed": false,
+        "reason": "PD/CC0 numeric descriptor selected for isolated internal TestFlight diagnostics; production and model training remain prohibited."
+      },
+      "license": {
+        "name": "Public domain",
+        "url": "https://commons.wikimedia.org/wiki/File%3AHeart_and_Soul_nebulae.jpg",
+        "attributionRequired": false,
+        "shareAlike": false
+      },
+      "source": {
+        "pageUrl": "https://commons.wikimedia.org/wiki/File%3AHeart_and_Soul_nebulae.jpg",
+        "creator": "NASA/JPL-Caltech/UCLA",
+        "title": "File:Heart and Soul nebulae.jpg"
+      },
+      "semantics": {
+        "categories": [
+          "landscape"
+        ],
+        "subjects": [
+          "natural_landscape"
+        ],
+        "lighting": [
+          "unspecified_natural_light"
+        ],
+        "annotationStatus": "source_metadata_only"
+      },
+      "vector": {
+        "averageLuminance": 0.230989,
+        "contrastRange": 0.454902,
+        "shadowRatio": 0.097419,
+        "highlightRatio": 0.00136,
+        "averageSaturation": 0.409076,
+        "redAverage": 0.165837,
+        "greenAverage": 0.252474,
+        "blueAverage": 0.210005,
+        "neutralCoverage": 0.01556,
+        "warmPixelRatio": 0.199521,
+        "coolPixelRatio": 0.578665,
+        "localContrast": 0.096467,
+        "gradientEnergy": 0.028434,
+        "centerLuminanceDelta": 0.050348,
+        "centerSaturationDelta": -0.147707
+      },
+      "nonTransferable": [
+        "absolute white balance",
+        "absolute HSL values",
+        "histogram shape",
+        "tone curve",
+        "content-specific colors",
+        "center/border proxy as subject identity"
+      ]
+    },
+    {
+      "id": "commons-19142816",
+      "usage": {
+        "validationModeAllowed": true,
+        "productionUseAllowed": false,
+        "modelTrainingAllowed": false,
+        "reason": "PD/CC0 numeric descriptor selected for isolated internal TestFlight diagnostics; production and model training remain prohibited."
+      },
+      "license": {
+        "name": "Public domain",
+        "url": "https://commons.wikimedia.org/wiki/File%3A30_Doradus%2C_Tarantula_Nebula.jpg",
+        "attributionRequired": false,
+        "shareAlike": false
+      },
+      "source": {
+        "pageUrl": "https://commons.wikimedia.org/wiki/File%3A30_Doradus%2C_Tarantula_Nebula.jpg",
+        "creator": "NASA, ESA, ESO, D. Lennon and E. Sabbi (ESA/STScI), J. Anderson, S. E. de Mink, R. van der Marel, T. Sohn, and N. Walborn (STScI), N. Bastian (Excellence Cluster, Munich), L. Bedin (INAF, Padua), E. Bressert (ESO), P. Crowther (Sheffield), A. de Koter (Amsterdam), C. Evans (UKATC/STFC, Edinburgh), A. Herrero (IAC, Tenerife), N. Langer (AifA, Bonn), I. Platais (JHU) and H. Sana (Amsterdam)",
+        "title": "File:30 Doradus, Tarantula Nebula.jpg"
+      },
+      "semantics": {
+        "categories": [
+          "landscape",
+          "aerial",
+          "transport",
+          "low_light"
+        ],
+        "subjects": [
+          "natural_landscape",
+          "vehicle"
+        ],
+        "lighting": [
+          "night"
+        ],
+        "annotationStatus": "source_metadata_only"
+      },
+      "vector": {
+        "averageLuminance": 0.308921,
+        "contrastRange": 0.54902,
+        "shadowRatio": 0.000248,
+        "highlightRatio": 0.002744,
+        "averageSaturation": 0.165016,
+        "redAverage": 0.314349,
+        "greenAverage": 0.307616,
+        "blueAverage": 0.305871,
+        "neutralCoverage": 0.255164,
+        "warmPixelRatio": 0.19899,
+        "coolPixelRatio": 0.224638,
+        "localContrast": 0.117171,
+        "gradientEnergy": 0.036458,
+        "centerLuminanceDelta": 0.134013,
+        "centerSaturationDelta": -0.042584
+      },
+      "nonTransferable": [
+        "absolute white balance",
+        "absolute HSL values",
+        "histogram shape",
+        "tone curve",
+        "content-specific colors",
+        "center/border proxy as subject identity"
+      ]
+    },
+    {
+      "id": "commons-54297561",
+      "usage": {
+        "validationModeAllowed": true,
+        "productionUseAllowed": false,
+        "modelTrainingAllowed": false,
+        "reason": "PD/CC0 numeric descriptor selected for isolated internal TestFlight diagnostics; production and model training remain prohibited."
+      },
+      "license": {
+        "name": "Public domain",
+        "url": "https://commons.wikimedia.org/wiki/File%3ACosmic_%E2%80%98Winter%E2%80%99_Wonderland.jpg",
+        "attributionRequired": false,
+        "shareAlike": false
+      },
+      "source": {
+        "pageUrl": "https://commons.wikimedia.org/wiki/File%3ACosmic_%E2%80%98Winter%E2%80%99_Wonderland.jpg",
+        "creator": "NASA",
+        "title": "File:Cosmic ‘Winter’ Wonderland.jpg"
+      },
+      "semantics": {
+        "categories": [
+          "landscape",
+          "waterscape",
+          "wildlife"
+        ],
+        "subjects": [
+          "natural_landscape",
+          "water",
+          "animal"
+        ],
+        "lighting": [
+          "unspecified_natural_light"
+        ],
+        "annotationStatus": "source_metadata_only"
+      },
+      "vector": {
+        "averageLuminance": 0.280175,
+        "contrastRange": 0.662745,
+        "shadowRatio": 0.186846,
+        "highlightRatio": 0.007909,
+        "averageSaturation": 0.307642,
+        "redAverage": 0.308259,
+        "greenAverage": 0.267628,
+        "blueAverage": 0.321764,
+        "neutralCoverage": 0.029768,
+        "warmPixelRatio": 0.327259,
+        "coolPixelRatio": 0.366283,
+        "localContrast": 0.151269,
+        "gradientEnergy": 0.049582,
+        "centerLuminanceDelta": 0.224835,
+        "centerSaturationDelta": 0.090483
+      },
+      "nonTransferable": [
+        "absolute white balance",
+        "absolute HSL values",
+        "histogram shape",
+        "tone curve",
+        "content-specific colors",
+        "center/border proxy as subject identity"
+      ]
+    },
+    {
+      "id": "commons-126981928",
+      "usage": {
+        "validationModeAllowed": true,
+        "productionUseAllowed": false,
+        "modelTrainingAllowed": false,
+        "reason": "PD/CC0 numeric descriptor selected for isolated internal TestFlight diagnostics; production and model training remain prohibited."
+      },
+      "license": {
+        "name": "Public domain",
+        "url": "https://commons.wikimedia.org/wiki/File%3AHubble_NGC6530.jpg",
+        "attributionRequired": false,
+        "shareAlike": false
+      },
+      "source": {
+        "pageUrl": "https://commons.wikimedia.org/wiki/File%3AHubble_NGC6530.jpg",
+        "creator": "ESA/Hubble & NASA, O. De Marco; Acknowledgment: M.H. Özsaraç",
+        "title": "File:Hubble NGC6530.jpg"
+      },
+      "semantics": {
+        "categories": [
+          "documentary_or_other"
+        ],
+        "subjects": [
+          "unspecified"
+        ],
+        "lighting": [
+          "unspecified_natural_light"
+        ],
+        "annotationStatus": "source_metadata_only"
+      },
+      "vector": {
+        "averageLuminance": 0.42119,
+        "contrastRange": 0.580393,
+        "shadowRatio": 0.005644,
+        "highlightRatio": 0.000569,
+        "averageSaturation": 0.397065,
+        "redAverage": 0.561142,
+        "greenAverage": 0.388405,
+        "blueAverage": 0.333848,
+        "neutralCoverage": 0.024929,
+        "warmPixelRatio": 0.821112,
+        "coolPixelRatio": 0.057071,
+        "localContrast": 0.08382,
+        "gradientEnergy": 0.019719,
+        "centerLuminanceDelta": 0.020968,
+        "centerSaturationDelta": -0.01184
+      },
+      "nonTransferable": [
+        "absolute white balance",
+        "absolute HSL values",
+        "histogram shape",
+        "tone curve",
+        "content-specific colors",
+        "center/border proxy as subject identity"
+      ]
+    },
+    {
+      "id": "commons-164538590",
+      "usage": {
+        "validationModeAllowed": true,
+        "productionUseAllowed": false,
+        "modelTrainingAllowed": false,
+        "reason": "PD/CC0 numeric descriptor selected for isolated internal TestFlight diagnostics; production and model training remain prohibited."
+      },
+      "license": {
+        "name": "CC0",
+        "url": "http://creativecommons.org/publicdomain/zero/1.0/deed.en",
+        "attributionRequired": false,
+        "shareAlike": false
+      },
+      "source": {
+        "pageUrl": "https://commons.wikimedia.org/wiki/File%3AFlaming_Star_Nebula%2C_IC_405.png",
+        "creator": "Chuck Ayoub",
+        "title": "File:Flaming Star Nebula, IC 405.png"
+      },
+      "semantics": {
+        "categories": [
+          "documentary_or_other"
+        ],
+        "subjects": [
+          "unspecified"
+        ],
+        "lighting": [
+          "unspecified_natural_light"
+        ],
+        "annotationStatus": "source_metadata_only"
+      },
+      "vector": {
+        "averageLuminance": 0.24107,
+        "contrastRange": 0.407843,
+        "shadowRatio": 0.144961,
+        "highlightRatio": 5.6E-05,
+        "averageSaturation": 0.219922,
+        "redAverage": 0.242156,
+        "greenAverage": 0.240379,
+        "blueAverage": 0.244712,
+        "neutralCoverage": 0.182042,
+        "warmPixelRatio": 0.187164,
+        "coolPixelRatio": 0.482132,
+        "localContrast": 0.070877,
+        "gradientEnergy": 0.019886,
+        "centerLuminanceDelta": 0.166799,
+        "centerSaturationDelta": -0.032551
+      },
+      "nonTransferable": [
+        "absolute white balance",
+        "absolute HSL values",
+        "histogram shape",
+        "tone curve",
+        "content-specific colors",
+        "center/border proxy as subject identity"
+      ]
+    },
+    {
+      "id": "commons-176978131",
+      "usage": {
+        "validationModeAllowed": true,
+        "productionUseAllowed": false,
+        "modelTrainingAllowed": false,
+        "reason": "PD/CC0 numeric descriptor selected for isolated internal TestFlight diagnostics; production and model training remain prohibited."
+      },
+      "license": {
+        "name": "CC0",
+        "url": "http://creativecommons.org/publicdomain/zero/1.0/deed.en",
+        "attributionRequired": false,
+        "shareAlike": false
+      },
+      "source": {
+        "pageUrl": "https://commons.wikimedia.org/wiki/File%3AEagle_Nebula_M16_and_Comet_C2025_R2_SWAN.png",
+        "creator": "Chuck Ayoub",
+        "title": "File:Eagle Nebula M16 and Comet C2025 R2 SWAN.png"
+      },
+      "semantics": {
+        "categories": [
+          "documentary_or_other"
+        ],
+        "subjects": [
+          "unspecified"
+        ],
+        "lighting": [
+          "unspecified_natural_light"
+        ],
+        "annotationStatus": "source_metadata_only"
+      },
+      "vector": {
+        "averageLuminance": 0.221069,
+        "contrastRange": 0.411765,
+        "shadowRatio": 0.0629,
+        "highlightRatio": 0.000215,
+        "averageSaturation": 0.211874,
+        "redAverage": 0.28963,
+        "greenAverage": 0.202582,
+        "blueAverage": 0.202316,
+        "neutralCoverage": 0.082816,
+        "warmPixelRatio": 0.51341,
+        "coolPixelRatio": 0.050827,
+        "localContrast": 0.079204,
+        "gradientEnergy": 0.025544,
+        "centerLuminanceDelta": 0.13962,
+        "centerSaturationDelta": 0.108703
+      },
+      "nonTransferable": [
+        "absolute white balance",
+        "absolute HSL values",
+        "histogram shape",
+        "tone curve",
+        "content-specific colors",
+        "center/border proxy as subject identity"
+      ]
+    },
+    {
+      "id": "commons-49540795",
+      "usage": {
+        "validationModeAllowed": true,
+        "productionUseAllowed": false,
+        "modelTrainingAllowed": false,
+        "reason": "PD/CC0 numeric descriptor selected for isolated internal TestFlight diagnostics; production and model training remain prohibited."
+      },
+      "license": {
+        "name": "CC0",
+        "url": "http://creativecommons.org/publicdomain/zero/1.0/deed.en",
+        "attributionRequired": false,
+        "shareAlike": false
+      },
+      "source": {
+        "pageUrl": "https://commons.wikimedia.org/wiki/File%3AAegina_sunset.jpg",
+        "creator": "Jebulon",
+        "title": "File:Aegina sunset.jpg"
+      },
+      "semantics": {
+        "categories": [
+          "waterscape",
+          "architecture"
+        ],
+        "subjects": [
+          "water",
+          "built_environment"
+        ],
+        "lighting": [
+          "transitional_natural_light"
+        ],
+        "annotationStatus": "source_metadata_only"
+      },
+      "vector": {
+        "averageLuminance": 0.458651,
+        "contrastRange": 0.470588,
+        "shadowRatio": 0.010123,
+        "highlightRatio": 0.001691,
+        "averageSaturation": 0.221682,
+        "redAverage": 0.453607,
+        "greenAverage": 0.462036,
+        "blueAverage": 0.439972,
+        "neutralCoverage": 0.170922,
+        "warmPixelRatio": 0.257241,
+        "coolPixelRatio": 0.267126,
+        "localContrast": 0.108781,
+        "gradientEnergy": 0.034835,
+        "centerLuminanceDelta": -0.074993,
+        "centerSaturationDelta": 0.036367
+      },
+      "nonTransferable": [
+        "absolute white balance",
+        "absolute HSL values",
+        "histogram shape",
+        "tone curve",
+        "content-specific colors",
+        "center/border proxy as subject identity"
+      ]
+    },
+    {
+      "id": "commons-131988074",
+      "usage": {
+        "validationModeAllowed": true,
+        "productionUseAllowed": false,
+        "modelTrainingAllowed": false,
+        "reason": "PD/CC0 numeric descriptor selected for isolated internal TestFlight diagnostics; production and model training remain prohibited."
+      },
+      "license": {
+        "name": "Public domain",
+        "url": "https://commons.wikimedia.org/wiki/File%3AVitorJubini_PaneleirasdeGoiabeiras_Vitoria_ES_%2840735316325%29.jpg",
+        "attributionRequired": false,
+        "shareAlike": false
+      },
+      "source": {
+        "pageUrl": "https://commons.wikimedia.org/wiki/File%3AVitorJubini_PaneleirasdeGoiabeiras_Vitoria_ES_%2840735316325%29.jpg",
+        "creator": "MTur Destinos",
+        "title": "File:VitorJubini PaneleirasdeGoiabeiras Vitoria ES (40735316325).jpg"
+      },
+      "semantics": {
+        "categories": [
+          "waterscape",
+          "architecture",
+          "nature_detail"
+        ],
+        "subjects": [
+          "water",
+          "built_environment",
+          "flora"
+        ],
+        "lighting": [
+          "diffuse_or_overcast"
+        ],
+        "annotationStatus": "source_metadata_only"
+      },
+      "vector": {
+        "averageLuminance": 0.471318,
+        "contrastRange": 0.796078,
+        "shadowRatio": 0.08226,
+        "highlightRatio": 0.008589,
+        "averageSaturation": 0.062235,
+        "redAverage": 0.479362,
+        "greenAverage": 0.469126,
+        "blueAverage": 0.469344,
+        "neutralCoverage": 0.620683,
+        "warmPixelRatio": 0.057452,
+        "coolPixelRatio": 0.019394,
+        "localContrast": 0.139529,
+        "gradientEnergy": 0.02776,
+        "centerLuminanceDelta": 0.118075,
+        "centerSaturationDelta": -0.008694
+      },
+      "nonTransferable": [
+        "absolute white balance",
+        "absolute HSL values",
+        "histogram shape",
+        "tone curve",
+        "content-specific colors",
+        "center/border proxy as subject identity"
+      ]
+    }
+  ]
+}

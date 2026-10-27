@@ -3,13 +3,15 @@ import Foundation
 final class PhotographyDecisionEngine {
     func makeDecision(
         for analysis: PhotoAnalysis,
-        problems: PhotoProblemReport
+        problems: PhotoProblemReport,
+        targetProfile: PhotographyTargetProfile? = nil
     ) -> PhotographyDecision {
         let strategy = SceneStrategy.choose(for: analysis, problems: problems)
         let context = analysis.photographyContext
         let adaptiveSolution = AdaptivePhotographyParameterSolver().solve(
             analysis: analysis,
-            problems: problems
+            problems: problems,
+            targetProfile: targetProfile
         )
         // The adaptive solver is the sole source of creative/technical parameters.
         // Legacy scene methods remain below only for source compatibility and are
@@ -1335,12 +1337,14 @@ struct AdaptivePhotographyTargetGenerator {
 struct AdaptivePhotographyParameterSolver {
     func solve(
         analysis: PhotoAnalysis,
-        problems: PhotoProblemReport
+        problems: PhotoProblemReport,
+        targetProfile: PhotographyTargetProfile? = nil
     ) -> AdaptivePhotographySolution {
-        let target = AdaptivePhotographyTargetGenerator().makeTarget(
-            analysis: analysis,
-            problems: problems
-        )
+        let target = targetProfile?.resolvedTarget
+            ?? AdaptivePhotographyTargetGenerator().makeTarget(
+                analysis: analysis,
+                problems: problems
+            )
         var recipe = AutomaticEditingRecipe.naturalEnhancement
         var actions: [PhotographyAction] = []
         let conditions = Set(analysis.photographyContext.lightingConditions)
@@ -1393,10 +1397,17 @@ struct AdaptivePhotographyParameterSolver {
             0...0.07
         )
 
-        let redBlueDelta = analysis.redAverage - analysis.blueAverage
-        let greenExcess = analysis.greenAverage - ((analysis.redAverage + analysis.blueAverage) * 0.5)
+        let neutralEvidence = analysis.neutralColorStatistics
+        let hasReliableNeutralEvidence = neutralEvidence?.isReliable == true
+        let redBlueDelta: Float = hasReliableNeutralEvidence
+            ? (neutralEvidence?.warmBias ?? 0)
+            : 0
+        let greenExcess: Float = hasReliableNeutralEvidence
+            ? (neutralEvidence?.greenBias ?? 0)
+            : 0
         let mixedLightProtection = max(0.35, 1 - analysis.mixedLightScore * 1.8)
-        if problems.contains(.coolCast) || problems.contains(.warmCast) {
+        if hasReliableNeutralEvidence,
+           (problems.contains(.coolCast) || problems.contains(.warmCast)) {
             recipe.temperatureShift = bounded(
                 -redBlueDelta * 1_450 * mixedLightProtection,
                 -260...260
@@ -1404,7 +1415,7 @@ struct AdaptivePhotographyParameterSolver {
         } else {
             recipe.temperatureShift = 0
         }
-        recipe.tintShift = problems.contains(.greenCast)
+        recipe.tintShift = hasReliableNeutralEvidence && problems.contains(.greenCast)
             ? bounded(greenExcess * 92 * mixedLightProtection, -7...7)
             : 0
 
@@ -1449,6 +1460,32 @@ struct AdaptivePhotographyParameterSolver {
                 max(0, subjectDeficit) * 0.32 * analysis.subjectPriorityProfile.confidence,
                 0...0.11
             )
+        }
+
+        if let targetProfile, targetProfile.referenceApplied {
+            let localContrastResidual = max(
+                0,
+                targetProfile.localContrastTarget - analysis.contrastRange
+            )
+            recipe.localContrastAmount = max(
+                recipe.localContrastAmount,
+                bounded(localContrastResidual * 0.16, 0...0.045)
+            )
+            if analysis.faceCount == 0,
+               analysis.subjectPriorityProfile.confidence >= 0.58,
+               let subject = analysis.salientSubjectStatistics,
+               let desiredDelta = targetProfile.subjectBackgroundDeltaTarget {
+                let currentDelta = subject.averageLuminance - analysis.averageLuminance
+                let residual = desiredDelta - currentDelta
+                recipe.subjectExposureEV = bounded(
+                    recipe.subjectExposureEV + residual * 0.18,
+                    -0.035...0.15
+                )
+                recipe.backgroundSeparation = bounded(
+                    recipe.backgroundSeparation + abs(residual) * 0.08,
+                    0...0.11
+                )
+            }
         }
 
         // HSL is rebuilt from measured regional colour. No scene name is allowed
@@ -1529,19 +1566,39 @@ struct AdaptivePhotographyParameterSolver {
                 analysis.noiseEstimate * 100
             )
         ))
+        if let targetProfile, targetProfile.referenceApplied {
+            actions.append(PhotographyAction(
+                title: "摄影参考目标校准（验证模式）",
+                reason: targetProfile.rationale.joined(separator: " ")
+            ))
+        }
 
         let solved = recipe.clamped()
-        return AdaptivePhotographySolution(
-            target: target,
-            recipe: solved,
-            parameterEvidence: evidence(
+        let parameterEvidence = evidence(
             recipe: solved,
             analysis: analysis,
             targetLuminance: targetLuminance,
             targetContrast: depthTarget,
             targetSaturation: target.saturation,
             noiseHeadroom: noiseHeadroom
-            ),
+        ).map { item -> PhotographyParameterEvidence in
+            guard targetProfile?.referenceApplied == true else { return item }
+            let targetDrivenKeys: Set<PhotographyParameterKey> = [
+                .exposure, .brightness, .highlights, .shadows, .contrast,
+                .toneCurve, .saturation, .vibrance, .localContrast,
+                .midtoneContrast, .localExposure
+            ]
+            guard targetDrivenKeys.contains(item.key) else { return item }
+            return item.appendingKnowledgeRules([
+                .referenceApplicabilityGate,
+                .referenceTargetCalibration,
+                .referenceValidationIsolation
+            ])
+        }
+        return AdaptivePhotographySolution(
+            target: target,
+            recipe: solved,
+            parameterEvidence: parameterEvidence,
             actions: actions
         )
     }
@@ -1563,8 +1620,8 @@ struct AdaptivePhotographyParameterSolver {
             (.toneCurve, "分离中间调", String(format: "跨度差 %+.3f", targetContrast - analysis.contrastRange), "按差值选择曲线幅度", 0, 1, "中间调层次改善", "差值很小时保持低强度"),
             (.whitePoint, "保护白色端点与高光余量", String(format: "纯白占比 %.3f", analysis.whiteRatio), "有纯白风险时轻度收回端点", 0.88, 1, "白色保留层次且不过灰", "没有端点风险时保持 1"),
             (.blackPoint, "避免灰雾同时保护真实黑位", String(format: "纯黑占比 %.3f", analysis.blackRatio), "只有黑位稀少且反差不足时轻微建立黑位", 0, 0.035, "暗部有锚点但不死黑", "夜景或已有黑位时保持 0"),
-            (.temperature, "只校正确认的非场景性色偏", String(format: "R-B %+.3f / 混合光 %.3f", analysis.redAverage - analysis.blueAverage, analysis.mixedLightScore), "中性关系或保留现场光", -600, 600, "不产生统一黄滤镜或蓝滤镜", "未诊断色偏时为 0"),
-            (.tint, "只校正确认的偏绿", String(format: "G-RB %+.3f", analysis.greenAverage - (analysis.redAverage + analysis.blueAverage) * 0.5), "中性色不偏绿", -15, 15, "白色和灰色保持中性", "未诊断偏绿时为 0"),
+            (.temperature, "只校正确认的非场景性色偏", neutralEvidenceDescription(analysis, component: .temperature), "中性关系或保留现场光", -600, 600, "不产生统一黄滤镜或蓝滤镜", "没有可靠中性色证据时为 0"),
+            (.tint, "只校正确认的偏绿", neutralEvidenceDescription(analysis, component: .tint), "中性色不偏绿", -15, 15, "白色和灰色保持中性", "没有可靠中性色证据时为 0"),
             (.hue, "仅在可靠色域内修正色相关系", String(format: "全图 RGB %.3f/%.3f/%.3f", analysis.redAverage, analysis.greenAverage, analysis.blueAverage), "不旋转全图色相，只允许区域 HSL 的微小色相校正", 0, 0.03, "颜色关系自然且不改变物体真实性", "无可靠区域统计时为 0"),
             (.saturation, "限制全局色彩失真", String(format: "平均饱和度 %.3f", analysis.averageSaturation), "全局饱和只做保护性修正", 0.96, 1.08, "保持真实颜色关系", "低饱和照片改用自然饱和度"),
             (.vibrance, "补充低饱和颜色分离", String(format: "颜色余量 %.3f", max(0, 0.31 - analysis.averageSaturation)), "优先作用于低饱和颜色", 0, 0.32, "色彩可感知但不荧光", "人物照片进一步限制"),
@@ -1606,8 +1663,74 @@ struct AdaptivePhotographyParameterSolver {
                 expectedResult: item.6,
                 fallbackBehavior: item.7,
                 affectedRegion: region,
-                decisionStatus: decisionStatus(for: item.0, value: value, analysis: analysis)
+                decisionStatus: decisionStatus(for: item.0, value: value, analysis: analysis),
+                knowledgeRuleIDs: knowledgeRules(for: item.0)
             )
+        }
+    }
+
+    private enum WhiteBalanceEvidenceComponent {
+        case temperature
+        case tint
+    }
+
+    private func neutralEvidenceDescription(
+        _ analysis: PhotoAnalysis,
+        component: WhiteBalanceEvidenceComponent
+    ) -> String {
+        guard let neutral = analysis.neutralColorStatistics else {
+            return "无中性色样本；全图 RGB 均值不作为白平衡证据"
+        }
+        guard neutral.isReliable else {
+            return String(
+                format: "中性色证据不足：覆盖 %.3f、空间 %.3f、置信度 %.3f",
+                neutral.coverage,
+                neutral.spatialZoneCoverage,
+                neutral.confidence
+            )
+        }
+        switch component {
+        case .temperature:
+            return String(
+                format: "中性色 R-B %+.3f / 覆盖 %.3f / 置信度 %.3f / 混合光 %.3f",
+                neutral.warmBias,
+                neutral.coverage,
+                neutral.confidence,
+                analysis.mixedLightScore
+            )
+        case .tint:
+            return String(
+                format: "中性色 G-RB %+.3f / 覆盖 %.3f / 置信度 %.3f / 混合光 %.3f",
+                neutral.greenBias,
+                neutral.coverage,
+                neutral.confidence,
+                analysis.mixedLightScore
+            )
+        }
+    }
+
+    private func knowledgeRules(
+        for key: PhotographyParameterKey
+    ) -> [PhotographyKnowledgeRuleID] {
+        switch key {
+        case .exposure, .brightness, .highlights, .whitePoint, .blackPoint:
+            return [.toneHistogramRegions]
+        case .shadows:
+            return [.toneHistogramRegions, .noiseAwareShadowRecovery]
+        case .contrast, .toneCurve, .midtoneContrast:
+            return [.measuredToneCurve]
+        case .temperature, .tint:
+            return [.neutralEvidenceWhiteBalance, .mixedLightPreservation, .colorSpaceIntegrity, .skinIsNotNeutralReference]
+        case .hue, .saturation, .vibrance, .shadowColor, .midtoneColor, .highlightColor:
+            return [.colorSpaceIntegrity]
+        case .localExposure, .localColor, .localTexture, .orangeHSL, .greenHSL, .blueHSL:
+            return [.reliableSemanticMask, .saliencyIsNotIdentity]
+        case .localHighlights, .localShadows, .luminanceMask:
+            return [.luminanceMaskFallback, .noiseAwareShadowRecovery]
+        case .localContrast, .noiseReduction:
+            return [.noiseAwareDetail]
+        case .sharpening:
+            return [.noiseAwareDetail, .edgeAwareSharpening]
         }
     }
 
@@ -1662,9 +1785,14 @@ final class PhotographyDirector {
 
     func direct(
         analysis: PhotoAnalysis,
-        problems: PhotoProblemReport
+        problems: PhotoProblemReport,
+        targetProfile: PhotographyTargetProfile? = nil
     ) -> PhotographyDecision {
-        decisionEngine.makeDecision(for: analysis, problems: problems)
+        decisionEngine.makeDecision(
+            for: analysis,
+            problems: problems,
+            targetProfile: targetProfile
+        )
     }
 }
 

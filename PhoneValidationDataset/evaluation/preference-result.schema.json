@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "XiaoSuCamera blind photography preference result",
+  "type": "object",
+  "required": ["caseId", "recordedAt", "choice", "blindAssignment", "reasons", "files"],
+  "properties": {
+    "caseId": { "type": "string", "minLength": 1 },
+    "recordedAt": { "type": "string", "format": "date-time" },
+    "choice": { "enum": ["left_better", "right_better", "both_bad", "difference_not_obvious"] },
+    "blindAssignment": {
+      "type": "object",
+      "required": ["left", "right"],
+      "properties": { "left": { "enum": ["B", "C"] }, "right": { "enum": ["B", "C"] } }
+    },
+    "reasons": {
+      "type": "array",
+      "items": { "enum": ["skin_tone_abnormal", "color_cast", "oversharpened", "haze", "oversaturated", "local_edit_error", "highlight_damage", "shadow_damage", "other"] }
+    },
+    "files": {
+      "type": "object",
+      "required": ["original", "baselineB", "referenceCandidateC"]
+    },
+    "notes": { "type": "string" },
+    "reviewer": { "type": "string" },
+    "iphoneBuild": { "type": "string" }
+  }
+}

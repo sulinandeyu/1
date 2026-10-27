@@ -1,0 +1,40 @@
+{
+  "runAt": "2026-10-27T16:52:00+08:00",
+  "checks": [
+    {
+      "name": "powershell_syntax",
+      "status": "passed",
+      "details": "Import-WikimediaPhotographyDataset.ps1, Measure-PhotographyDataset.ps1 and Test-PhotographyDataset.ps1 parsed without errors."
+    },
+    {
+      "name": "json_documents",
+      "status": "passed",
+      "details": "All PhotographyDataset .json documents parsed successfully."
+    },
+    {
+      "name": "dataset_integrity",
+      "status": "passed",
+      "details": "220 reference and 30 validation records; no ID/SHA256 split leakage; all manifest assets exist, match hashes and are ignored by Git; 250 feature records match manifests."
+    },
+    {
+      "name": "original_expert_pairs",
+      "status": "not_available",
+      "details": "No licensed same-capture original/expert-edit pair was imported, so pair validation was not executed."
+    },
+    {
+      "name": "swift_tests",
+      "status": "not_executed",
+      "details": "The current Windows environment has no Swift/Xcode/iOS SDK."
+    },
+    {
+      "name": "core_image_iphone_rendering",
+      "status": "not_executed",
+      "details": "No Core Image, Vision or iPhone end-to-end render was run in this task."
+    },
+    {
+      "name": "git_diff_check",
+      "status": "passed",
+      "details": "git diff --check reported no whitespace errors; line-ending warnings do not indicate content errors."
+    }
+  ]
+}

@@ -1,0 +1,54 @@
+{
+  "source": "wikimedia-commons-featured",
+  "api": "https://commons.wikimedia.org/w/api.php",
+  "startedAt": "2026-10-27T08:18:04.8049924+00:00",
+  "finishedAt": "2026-10-27T08:37:30.3551305+00:00",
+  "requested": 250,
+  "accepted": 250,
+  "reference": 220,
+  "validation": 30,
+  "validationDisjointBy": "different Commons page ID, source URL and local SHA256",
+  "apiPagesRead": 10,
+  "sourceCategoriesRead": [
+    "Category:Featured pictures on Wikimedia Commons",
+    "Category:Featured pictures of agriculture",
+    "Category:Featured pictures of architecture",
+    "Category:Featured pictures of astronomy",
+    "Category:Featured pictures of cityscapes",
+    "Category:Featured pictures of chemistry",
+    "Category:Featured pictures of villages",
+    "Category:Featured pictures of geology",
+    "Category:Featured pictures of landscapes",
+    "Category:Featured pictures of nature",
+    "Category:Featured night photography"
+  ],
+  "targetReached": true,
+  "licenses": {
+    "CC0": 14,
+    "CC BY-SA 3.0": 45,
+    "Public domain": 14,
+    "CC BY 3.0": 6,
+    "CC BY 4.0": 11,
+    "CC BY 2.0": 3,
+    "CC BY-SA 2.5": 2,
+    "CC BY-SA 4.0": 155
+  },
+  "categories": {
+    "architecture": 109,
+    "low_light": 30,
+    "nature_detail": 38,
+    "wildlife": 37,
+    "waterscape": 44,
+    "aerial": 12,
+    "landscape": 117,
+    "interior": 10,
+    "documentary_or_other": 22,
+    "transport": 41
+  },
+  "limitations": [
+    "Featured status is a Wikimedia community quality signal, not a professional retouch label.",
+    "Metadata screening is not human legal review or reliable person/trademark detection.",
+    "No original/expert-edited pairs were created.",
+    "Downloaded pixels are local-only and ignored by Git."
+  ]
+}

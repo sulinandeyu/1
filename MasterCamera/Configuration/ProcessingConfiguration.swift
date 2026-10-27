@@ -4,12 +4,33 @@ struct ProcessingConfiguration: Equatable, Sendable {
     let analysis: AnalysisConfiguration
     let quality: QualityConfiguration
     let portrait: PortraitConfiguration
+    let referenceValidation: ReferenceValidationConfiguration
 
     static let current = ProcessingConfiguration(
         analysis: .default,
         quality: .default,
-        portrait: .default
+        portrait: .default,
+        referenceValidation: .diagnosticImportsOnly
     )
+}
+
+enum ReferenceValidationMode: String, Equatable, Sendable {
+    case disabled
+    case diagnosticImportsOnly
+}
+
+struct ReferenceValidationConfiguration: Equatable, Sendable {
+    let mode: ReferenceValidationMode
+    let maximumMatches: Int
+
+    static let diagnosticImportsOnly = ReferenceValidationConfiguration(
+        mode: .diagnosticImportsOnly,
+        maximumMatches: 3
+    )
+
+    func isEnabled(isDiagnosticImport: Bool) -> Bool {
+        mode == .diagnosticImportsOnly && isDiagnosticImport
+    }
 }
 
 struct AnalysisConfiguration: Equatable, Sendable {

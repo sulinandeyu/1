@@ -1202,13 +1202,15 @@ final class SceneAdaptationTests: XCTestCase {
             red: 0.34,
             green: 0.46,
             blue: 0.58,
-            labels: ["indoor", "room"]
+            labels: ["indoor", "room"],
+            neutralColorStatistics: neutralStatistics(red: 0.43, green: 0.47, blue: 0.51)
         )
         let warm = fixture(
             red: 0.58,
             green: 0.46,
             blue: 0.34,
-            labels: ["indoor", "room"]
+            labels: ["indoor", "room"],
+            neutralColorStatistics: neutralStatistics(red: 0.51, green: 0.47, blue: 0.43)
         )
 
         let coolDecision = decision(for: cool)
@@ -1217,6 +1219,65 @@ final class SceneAdaptationTests: XCTestCase {
         XCTAssertGreaterThan(coolDecision.recipe.temperatureShift, 0)
         XCTAssertLessThan(warmDecision.recipe.temperatureShift, 0)
         XCTAssertNotEqual(coolDecision.recipe.temperatureShift, warmDecision.recipe.temperatureShift)
+    }
+
+    func testWhiteBalanceIgnoresGlobalSubjectColorWithoutReliableNeutralEvidence() {
+        let orangeDominant = fixture(
+            red: 0.62,
+            green: 0.42,
+            blue: 0.28,
+            labels: ["indoor", "still life"]
+        )
+
+        let report = detector.detect(in: orangeDominant)
+        let result = engine.makeDecision(for: orangeDominant, problems: report)
+
+        XCTAssertFalse(report.contains(.warmCast))
+        XCTAssertEqual(result.recipe.temperatureShift, 0, accuracy: 0.0001)
+        XCTAssertTrue(result.parameterEvidence.first { $0.key == .temperature }?
+            .inputEvidence.contains("无中性色样本") == true)
+    }
+
+    func testMixedLightReducesNeutralEvidenceWhiteBalanceMagnitude() {
+        let neutral = neutralStatistics(red: 0.43, green: 0.47, blue: 0.51)
+        let uniform = fixture(
+            red: 0.4,
+            green: 0.48,
+            blue: 0.56,
+            labels: ["indoor", "room"],
+            mixedLightScore: 0,
+            neutralColorStatistics: neutral
+        )
+        let mixed = fixture(
+            red: 0.4,
+            green: 0.48,
+            blue: 0.56,
+            labels: ["indoor", "room"],
+            mixedLightScore: 0.38,
+            neutralColorStatistics: neutral
+        )
+
+        XCTAssertGreaterThan(
+            abs(decision(for: uniform).recipe.temperatureShift),
+            abs(decision(for: mixed).recipe.temperatureShift)
+        )
+    }
+
+    func testWhiteBalanceEvidenceLinksPersistentKnowledgeRules() throws {
+        let analysis = fixture(
+            red: 0.4,
+            green: 0.47,
+            blue: 0.55,
+            labels: ["indoor"],
+            neutralColorStatistics: neutralStatistics(red: 0.43, green: 0.47, blue: 0.51)
+        )
+        let evidence = try XCTUnwrap(
+            decision(for: analysis).parameterEvidence.first { $0.key == .temperature }
+        )
+
+        XCTAssertTrue(evidence.knowledgeRuleIDs.contains(.neutralEvidenceWhiteBalance))
+        XCTAssertTrue(evidence.knowledgeRuleIDs.contains(.mixedLightPreservation))
+        XCTAssertTrue(evidence.knowledgeRuleIDs.contains(.skinIsNotNeutralReference))
     }
 
     func testV9CandidatesDoNotUniformlyScaleWhiteBalanceOrHSL() {
@@ -1378,8 +1439,214 @@ final class SceneAdaptationTests: XCTestCase {
         XCTAssertTrue(fragmented.qualityAssessment.reason.contains("边界密度"))
     }
 
+    func testReferenceMatcherUsesMetricsAndKeepsProductionGateClosed() {
+        let analysis = fixture(
+            luminance: 0.46,
+            contrast: 0.56,
+            saturation: 0.22,
+            red: 0.47,
+            green: 0.48,
+            blue: 0.49,
+            labels: ["outdoor", "landscape", "sky"]
+        )
+        let index = referenceIndex(records: [
+            referenceRecord(
+                id: "close",
+                luminance: 0.47,
+                contrast: 0.55,
+                saturation: 0.23,
+                categories: ["landscape", "outdoor"]
+            ),
+            referenceRecord(
+                id: "far",
+                luminance: 0.14,
+                contrast: 0.22,
+                saturation: 0.62,
+                categories: ["night", "abstract"]
+            )
+        ])
+
+        let validation = PhotographyReferenceMatcher(
+            index: index,
+            usageMode: .diagnosticValidation
+        ).match(analysis: analysis)
+        XCTAssertEqual(validation.status, .matchedForValidation)
+        XCTAssertEqual(validation.matches.first?.record.id, "close")
+        XCTAssertGreaterThan(validation.matches.first?.metricSimilarity ?? 0, 0.8)
+        XCTAssertTrue(validation.matches.first?.nonTransferableFeatures.contains("absolute HSL values") == true)
+
+        let production = PhotographyReferenceMatcher(
+            index: index,
+            usageMode: .production
+        ).match(analysis: analysis)
+        XCTAssertEqual(production.status, .prohibitedByUsagePolicy)
+        XCTAssertTrue(production.matches.isEmpty)
+    }
+
+    func testReferenceTargetIsBoundedAndActuallyFeedsTheExistingSolver() {
+        let analysis = fixture(
+            luminance: 0.39,
+            contrast: 0.43,
+            saturation: 0.18,
+            labels: ["outdoor", "landscape", "cloudy"]
+        )
+        let problems = detector.detect(in: analysis)
+        let matcher = PhotographyReferenceMatcher(
+            index: referenceIndex(records: [
+                referenceRecord(
+                    id: "reference-a",
+                    luminance: 0.46,
+                    contrast: 0.54,
+                    saturation: 0.24,
+                    categories: ["landscape", "outdoor"]
+                )
+            ]),
+            usageMode: .diagnosticValidation
+        )
+        let match = matcher.match(analysis: analysis)
+        let profile = PhotographyReferenceTargetGenerator().makeProfile(
+            analysis: analysis,
+            problems: problems,
+            matchResult: match
+        )
+        let baseline = engine.makeDecision(for: analysis, problems: problems)
+        let referenceDecision = engine.makeDecision(
+            for: analysis,
+            problems: problems,
+            targetProfile: profile
+        )
+
+        XCTAssertTrue(profile.referenceApplied)
+        XCTAssertLessThanOrEqual(abs(profile.resolvedTarget.luminance - profile.baselineTarget.luminance), 0.0141)
+        XCTAssertLessThanOrEqual(abs(profile.resolvedTarget.contrast - profile.baselineTarget.contrast), 0.0141)
+        XCTAssertNotEqual(referenceDecision.adaptiveTarget, baseline.adaptiveTarget)
+        XCTAssertTrue(referenceDecision.actions.contains { $0.title.contains("摄影参考目标校准") })
+        XCTAssertTrue(referenceDecision.parameterEvidence.contains {
+            $0.knowledgeRuleIDs.contains(.referenceTargetCalibration)
+        })
+        XCTAssertEqual(referenceDecision.recipe.temperatureShift, baseline.recipe.temperatureShift)
+        XCTAssertEqual(referenceDecision.recipe.tintShift, baseline.recipe.tintShift)
+    }
+
+    func testReferenceCompositionProxyOnlyCalibratesFromCurrentSubjectRelationship() throws {
+        let subjectMask = NormalizedPhotoMask(
+            width: 4,
+            height: 4,
+            pixels: Data([
+                0, 0, 0, 0,
+                0, 255, 255, 0,
+                0, 255, 255, 0,
+                0, 0, 0, 0
+            ])
+        )
+        let analysis = fixture(
+            luminance: 0.46,
+            contrast: 0.55,
+            saturation: 0.21,
+            labels: ["outdoor", "nature"],
+            salientSubjectMask: subjectMask,
+            salientSubjectStatistics: regionStatistics(
+                luminance: 0.24,
+                contrast: 0.32,
+                saturation: 0.31,
+                red: 0.42,
+                green: 0.30,
+                blue: 0.18
+            )
+        )
+        let currentDelta = Float(0.24 - 0.46)
+        let match = PhotographyReferenceMatcher(
+            index: referenceIndex(records: [
+                referenceRecord(
+                    id: "composition-proxy",
+                    luminance: 0.47,
+                    contrast: 0.54,
+                    saturation: 0.22,
+                    categories: ["nature", "outdoor"]
+                )
+            ]),
+            usageMode: .diagnosticValidation
+        ).match(analysis: analysis)
+        let profile = PhotographyReferenceTargetGenerator().makeProfile(
+            analysis: analysis,
+            problems: detector.detect(in: analysis),
+            matchResult: match
+        )
+        let targetDelta = try XCTUnwrap(profile.subjectBackgroundDeltaTarget)
+
+        XCTAssertTrue(profile.referenceApplied)
+        XCTAssertLessThanOrEqual(abs(targetDelta - currentDelta), 0.0351)
+        XCTAssertLessThan(targetDelta, -0.15)
+    }
+
     private func decision(for analysis: PhotoAnalysis) -> PhotographyDecision {
         engine.makeDecision(for: analysis, problems: detector.detect(in: analysis))
+    }
+
+    private func referenceIndex(
+        records: [PhotographyReferenceFeatureRecord]
+    ) -> PhotographyReferenceIndexDocument {
+        PhotographyReferenceIndexDocument(
+            schemaVersion: 1,
+            usageScope: "diagnostic_reference_matching_only",
+            productionUseAllowed: false,
+            modelTrainingAllowed: false,
+            referencePixelsBundled: false,
+            records: records
+        )
+    }
+
+    private func referenceRecord(
+        id: String,
+        luminance: Float,
+        contrast: Float,
+        saturation: Float,
+        categories: [String]
+    ) -> PhotographyReferenceFeatureRecord {
+        PhotographyReferenceFeatureRecord(
+            id: id,
+            usage: PhotographyReferenceUsage(
+                validationModeAllowed: true,
+                productionUseAllowed: false,
+                modelTrainingAllowed: false,
+                reason: "test fixture"
+            ),
+            license: PhotographyReferenceLicenseSummary(
+                name: "CC0",
+                url: "https://creativecommons.org/publicdomain/zero/1.0/",
+                attributionRequired: false,
+                shareAlike: false
+            ),
+            source: PhotographyReferenceSourceSummary(
+                pageUrl: "https://example.invalid/\(id)",
+                creator: "fixture",
+                title: id
+            ),
+            semantics: PhotographyReferenceSemantics(
+                categories: categories,
+                subjects: [],
+                lighting: [],
+                annotationStatus: "test"
+            ),
+            vector: PhotographyReferenceFeatureVector(
+                averageLuminance: luminance,
+                contrastRange: contrast,
+                shadowRatio: 0.12,
+                highlightRatio: 0.08,
+                averageSaturation: saturation,
+                redAverage: 0.47,
+                greenAverage: 0.48,
+                blueAverage: 0.49,
+                neutralCoverage: 0.18,
+                warmPixelRatio: 0.18,
+                coolPixelRatio: 0.2,
+                localContrast: 0.12,
+                gradientEnergy: 0.04,
+                centerLuminanceDelta: 0.03,
+                centerSaturationDelta: 0.01
+            ),
+            nonTransferable: ["absolute HSL values", "tone curve"]
+        )
     }
 
     private func fixture(
@@ -1416,6 +1683,7 @@ final class SceneAdaptationTests: XCTestCase {
         midtoneRatio: Float = 0.7,
         mixedLightScore: Float = 0.05,
         spatialLuminanceVariance: Float = 0.08,
+        neutralColorStatistics: NeutralColorStatistics? = nil,
         recognition: SceneRecognitionDiagnostics = SceneRecognitionDiagnostics(
             status: .recognized,
             topConfidence: 0.8,
@@ -1467,7 +1735,29 @@ final class SceneAdaptationTests: XCTestCase {
             architectureStatistics: architectureStatistics,
             semanticLabels: labels.map { SceneLabel(identifier: $0, confidence: 0.8) },
             sceneRecognitionDiagnostics: recognition,
-            segmentationDiagnostics: segmentation
+            segmentationDiagnostics: segmentation,
+            neutralColorStatistics: neutralColorStatistics
+        )
+    }
+
+    private func neutralStatistics(
+        red: Float,
+        green: Float,
+        blue: Float,
+        coverage: Float = 0.08,
+        spatialZoneCoverage: Float = 0.66,
+        confidence: Float = 0.82
+    ) -> NeutralColorStatistics {
+        NeutralColorStatistics(
+            sampleCount: 320,
+            coverage: coverage,
+            spatialZoneCoverage: spatialZoneCoverage,
+            redAverage: red,
+            greenAverage: green,
+            blueAverage: blue,
+            averageLuminance: (red + green + blue) / 3,
+            averageChroma: max(red, green, blue) - min(red, green, blue),
+            confidence: confidence
         )
     }
 
