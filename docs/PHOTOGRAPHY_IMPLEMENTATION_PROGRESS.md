@@ -87,5 +87,6 @@
 - Windows 实测：使用 21 条 TestFlight 诊断索引，对 30 个隔离查询执行匹配；26 个进入诊断匹配、4 个安全回退，本轮耗时 318 ms，索引 42,732 字节；这不是 iPhone 性能或审美结论。
 - 已通过：JSON/JSONL 解析、数据脚本执行、项目引用检查、`git diff --check`；3 张自有手机原图的文件、SHA-256、尺寸和授权字段一致。
 - 尚未完成：手机验证集仍为 3/30，B/C iPhone 导出 0/3，人工偏好评价 0/3。
-- 未执行：iPhone Core Image/Vision/JPEG、A/B/C 真机视觉验收。
-- 下一步：沿用现有远程构建，先完成 Swift 单元测试与模拟器编译，再用 `phone-owned-001` 室内强灯图验证 App 能加载索引并出现 A/B/C；TestFlight 上传须在构建结果、分支、版本号和授权风险汇报后等待用户确认。
+- 已通过：独立分支 `codex/reference-testflight-prep` 的远程 `iOS Build #59`；`swift test` 与 iOS Simulator Debug 构建均成功。
+- 未执行：签名 Archive、TestFlight 上传、iPhone Core Image/Vision/JPEG、A/B/C 真机视觉验收。
+- 下一步：等待用户确认后，以计划版本 `1.0 (25)` 运行现有 `TestFlight Release`，再用 `phone-owned-001` 室内强灯图验证 App 能加载索引并出现 A/B/C。

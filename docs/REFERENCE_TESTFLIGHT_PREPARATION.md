@@ -27,7 +27,8 @@
 ## 3. 当前验证状态
 
 - Windows 数据测试：21 条参考，30 次隔离查询，26 次匹配，4 次安全回退；本轮 318 ms。
-- Swift 单元测试与远程 Xcode 模拟器编译：等待本次独立分支的现有 GitHub Actions 流程验证。
+- 远程 iOS 编译：现有 GitHub Actions `iOS Build #59` 已通过（2026-10-27）。`swift test` 成功，`xcodebuild` iOS Simulator Debug 构建成功。运行地址：<https://github.com/sulinandeyu/1/actions/runs/40530661019>。
+- 签名、Archive 和 App Store Connect 上传：未执行；只有用户确认后才会运行 `TestFlight Release`。
 - iPhone Core Image/Vision/JPEG：未执行。
 - A/B/C 人工盲测：未执行，不得声称 C 更好看。
 
