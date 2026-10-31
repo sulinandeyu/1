@@ -182,26 +182,43 @@ final class PhotoProblemDetector {
             )
         }
 
-        let facets = Set(analysis.photographyContext.sceneFacets)
-        let environmentalColorIsIntentional = !facets.isDisjoint(with: [
-            .sky, .nature, .mountain, .water, .coast, .forest, .city, .street, .nightCity
-        ])
-        let isControlledInterior = facets.contains(.interior) || facets.contains(.workspace)
-        let isClosePortrait = facets.contains(.portrait)
-            && !environmentalColorIsIntentional
-            && analysis.largestFaceCoverage >= 0.035
-        let canDiagnoseNeutralColor = isControlledInterior || isClosePortrait
-        guard canDiagnoseNeutralColor else { return }
+        guard let neutral = analysis.neutralColorStatistics, neutral.isReliable else {
+            return
+        }
 
-        switch analysis.colorCast {
-        case .cool:
-            append(.coolCast, evidence: "蓝色通道明显高于红色通道，且当前场景不要求保留冷色。", to: &problems)
-        case .warm:
-            append(.warmCast, evidence: "红色通道明显高于蓝色通道，且当前场景不要求保留暖色。", to: &problems)
-        case .green:
-            append(.greenCast, evidence: "绿色通道相对红蓝通道偏高，且并非自然风景记忆色。", to: &problems)
-        default:
-            break
+        let lighting = Set(analysis.photographyContext.lightingConditions)
+        let atmosphereMayBeIntentional = !lighting.isDisjoint(with: [
+            .sunrise, .goldenHour, .blueHour, .dusk, .night, .indoorArtificial, .mixed
+        ])
+        let temperatureThreshold: Float = atmosphereMayBeIntentional ? 0.05 : 0.028
+        let tintThreshold: Float = atmosphereMayBeIntentional ? 0.04 : 0.022
+        let evidencePrefix = String(
+            format: "排除人脸后的中性色样本覆盖 %.1f%%、空间覆盖 %.1f%%、置信度 %.0f%%；",
+            neutral.coverage * 100,
+            neutral.spatialZoneCoverage * 100,
+            neutral.confidence * 100
+        )
+
+        if neutral.warmBias <= -temperatureThreshold {
+            append(
+                .coolCast,
+                evidence: evidencePrefix + String(format: "中性色 B-R 偏差为 %.3f。", -neutral.warmBias),
+                to: &problems
+            )
+        } else if neutral.warmBias >= temperatureThreshold {
+            append(
+                .warmCast,
+                evidence: evidencePrefix + String(format: "中性色 R-B 偏差为 %.3f。", neutral.warmBias),
+                to: &problems
+            )
+        }
+
+        if neutral.greenBias >= tintThreshold {
+            append(
+                .greenCast,
+                evidence: evidencePrefix + String(format: "中性色 G-(R+B)/2 偏差为 %.3f。", neutral.greenBias),
+                to: &problems
+            )
         }
     }
 

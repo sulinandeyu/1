@@ -1,0 +1,13 @@
+{
+  "status": "passed_algorithm_execution",
+  "referenceRecords": 21,
+  "validationQueries": 30,
+  "matchedForValidation": 26,
+  "safeFallbacks": 4,
+  "elapsedMilliseconds": 318,
+  "serializedIndexBytes": 42732,
+  "coreImageRendered": false,
+  "iphoneValidated": false,
+  "aestheticJudgment": "not_performed",
+  "output": "D:\\MasterCamera\\PhotographyDataset\\reports\\reference-matcher-validation.jsonl"
+}

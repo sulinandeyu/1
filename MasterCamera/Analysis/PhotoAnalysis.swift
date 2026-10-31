@@ -1,5 +1,46 @@
 import Foundation
 
+/// Semantic evidence emitted by the bundled panoptic Core ML model. A region is
+/// a class-level mask, not an object instance and not proof of photographic
+/// intent. Keeping that boundary explicit prevents a colour patch or generic
+/// saliency map from being presented as object recognition.
+enum SemanticObjectRole: String, Equatable, Hashable, Sendable {
+    case person
+    case vehicle
+    case animal
+    case foodOrFruit
+    case furnitureOrWorkspace
+    case artificialLight
+    case pathOrRoad
+}
+
+struct SemanticObjectRegion: Equatable, Sendable {
+    let role: SemanticObjectRole
+    let mask: NormalizedPhotoMask
+    let confidence: Float
+    let statistics: PhotoRegionStatistics?
+
+    var coverage: Float { mask.activeCoverage }
+
+    var traceSummary: String {
+        let measured = statistics.map {
+            String(
+                format: "luma=%.3f contrast=%.3f saturation=%.3f",
+                $0.averageLuminance,
+                $0.contrastRange,
+                $0.averageSaturation
+            )
+        } ?? "statistics=unavailable"
+        return String(
+            format: "%@ coverage=%.3f confidence=%.3f %@",
+            role.rawValue,
+            coverage,
+            confidence,
+            measured
+        )
+    }
+}
+
 struct PhotoAnalysis: Equatable, Sendable {
     let averageLuminance: Float
     let contrastRange: Float
@@ -43,6 +84,17 @@ struct PhotoAnalysis: Equatable, Sendable {
     let semanticLabels: [SceneLabel]
     var sceneRecognitionDiagnostics: SceneRecognitionDiagnostics = .notEvaluated
     var segmentationDiagnostics: SceneSegmentationDiagnostics = .notEvaluated
+    /// Low-chroma, non-face pixels that may support a conservative illuminant
+    /// estimate. A nil or unreliable value means that global RGB averages must
+    /// not be presented as white-balance evidence.
+    var neutralColorStatistics: NeutralColorStatistics? = nil
+    /// Class-level semantic regions from the bundled panoptic model. Empty means
+    /// unavailable/unsupported, never "the image contains no objects".
+    var semanticObjectRegions: [SemanticObjectRegion] = []
+
+    var visualSceneUnderstanding: VisualSceneUnderstandingResult {
+        VisualSceneUnderstandingResult.make(from: self)
+    }
 
     var exposureProfile: ExposureProfile {
         if averageLuminance < 0.32 {
@@ -69,18 +121,21 @@ struct PhotoAnalysis: Equatable, Sendable {
     }
 
     var colorCast: ColorCast {
-        let redBlueDelta = redAverage - blueAverage
-        let greenBalance = greenAverage - ((redAverage + blueAverage) * 0.5)
+        guard let neutral = neutralColorStatistics, neutral.isReliable else {
+            return .neutral
+        }
+        let redBlueDelta = neutral.warmBias
+        let greenBalance = neutral.greenBias
 
-        if redBlueDelta > 0.08 {
+        if redBlueDelta > 0.028 {
             return .warm
         }
 
-        if redBlueDelta < -0.08 {
+        if redBlueDelta < -0.028 {
             return .cool
         }
 
-        if greenBalance > 0.08 {
+        if greenBalance > 0.022 {
             return .green
         }
 
@@ -89,6 +144,35 @@ struct PhotoAnalysis: Equatable, Sendable {
 
     var containsFaces: Bool {
         faceCount > 0
+    }
+
+    var containsPersonEvidence: Bool {
+        faceCount > 0
+            || personMask?.qualityAssessment.isUsable == true
+            || semanticObjectRegions.contains {
+                $0.role == .person && $0.confidence >= 0.5 && $0.mask.qualityAssessment.isUsable
+            }
+    }
+
+    /// Best measured statistics for a non-person photographic subject. Semantic
+    /// class regions are preferred over generic saliency because they carry a
+    /// stronger (but still class-level) localization claim. Person evidence is
+    /// deliberately excluded so callers cannot accidentally treat a face or body
+    /// as an ordinary local-enhancement target.
+    var nonPersonPrimarySubjectStatistics: PhotoRegionStatistics? {
+        guard !containsPersonEvidence else { return nil }
+        if let semantic = semanticObjectRegions
+            .filter({
+                $0.confidence >= 0.58
+                    && $0.mask.qualityAssessment.isUsable
+                    && $0.role != .pathOrRoad
+                    && $0.role != .artificialLight
+            })
+            .max(by: { $0.confidence < $1.confidence }) {
+            return semantic.statistics
+        }
+        guard salientSubjectPriorityConfidence >= 0.58 else { return nil }
+        return salientSubjectStatistics
     }
 
     var faceToBackgroundLuminanceDelta: Float? {
@@ -118,7 +202,7 @@ struct PhotoAnalysis: Equatable, Sendable {
     /// priority. This deliberately does not claim object identity (for example fruit).
     var salientSubjectPriorityConfidence: Float {
         guard
-            faceCount == 0,
+            !containsPersonEvidence,
             let mask = salientSubjectMask,
             mask.qualityAssessment.isUsable,
             mask.activeCoverage <= 0.72,
@@ -241,8 +325,9 @@ struct PhotoAnalysis: Equatable, Sendable {
             regionMetrics("water", waterStatistics),
             regionMetrics("architecture", architectureStatistics)
         ].joined(separator: ",")
+        let neutralMetrics = neutralColorStatistics?.traceSummary ?? "unavailable"
         let base = String(
-            format: "semantic=%@ recognition=%@/%.3f segmentation=%@ labels=[%@] facets=[%@] lighting=[%@] style=%@ luma=%.3f contrast=%.3f shadow=%.3f highlight=%.3f saturation=%.3f rgb=%.3f/%.3f/%.3f personCoverage=%.3f faceCoverage=%.3f subjectCoverage=%.3f subjectPriority=%.3f masks=person:%@,subject:%@,skin:%@,sky:%@(%.3f),ground:%@,vegetation:%@,water:%@,architecture:%@ regionMetrics=[%@]",
+            format: "semantic=%@ recognition=%@/%.3f segmentation=%@ labels=[%@] facets=[%@] lighting=[%@] style=%@ luma=%.3f contrast=%.3f shadow=%.3f highlight=%.3f saturation=%.3f rgb=%.3f/%.3f/%.3f neutral=[%@] personCoverage=%.3f faceCoverage=%.3f subjectCoverage=%.3f subjectPriority=%.3f masks=person:%@,subject:%@,skin:%@,sky:%@(%.3f),ground:%@,vegetation:%@,water:%@,architecture:%@ regionMetrics=[%@]",
             semanticScene.rawValue,
             sceneRecognitionDiagnostics.status.rawValue,
             sceneRecognitionDiagnostics.topConfidence,
@@ -259,6 +344,7 @@ struct PhotoAnalysis: Equatable, Sendable {
             redAverage,
             greenAverage,
             blueAverage,
+            neutralMetrics,
             personCoverage,
             largestFaceCoverage,
             salientSubjectCoverage,
@@ -274,7 +360,10 @@ struct PhotoAnalysis: Equatable, Sendable {
             architectureMask?.isValid == true ? "yes" : "no",
             regionalMetrics
         )
-        return "\(base) sceneProfile=[\(context.sceneProfile.weightSummary)] subjectProfile=[\(subjectPriorityProfile.traceSummary)]"
+        let semanticRegions = semanticObjectRegions
+            .map(\.traceSummary)
+            .joined(separator: " | ")
+        return "\(base) sceneProfile=[\(context.sceneProfile.weightSummary)] subjectProfile=[\(subjectPriorityProfile.traceSummary)] semanticRegions=[\(semanticRegions)]"
     }
 
     static let fallback = PhotoAnalysis(
@@ -318,6 +407,49 @@ struct PhotoAnalysis: Equatable, Sendable {
         architectureStatistics: nil,
         semanticLabels: []
     )
+}
+
+/// Evidence for a possible neutral reference in the current rendered image.
+/// This is deliberately not called an illuminant estimate: low-chroma image
+/// pixels are only a conservative clue, and the confidence must be respected.
+struct NeutralColorStatistics: Equatable, Sendable {
+    let sampleCount: Int
+    let coverage: Float
+    let spatialZoneCoverage: Float
+    let redAverage: Float
+    let greenAverage: Float
+    let blueAverage: Float
+    let averageLuminance: Float
+    let averageChroma: Float
+    let confidence: Float
+
+    var warmBias: Float { redAverage - blueAverage }
+    var greenBias: Float { greenAverage - ((redAverage + blueAverage) * 0.5) }
+
+    var isReliable: Bool {
+        sampleCount >= 24
+            && coverage >= 0.015
+            && spatialZoneCoverage >= (2.0 / 9.0)
+            && confidence >= 0.5
+    }
+
+    var traceSummary: String {
+        String(
+            format: "samples=%d coverage=%.3f zones=%.3f rgb=%.3f/%.3f/%.3f luma=%.3f chroma=%.3f warm=%+.3f green=%+.3f confidence=%.3f reliable=%@",
+            sampleCount,
+            coverage,
+            spatialZoneCoverage,
+            redAverage,
+            greenAverage,
+            blueAverage,
+            averageLuminance,
+            averageChroma,
+            warmBias,
+            greenBias,
+            confidence,
+            isReliable ? "yes" : "no"
+        )
+    }
 }
 
 struct PhotoRegionStatistics: Equatable, Sendable {
@@ -412,6 +544,22 @@ struct NormalizedPhotoMask: Equatable, Sendable {
             if value >= 32 { count += 1 }
         }
         return Float(active) / Float(pixels.count)
+    }
+
+    var activeCentroid: (x: Float, y: Float)? {
+        guard isValid, !pixels.isEmpty else { return nil }
+        var totalX: Float = 0
+        var totalY: Float = 0
+        var count: Float = 0
+        for y in 0..<height {
+            for x in 0..<width where pixels[(y * width) + x] >= 32 {
+                totalX += (Float(x) + 0.5) / Float(width)
+                totalY += (Float(y) + 0.5) / Float(height)
+                count += 1
+            }
+        }
+        guard count > 0 else { return nil }
+        return (totalX / count, totalY / count)
     }
 
     var qualityAssessment: PhotoMaskQualityAssessment {
@@ -578,15 +726,32 @@ struct SubjectPriorityProfile: Equatable, Sendable {
     }
 
     static func make(from analysis: PhotoAnalysis) -> SubjectPriorityProfile {
-        let hasProtectedPerson = analysis.faceCount > 0 && analysis.personMask?.isValid == true
-        let confidence: Float = hasProtectedPerson ? 0.92 : analysis.salientSubjectPriorityConfidence
+        let hasProtectedPerson = analysis.containsPersonEvidence
+            && analysis.personMask?.qualityAssessment.isUsable == true
+        let semanticPrimary = analysis.semanticObjectRegions
+            .filter {
+                $0.confidence >= 0.58
+                    && $0.mask.qualityAssessment.isUsable
+                    && $0.role != .pathOrRoad
+                    && $0.role != .artificialLight
+            }
+            .max { left, right in
+                let leftScore = left.confidence * max(0.25, 1 - left.coverage)
+                let rightScore = right.confidence * max(0.25, 1 - right.coverage)
+                return leftScore < rightScore
+            }
+        let confidence: Float = hasProtectedPerson
+            ? 0.92
+            : (semanticPrimary?.confidence ?? analysis.salientSubjectPriorityConfidence)
         let primary = hasProtectedPerson
             ? analysis.personMask
-            : (confidence >= 0.54 ? analysis.salientSubjectMask : nil)
+            : (semanticPrimary?.mask ?? (confidence >= 0.54 ? analysis.salientSubjectMask : nil))
         let labels = analysis.semanticLabels.map { $0.identifier.lowercased() }
         let type: String
-        if analysis.faceCount > 0 {
+        if analysis.containsPersonEvidence {
             type = "人物（由人物保护链处理）"
+        } else if let semanticPrimary {
+            type = "\(semanticPrimary.role.rawValue) 类级语义区域候选"
         } else if labels.containsKeyword(["food", "fruit", "produce"]) {
             type = "食物/果实语义与视觉显著区域"
         } else if labels.containsKeyword(["animal", "pet", "cat", "dog", "bird"]) {
@@ -638,8 +803,188 @@ struct SubjectPriorityProfile: Equatable, Sendable {
             typeDescription: type,
             evidence: primary == nil
                 ? "显著性覆盖或区域分离证据不足，明确进入整图协调模式。"
-                : "Vision 显著性、覆盖范围、区域亮度/色彩分离与细节共同达到执行阈值。"
+                : (semanticPrimary == nil
+                    ? "Vision 显著性、覆盖范围、区域亮度/色彩分离与细节共同达到执行阈值。"
+                    : "Core ML 类级语义蒙版通过覆盖率与边界门控；它不代表实例身份或摄影意图。")
         )
+    }
+}
+
+enum VisualEvidenceStatus: String, Equatable, Sendable {
+    case reliable
+    case uncertain
+    case unavailable
+}
+
+struct VisualSceneUnderstandingResult: Equatable, Sendable {
+    let status: VisualEvidenceStatus
+    let sceneLabels: [SceneLabel]
+    let semanticRegions: [SemanticObjectRegion]
+    let primarySubjectDescription: String
+    let subjectConfidence: Float
+    let visualCenterX: Float
+    let visualCenterY: Float
+    let globalLuminance: Float
+    let contrastRange: Float
+    let shadowRatio: Float
+    let highlightRatio: Float
+    let localLightEvidence: String
+    let neutralColorEvidence: String
+    let dominantColorRelationship: String
+    let protectedRegions: [String]
+    let unknowns: [String]
+
+    var traceSummary: String {
+        let labels = sceneLabels.map {
+            "\($0.identifier)=\(String(format: "%.2f", $0.confidence))"
+        }.joined(separator: ",")
+        let regions = semanticRegions.map(\.traceSummary).joined(separator: " | ")
+        return String(
+            format: "status=%@ subject=%@ subjectConfidence=%.3f center=%.3f/%.3f luma=%.3f contrast=%.3f shadow=%.3f highlight=%.3f labels=[%@] regions=[%@] light=[%@] color=[%@] neutral=[%@] protected=[%@] unknown=[%@]",
+            status.rawValue,
+            primarySubjectDescription,
+            subjectConfidence,
+            visualCenterX,
+            visualCenterY,
+            globalLuminance,
+            contrastRange,
+            shadowRatio,
+            highlightRatio,
+            labels,
+            regions,
+            localLightEvidence,
+            dominantColorRelationship,
+            neutralColorEvidence,
+            protectedRegions.joined(separator: ","),
+            unknowns.joined(separator: ",")
+        )
+    }
+
+    static func make(from analysis: PhotoAnalysis) -> VisualSceneUnderstandingResult {
+        let subject = analysis.subjectPriorityProfile
+        let recognizedRegions = analysis.semanticObjectRegions.filter {
+            $0.mask.qualityAssessment.isUsable && $0.confidence >= 0.5
+        }
+        let preferredRole = recognizedRegions
+            .filter { $0.role != .pathOrRoad && $0.role != .artificialLight }
+            .max { left, right in
+                semanticPriority(left, analysis: analysis) < semanticPriority(right, analysis: analysis)
+            }
+        let subjectDescription: String
+        let subjectConfidence: Float
+        if analysis.faceCount > 0 {
+            subjectDescription = "人物（Vision 人脸 + 人物蒙版；仅允许摄影级环境处理）"
+            subjectConfidence = analysis.personMask?.qualityAssessment.reliability ?? 0.72
+        } else if analysis.containsPersonEvidence {
+            subjectDescription = "人物区域候选（人物蒙版/类级语义；未检测到可靠人脸）"
+            subjectConfidence = max(
+                analysis.personMask?.qualityAssessment.reliability ?? 0,
+                preferredRole?.role == .person ? (preferredRole?.confidence ?? 0) : 0
+            )
+        } else if let preferredRole {
+            subjectDescription = "\(preferredRole.role.rawValue) 语义区域候选（类级蒙版，非实例识别）"
+            subjectConfidence = preferredRole.confidence
+        } else {
+            subjectDescription = subject.typeDescription
+            subjectConfidence = subject.confidence
+        }
+
+        let primaryMask = analysis.faceCount > 0
+            ? analysis.personMask
+            : (preferredRole?.mask ?? subject.primarySubjectMask)
+        let center = primaryMask?.activeCentroid ?? (
+            x: analysis.highlightCentroidX,
+            y: analysis.highlightCentroidY
+        )
+        let status: VisualEvidenceStatus
+        if analysis.sceneRecognitionDiagnostics.status == .failed,
+           analysis.segmentationDiagnostics.status == .failed,
+           subjectConfidence < 0.5 {
+            status = .unavailable
+        } else if subjectConfidence >= 0.58 || !recognizedRegions.isEmpty {
+            status = .reliable
+        } else {
+            status = .uncertain
+        }
+
+        let colorRelationship = String(
+            format: "R/G/B %.3f/%.3f/%.3f；暖冷差 R-B %+.3f；平均饱和度 %.3f；混合光风险 %.3f",
+            analysis.redAverage,
+            analysis.greenAverage,
+            analysis.blueAverage,
+            analysis.redAverage - analysis.blueAverage,
+            analysis.averageSaturation,
+            analysis.mixedLightScore
+        )
+        var protected = ["真实高光形态", "原始场景氛围"]
+        if analysis.containsPersonEvidence {
+            protected += ["人脸结构", "皮肤纹理", "原始肤色色相"]
+        }
+        if analysis.skyMask?.qualityAssessment.isUsable == true {
+            protected.append("天空区域真实亮部与云层")
+        }
+        var unknowns: [String] = []
+        if analysis.sceneRecognitionDiagnostics.status != .recognized {
+            unknowns.append("场景分类不可靠")
+        }
+        if recognizedRegions.isEmpty {
+            unknowns.append("无可靠类级对象区域")
+        }
+        if subjectConfidence < 0.58 {
+            unknowns.append("主要视觉对象身份/边界不确定")
+        }
+        if analysis.neutralColorStatistics?.isReliable != true {
+            unknowns.append("光源绝对白平衡不确定")
+        }
+        return VisualSceneUnderstandingResult(
+            status: status,
+            sceneLabels: analysis.semanticLabels,
+            semanticRegions: recognizedRegions,
+            primarySubjectDescription: subjectDescription,
+            subjectConfidence: subjectConfidence,
+            visualCenterX: center.x,
+            visualCenterY: center.y,
+            globalLuminance: analysis.averageLuminance,
+            contrastRange: analysis.contrastRange,
+            shadowRatio: analysis.shadowRatio,
+            highlightRatio: analysis.highlightRatio,
+            localLightEvidence: String(
+                format: "高亮源=%d 集中度=%.3f 位置=%.3f/%.3f 空间亮度方差=%.3f",
+                analysis.highlightSourceCount,
+                analysis.highlightConcentration,
+                analysis.highlightCentroidX,
+                analysis.highlightCentroidY,
+                analysis.spatialLuminanceVariance
+            ),
+            neutralColorEvidence: analysis.neutralColorStatistics?.traceSummary ?? "unavailable",
+            dominantColorRelationship: colorRelationship,
+            protectedRegions: protected,
+            unknowns: unknowns
+        )
+    }
+
+    private static func semanticPriority(
+        _ region: SemanticObjectRegion,
+        analysis: PhotoAnalysis
+    ) -> Float {
+        let roleWeight: Float
+        switch region.role {
+        case .person: roleWeight = 1
+        case .animal, .foodOrFruit: roleWeight = 0.9
+        case .vehicle: roleWeight = 0.72
+        case .furnitureOrWorkspace: roleWeight = 0.62
+        case .artificialLight: roleWeight = 0.36
+        case .pathOrRoad: roleWeight = 0.28
+        }
+        let statistics = region.statistics
+        let lumaSeparation = abs((statistics?.averageLuminance ?? analysis.averageLuminance) - analysis.averageLuminance)
+        let saturationSeparation = abs((statistics?.averageSaturation ?? analysis.averageSaturation) - analysis.averageSaturation)
+        let usefulCoverage = min(1, region.coverage / 0.18) * max(0, 1 - region.coverage)
+        return roleWeight * 0.42
+            + region.confidence * 0.24
+            + usefulCoverage * 0.16
+            + min(1, lumaSeparation * 4) * 0.1
+            + min(1, saturationSeparation * 3) * 0.08
     }
 }
 
@@ -865,7 +1210,18 @@ struct PhotographyContext: Equatable, Sendable {
         var facets = Set<SceneFacet>()
         var lighting = Set<LightingCondition>()
 
-        if analysis.faceCount > 0 {
+        let semanticPersonConfidence = analysis.semanticObjectRegions
+            .filter { $0.role == .person && $0.mask.qualityAssessment.isUsable }
+            .map(\.confidence)
+            .max() ?? 0
+        let personEvidenceConfidence: Float = analysis.faceCount > 0
+            ? max(0.72, analysis.personMask?.qualityAssessment.reliability ?? 0)
+            : max(
+                analysis.personMask?.qualityAssessment.reliability ?? 0,
+                semanticPersonConfidence
+            )
+
+        if analysis.containsPersonEvidence {
             facets.insert(analysis.faceCount > 1 ? .groupPortrait : .portrait)
         }
         if analysis.skyCoverage > 0.03 || labels.containsKeyword(["sky", "cloud"]) { facets.insert(.sky) }
@@ -983,8 +1339,11 @@ struct PhotographyContext: Equatable, Sendable {
             ruralSemantic,
             min(0.78, outdoorWeight * vegetationWeight * (1 - urbanWeight) * 0.92)
         )
-        let portraitWeight: Float = analysis.faceCount > 0
-            ? min(1, 0.78 + analysis.largestFaceCoverage)
+        let portraitWeight: Float = analysis.containsPersonEvidence
+            ? max(
+                min(1, 0.78 + analysis.largestFaceCoverage),
+                personEvidenceConfidence
+            )
             : semanticConfidence(["portrait", "person", "people"])
         let animalWeight = semanticConfidence(["animal", "pet", "cat", "dog", "bird"])
         let foodFruitWeight = semanticConfidence(["food", "fruit", "dish", "meal", "dessert", "produce"])
@@ -1122,9 +1481,9 @@ struct PhotographyContext: Equatable, Sendable {
         if facets.isEmpty { facets.insert(.other) }
         // A confident scene label is not evidence of one primary subject. Build 22
         // incorrectly reported 100% subject confidence by reusing scene confidence.
-        let subjectConfidence: Float = analysis.faceCount > 0
-            ? 0.92
-            : analysis.salientSubjectPriorityConfidence
+        let subjectConfidence: Float = analysis.containsPersonEvidence
+            ? personEvidenceConfidence
+            : analysis.subjectPriorityProfile.confidence
         let depth = min(1, max(0, analysis.spatialLuminanceVariance * 2.3 + analysis.contrastRange * 0.35))
         let atmosphere = min(1, max(0, analysis.mixedLightScore * 1.5 + analysis.highlightConcentration * 0.45 + (looksNight ? 0.2 : 0)))
 

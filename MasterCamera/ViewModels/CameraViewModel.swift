@@ -105,7 +105,11 @@ final class CameraViewModel: ObservableObject {
             do {
                 try await PhotoLibraryManager.savePhotos(capturedPhoto)
                 errorMessage = nil
-                saveState = .saved
+                let savedReferenceCandidate = capturedPhoto.isDiagnosticImport
+                    && capturedPhoto.processingStagePreviews.contains {
+                        $0.name.hasPrefix("C 摄影参考校准候选") && !$0.imageData.isEmpty
+                    }
+                saveState = savedReferenceCandidate ? .savedDiagnosticABC : .saved
             } catch {
                 errorMessage = error.localizedDescription
                 saveState = .failed(error.localizedDescription)

@@ -38,8 +38,10 @@ let package = Package(
                 "ImageEngine/AutomaticEditingRecipe.swift",
                 "PhotographerAI/PhotographyDecision.swift",
                 "PhotographerAI/PhotographyDecisionEngine.swift",
+                "PhotographerAI/PhotographyReferenceMatcher.swift",
                 "PhotographerAI/SceneStrategy.swift"
-            ]
+            ],
+            resources: [.process("ReferenceData")]
         ),
         .testTarget(
             name: "MasterCameraDecisionCoreTests",

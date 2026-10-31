@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>小苏相机 B/C 盲测</title>
+  <style>
+    :root { color-scheme: dark; font-family: system-ui, sans-serif; background:#0b0b0c; color:#f5f5f5; }
+    body { max-width: 1500px; margin:auto; padding:24px; }
+    .inputs,.reasons,.actions { display:flex; flex-wrap:wrap; gap:12px; margin:16px 0; }
+    label { background:#18181b; border:1px solid #333; border-radius:10px; padding:10px; }
+    input,textarea { margin-left:6px; }
+    .original { max-width:420px; max-height:300px; object-fit:contain; background:#111; }
+    .pair { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+    .card { background:#151518; border-radius:14px; padding:12px; }
+    .card img { width:100%; height:65vh; object-fit:contain; background:#090909; }
+    button { border:0; border-radius:10px; padding:12px 16px; font-weight:700; cursor:pointer; }
+    .primary { background:#fff; color:#111; }
+    .muted { background:#333; color:#fff; }
+    #status { color:#a7f3d0; white-space:pre-wrap; }
+    @media(max-width:800px){ .pair{grid-template-columns:1fr}.card img{height:50vh} }
+  </style>
+</head>
+<body>
+  <h1>小苏相机 A/B/C 离线盲测</h1>
+  <p>原图只用于对照。B/C 会随机放在左右两侧；投票前不显示身份。工具不上传图片，只在浏览器本地生成一条可下载的 JSON 记录。</p>
+  <div class="inputs">
+    <label>案例 ID <input id="caseId" value="phone-owned-001"></label>
+    <label>构建号 <input id="build"></label>
+    <label>评价者 <input id="reviewer"></label>
+    <label>A 原图 <input id="original" type="file" accept="image/*"></label>
+    <label>B 当前算法 <input id="baseline" type="file" accept="image/*"></label>
+    <label>C 参考候选 <input id="candidate" type="file" accept="image/*"></label>
+  </div>
+  <h2>A 原图</h2><img class="original" id="originalPreview" alt="请加载原图">
+  <div class="pair">
+    <section class="card"><h2>左图</h2><img id="left" alt="请加载 B/C"></section>
+    <section class="card"><h2>右图</h2><img id="right" alt="请加载 B/C"></section>
+  </div>
+  <h2>异常原因（可多选）</h2>
+  <div class="reasons" id="reasons"></div>
+  <label>备注 <textarea id="notes" rows="3" cols="70"></textarea></label>
+  <div class="actions">
+    <button class="primary" data-choice="left_better">左图更好</button>
+    <button class="primary" data-choice="right_better">右图更好</button>
+    <button class="muted" data-choice="both_bad">两者都不好</button>
+    <button class="muted" data-choice="difference_not_obvious">差异不明显</button>
+    <button class="muted" id="export" type="button">导出全部评价 JSON</button>
+    <button class="muted" id="reset" type="button">清空本地评价</button>
+  </div>
+  <p id="status"></p>
+<script>
+const reasonLabels={skin_tone_abnormal:'肤色异常',color_cast:'偏色',oversharpened:'过度锐化',haze:'灰雾',oversaturated:'过饱和',local_edit_error:'局部处理错误',highlight_damage:'高光破坏',shadow_damage:'暗部破坏',other:'其他'};
+const state={left:'B',right:'C',files:{original:'',baselineB:'',referenceCandidateC:''}};
+const caseIdInput=document.querySelector('#caseId');
+const buildInput=document.querySelector('#build');
+const reviewerInput=document.querySelector('#reviewer');
+const originalInput=document.querySelector('#original');
+const baselineInput=document.querySelector('#baseline');
+const candidateInput=document.querySelector('#candidate');
+const originalPreviewImage=document.querySelector('#originalPreview');
+const leftImage=document.querySelector('#left');
+const rightImage=document.querySelector('#right');
+const notesInput=document.querySelector('#notes');
+const statusText=document.querySelector('#status');
+const exportButton=document.querySelector('#export');
+const resetButton=document.querySelector('#reset');
+const reasons=document.querySelector('#reasons');
+Object.entries(reasonLabels).forEach(([id,label])=>{const el=document.createElement('label');el.innerHTML=`<input type="checkbox" value="${id}"> ${label}`;reasons.appendChild(el)});
+function urlFor(input,img,key){input.addEventListener('change',()=>{const f=input.files[0];if(!f)return;state.files[key]=f.name;img.src=URL.createObjectURL(f);if(key==='baselineB'||key==='referenceCandidateC') arrange();});}
+urlFor(originalInput,originalPreviewImage,'original');
+function arrange(){const b=baselineInput.files[0],c=candidateInput.files[0];if(!b||!c)return;const swap=crypto.getRandomValues(new Uint8Array(1))[0]%2===0;state.left=swap?'C':'B';state.right=swap?'B':'C';leftImage.src=URL.createObjectURL(swap?c:b);rightImage.src=URL.createObjectURL(swap?b:c);statusText.textContent='B/C 已随机排列，可以开始盲测。';}
+baselineInput.addEventListener('change',()=>{const f=baselineInput.files[0];if(f)state.files.baselineB=f.name;arrange()});
+candidateInput.addEventListener('change',()=>{const f=candidateInput.files[0];if(f)state.files.referenceCandidateC=f.name;arrange()});
+function records(){return JSON.parse(localStorage.getItem('xiaosu-photo-preferences')||'[]')}
+document.querySelectorAll('[data-choice]').forEach(btn=>btn.addEventListener('click',()=>{if(!state.files.original||!state.files.baselineB||!state.files.referenceCandidateC){statusText.textContent='请先加载 A、B、C 三张真实图片。';return;}const entry={caseId:caseIdInput.value.trim(),recordedAt:new Date().toISOString(),choice:btn.dataset.choice,blindAssignment:{left:state.left,right:state.right},reasons:[...document.querySelectorAll('#reasons input:checked')].map(x=>x.value),files:{...state.files},notes:notesInput.value.trim(),reviewer:reviewerInput.value.trim(),iphoneBuild:buildInput.value.trim(),source:'human_offline_blind_comparison'};const all=records();all.push(entry);localStorage.setItem('xiaosu-photo-preferences',JSON.stringify(all));statusText.textContent=`已记录第 ${all.length} 条。揭盲：左=${state.left}，右=${state.right}。`;arrange();}));
+exportButton.onclick=()=>{const data=JSON.stringify({schemaVersion:1,exportedAt:new Date().toISOString(),results:records()},null,2);const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([data],{type:'application/json'}));a.download=`xiaosu-preferences-${new Date().toISOString().replace(/[:.]/g,'-')}.json`;a.click();};
+resetButton.onclick=()=>{if(confirm('确定清空浏览器中的全部本地评价？')){localStorage.removeItem('xiaosu-photo-preferences');statusText.textContent='已清空。';}};
+</script>
+</body>
+</html>

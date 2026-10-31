@@ -13,6 +13,7 @@ struct ImageProcessingDiagnostics: Equatable, Sendable {
     let parameterExecutionResults: [String]
     let candidateEvaluations: [PhotographyCandidateEvaluation]
     let finalRegionImpacts: [PhotographyRegionImpact]
+    let referenceValidationDetails: [String]
     let stages: [ProcessingStageRecord]
     let fallbackReason: String?
 }
@@ -80,6 +81,7 @@ final class ImageProcessingDiagnosticsService {
         parameterExecutionResults: [String] = [],
         candidateEvaluations: [PhotographyCandidateEvaluation] = [],
         finalRegionImpacts: [PhotographyRegionImpact] = [],
+        referenceValidationDetails: [String] = [],
         stages: [ProcessingStageRecord],
         fallbackReason: String?
     ) throws -> ImageDiagnosticsResult {
@@ -109,6 +111,7 @@ final class ImageProcessingDiagnosticsService {
             parameterExecutionResults: parameterExecutionResults,
             candidateEvaluations: candidateEvaluations,
             finalRegionImpacts: finalRegionImpacts,
+            referenceValidationDetails: referenceValidationDetails,
             stages: stages,
             fallbackReason: fallbackReason
         )

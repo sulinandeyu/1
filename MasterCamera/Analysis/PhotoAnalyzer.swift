@@ -52,6 +52,12 @@ final class PhotoAnalyzer {
             height: statistics.height,
             faceRegions: faceRegions
         )
+        let neutralColorStatistics = neutralColorStatistics(
+            rgbaPixels: statistics.rgbaPixels,
+            width: statistics.width,
+            height: statistics.height,
+            excluding: faceRegions
+        )
         let personMask = includeFaceDetection ? generatePersonMask(in: data) : nil
         let salientSubjectMask = includeFaceDetection ? generateSalientSubjectMask(in: data) : nil
         let classification = includeFaceDetection
@@ -136,6 +142,32 @@ final class PhotoAnalyzer {
             height: statistics.height,
             mask: salientSubjectMask
         )
+        let semanticObjectRegions = (skySegmentation?.semanticObjectMasks ?? [:])
+            .compactMap { role, mask -> SemanticObjectRegion? in
+                let quality = mask.qualityAssessment
+                guard quality.isUsable else { return nil }
+                let regionStatistics = PhotoRegionStatistics.measure(
+                    rgbaPixels: statistics.rgbaPixels,
+                    width: statistics.width,
+                    height: statistics.height,
+                    mask: mask
+                )
+                let coverageEvidence = min(1, max(0, mask.activeCoverage / 0.04))
+                return SemanticObjectRegion(
+                    role: role,
+                    mask: mask,
+                    confidence: min(0.94, quality.reliability * 0.78 + coverageEvidence * 0.22),
+                    statistics: regionStatistics
+                )
+            }
+            .sorted { left, right in
+                if abs(left.confidence - right.confidence) > 0.001 {
+                    return left.confidence > right.confidence
+                }
+                return left.role.rawValue < right.role.rawValue
+            }
+        let resolvedPersonMask = personMask
+            ?? skySegmentation?.semanticObjectMasks[.person]
 
         return PhotoAnalysis(
             averageLuminance: statistics.averageLuminance,
@@ -161,7 +193,7 @@ final class PhotoAnalyzer {
             faceRegions: faceRegions,
             faceAverageLuminance: regionalTone.faceAverageLuminance,
             backgroundAverageLuminance: regionalTone.backgroundAverageLuminance,
-            personMask: personMask,
+            personMask: resolvedPersonMask,
             salientSubjectMask: salientSubjectMask,
             salientSubjectStatistics: salientSubjectStatistics,
             skinMask: capturedSkinMask?.isValid == true ? capturedSkinMask : nil,
@@ -178,7 +210,93 @@ final class PhotoAnalyzer {
             architectureStatistics: architectureStatistics,
             semanticLabels: classification.labels,
             sceneRecognitionDiagnostics: classification.diagnostics,
-            segmentationDiagnostics: segmentationDiagnostics
+            segmentationDiagnostics: segmentationDiagnostics,
+            neutralColorStatistics: neutralColorStatistics,
+            semanticObjectRegions: semanticObjectRegions
+        )
+    }
+
+    /// Measures low-chroma midtone/bright pixels outside face regions. This is
+    /// an evidence source for conservative white-balance diagnosis, not a claim
+    /// that every low-chroma surface is physically neutral.
+    private func neutralColorStatistics(
+        rgbaPixels: [UInt8],
+        width: Int,
+        height: Int,
+        excluding faceRegions: [NormalizedPhotoRegion]
+    ) -> NeutralColorStatistics? {
+        guard width > 0, height > 0, rgbaPixels.count == width * height * 4 else {
+            return nil
+        }
+
+        let excludedRegions = faceRegions.map { $0.insetForFaceMetering() }
+        var redTotal: Float = 0
+        var greenTotal: Float = 0
+        var blueTotal: Float = 0
+        var luminanceTotal: Float = 0
+        var chromaTotal: Float = 0
+        var sampleCount = 0
+        var occupiedZones = Set<Int>()
+
+        for y in 0..<height {
+            let normalizedY = (Float(y) + 0.5) / Float(height)
+            for x in 0..<width {
+                let normalizedX = (Float(x) + 0.5) / Float(width)
+                guard !excludedRegions.contains(where: {
+                    $0.contains(x: normalizedX, y: normalizedY)
+                }) else { continue }
+
+                let index = ((y * width) + x) * 4
+                let red = Float(rgbaPixels[index]) / 255
+                let green = Float(rgbaPixels[index + 1]) / 255
+                let blue = Float(rgbaPixels[index + 2]) / 255
+                let value = luminance(red: red, green: green, blue: blue)
+                let maximum = max(red, green, blue)
+                let minimum = min(red, green, blue)
+                let chroma = maximum - minimum
+                let relativeChroma = maximum > 0 ? chroma / maximum : 0
+
+                // Avoid clipped endpoints, deep noisy shadows and clearly
+                // colored surfaces. The two chroma limits admit a moderate cast
+                // while rejecting saturated subjects such as fruit or foliage.
+                guard value >= 0.18, value <= 0.92 else { continue }
+                guard chroma <= 0.12, relativeChroma <= 0.18 else { continue }
+
+                redTotal += red
+                greenTotal += green
+                blueTotal += blue
+                luminanceTotal += value
+                chromaTotal += chroma
+                sampleCount += 1
+                let zoneX = min(2, x * 3 / width)
+                let zoneY = min(2, y * 3 / height)
+                occupiedZones.insert(zoneY * 3 + zoneX)
+            }
+        }
+
+        guard sampleCount > 0 else { return nil }
+        let totalPixels = Float(width * height)
+        let coverage = Float(sampleCount) / totalPixels
+        let zoneCoverage = Float(occupiedZones.count) / 9
+        let averageChroma = chromaTotal / Float(sampleCount)
+        let sampleEvidence = min(1, coverage / 0.08)
+        let spatialEvidence = min(1, zoneCoverage / (5.0 / 9.0))
+        let lowChromaEvidence = min(1, max(0, (0.10 - averageChroma) / 0.08))
+        let confidence = min(
+            0.95,
+            sampleEvidence * 0.5 + spatialEvidence * 0.3 + lowChromaEvidence * 0.2
+        )
+
+        return NeutralColorStatistics(
+            sampleCount: sampleCount,
+            coverage: coverage,
+            spatialZoneCoverage: zoneCoverage,
+            redAverage: redTotal / Float(sampleCount),
+            greenAverage: greenTotal / Float(sampleCount),
+            blueAverage: blueTotal / Float(sampleCount),
+            averageLuminance: luminanceTotal / Float(sampleCount),
+            averageChroma: averageChroma,
+            confidence: confidence
         )
     }
 

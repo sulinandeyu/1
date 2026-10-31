@@ -10,6 +10,7 @@ struct PhotographyDecision: Equatable, Sendable {
     let treatmentPlan: PhotographyTreatmentPlan
     let recipe: AutomaticEditingRecipe
     let parameterEvidence: [PhotographyParameterEvidence]
+    let aestheticPlan: AestheticPhotographyPlan?
 
     var summaryText: String {
         let actionText = actions.map(\.title).joined(separator: ", ")
@@ -73,7 +74,8 @@ struct PhotographyDecision: Equatable, Sendable {
                 portraitProtection: treatmentPlan.portraitProtection
             ),
             recipe: recipe,
-            parameterEvidence: parameterEvidence.map { $0.refreshingActualValue(from: recipe) }
+            parameterEvidence: parameterEvidence.map { $0.refreshingActualValue(from: recipe) },
+            aestheticPlan: aestheticPlan
         )
     }
 }
@@ -114,11 +116,78 @@ enum PhotographyParameterDecisionStatus: String, Equatable, Sendable {
     case disabledBySafety
 }
 
+/// Stable links from executable decisions to the persistent photography
+/// knowledge base in `PhotographyKnowledge`.
+enum PhotographyKnowledgeRuleID: String, Equatable, Hashable, Sendable {
+    case toneHistogramRegions = "PT-TONE-001"
+    case noiseAwareShadowRecovery = "PT-TONE-002"
+    case measuredToneCurve = "PT-TONE-003"
+    case neutralEvidenceWhiteBalance = "PT-COLOR-001"
+    case mixedLightPreservation = "PT-COLOR-002"
+    case colorSpaceIntegrity = "PT-COLOR-003"
+    case reliableSemanticMask = "PT-LOCAL-001"
+    case luminanceMaskFallback = "PT-LOCAL-002"
+    case saliencyIsNotIdentity = "PT-LOCAL-003"
+    case noiseAwareDetail = "PT-DETAIL-001"
+    case edgeAwareSharpening = "PT-DETAIL-002"
+    case portraitSourceRelativeProtection = "PT-PORTRAIT-001"
+    case skinIsNotNeutralReference = "PT-PORTRAIT-002"
+    case technicalAndPreferenceLayers = "PT-QA-001"
+    case explainableFallback = "PT-QA-002"
+    case referenceApplicabilityGate = "PT-REF-001"
+    case referenceTargetCalibration = "PT-REF-002"
+    case referenceValidationIsolation = "PT-REF-003"
+    case semanticEvidenceBoundary = "PT-UNDERSTANDING-001"
+    case measuredVisualHierarchy = "PT-AESTHETIC-001"
+    case regionalColorHarmony = "PT-AESTHETIC-002"
+    case atmospherePreservation = "PT-AESTHETIC-003"
+}
+
+/// Metadata-only representation for future licensed reference pairs. It does
+/// not contain a preset and is not consumed as a scene-to-recipe lookup.
+struct PhotographyReferenceRecord: Codable, Equatable, Sendable {
+    let id: String
+    let license: PhotographyReferenceLicense
+    let originalPath: String
+    let editedPath: String
+    let adjustmentRecordPath: String?
+    let photographerNotes: String?
+    let sceneAnalysis: PhotographyReferenceSceneAnalysis?
+    let goals: [String]
+    let protectedRegions: [String]
+    let validation: PhotographyReferenceValidation
+}
+
+struct PhotographyReferenceLicense: Codable, Equatable, Sendable {
+    let owner: String
+    let grant: String
+    let evidencePath: String
+}
+
+struct PhotographyReferenceSceneAnalysis: Codable, Equatable, Sendable {
+    let lighting: String
+    let subjects: [String]
+    let background: String
+}
+
+struct PhotographyReferenceValidation: Codable, Equatable, Sendable {
+    let reviewer: String?
+    let date: String?
+    let decision: PhotographyReferenceValidationDecision
+    let notes: String?
+}
+
+enum PhotographyReferenceValidationDecision: String, Codable, Equatable, Sendable {
+    case pending
+    case accepted
+    case rejected
+}
+
 /// V9 keeps the reason for every important pixel parameter beside the executable
 /// recipe. This is intentionally typed data instead of a free-form prompt so the
 /// diagnostic UI can show measurement -> target -> bounded value without claiming
 /// that a generated plan was rendered when it was not.
-enum PhotographyParameterKey: String, Equatable, Sendable {
+enum PhotographyParameterKey: String, Equatable, Hashable, Sendable {
     case exposure
     case brightness
     case highlights
@@ -162,6 +231,28 @@ struct PhotographyParameterEvidence: Equatable, Sendable {
     let fallbackBehavior: String
     let affectedRegion: TreatmentRegion
     let decisionStatus: PhotographyParameterDecisionStatus
+    let knowledgeRuleIDs: [PhotographyKnowledgeRuleID]
+
+    func appendingKnowledgeRules(
+        _ additionalRules: [PhotographyKnowledgeRuleID]
+    ) -> PhotographyParameterEvidence {
+        PhotographyParameterEvidence(
+            key: key,
+            purpose: purpose,
+            inputEvidence: inputEvidence,
+            target: target,
+            minimumValue: minimumValue,
+            maximumValue: maximumValue,
+            actualValue: actualValue,
+            expectedResult: expectedResult,
+            fallbackBehavior: fallbackBehavior,
+            affectedRegion: affectedRegion,
+            decisionStatus: decisionStatus,
+            knowledgeRuleIDs: Array(Set(knowledgeRuleIDs + additionalRules)).sorted {
+                $0.rawValue < $1.rawValue
+            }
+        )
+    }
 
     func refreshingActualValue(from recipe: AutomaticEditingRecipe) -> PhotographyParameterEvidence {
         let refreshedValue = Self.actualValue(for: key, recipe: recipe)
@@ -184,7 +275,8 @@ struct PhotographyParameterEvidence: Equatable, Sendable {
             expectedResult: expectedResult,
             fallbackBehavior: fallbackBehavior,
             affectedRegion: affectedRegion,
-            decisionStatus: refreshedStatus
+            decisionStatus: refreshedStatus,
+            knowledgeRuleIDs: knowledgeRuleIDs
         )
     }
 
@@ -329,6 +421,7 @@ enum AestheticTarget: String, Equatable, Sendable {
     case balancedIndoor
     case workspaceClarity
     case neutral
+    case measuredHarmony
 
     var title: String {
         switch self {
@@ -344,6 +437,7 @@ enum AestheticTarget: String, Equatable, Sendable {
         case .balancedIndoor: return "色温自然的室内观感"
         case .workspaceClarity: return "保留黑位与材质的桌面质感"
         case .neutral: return "忠实自然"
+        case .measuredHarmony: return "逐图测量的摄影协调"
         }
     }
 }

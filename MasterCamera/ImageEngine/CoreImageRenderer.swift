@@ -494,11 +494,15 @@ final class CoreImageRenderer {
 
         let filter = CIFilter.temperatureAndTint()
         filter.inputImage = image
-        filter.neutral = CIVector(x: 6500, y: 0)
-        filter.targetNeutral = CIVector(
+        // CITemperatureAndTint defines `neutral` as the source white point and
+        // `targetNeutral` as the desired white point. The adaptive solver's
+        // values describe the measured source bias, so map that estimate back
+        // to the neutral photographic target instead of reversing the API.
+        filter.neutral = CIVector(
             x: CGFloat(6500 + recipe.temperatureShift),
             y: CGFloat(recipe.tintShift)
         )
+        filter.targetNeutral = CIVector(x: 6500, y: 0)
         return filter.outputImage ?? image
     }
 

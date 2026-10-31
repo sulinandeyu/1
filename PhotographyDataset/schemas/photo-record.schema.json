@@ -1,0 +1,114 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://xiaosu.camera/schemas/photography-dataset-record.schema.json",
+  "title": "PhotographyDatasetRecord",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id", "split", "assetRole", "source", "license", "authorization",
+    "contentRisk", "localAsset", "image", "annotations", "provenance"
+  ],
+  "properties": {
+    "id": { "type": "string", "minLength": 1 },
+    "split": { "enum": ["reference", "validation"] },
+    "assetRole": {
+      "enum": ["single_reference", "paired_original", "paired_expert_edit"]
+    },
+    "pairId": { "type": ["string", "null"] },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["datasetId", "title", "pageUrl", "downloadUrl", "creator"],
+      "properties": {
+        "datasetId": { "type": "string" },
+        "title": { "type": "string" },
+        "pageUrl": { "type": "string", "format": "uri" },
+        "downloadUrl": { "type": "string", "format": "uri" },
+        "creator": { "type": "string" },
+        "credit": { "type": "string" },
+        "description": { "type": "string" },
+        "sourceSha1": { "type": "string" }
+      }
+    },
+    "license": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "url", "attributionRequired", "shareAlike", "evidencePage"],
+      "properties": {
+        "name": { "type": "string" },
+        "url": { "type": "string" },
+        "attributionRequired": { "type": "boolean" },
+        "shareAlike": { "type": "boolean" },
+        "evidencePage": { "type": "string", "format": "uri" }
+      }
+    },
+    "authorization": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["commercialReference", "featureAnalysis", "modelTraining", "redistribution", "reviewStatus", "notes"],
+      "properties": {
+        "commercialReference": { "type": "boolean" },
+        "featureAnalysis": { "type": "boolean" },
+        "modelTraining": {
+          "enum": ["candidate_after_legal_review", "blocked_pending_legal_review", "blocked_commercial"]
+        },
+        "redistribution": { "enum": ["allowed_with_attribution", "allowed_with_share_alike", "not_allowed"] },
+        "reviewStatus": { "enum": ["dataset_rule_checked", "file_page_checked", "legal_review_required"] },
+        "notes": { "type": "string" }
+      }
+    },
+    "contentRisk": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["identifiablePeople", "trademarkOrArtwork", "reviewStatus"],
+      "properties": {
+        "identifiablePeople": { "enum": ["not_indicated", "possible", "present", "unknown"] },
+        "trademarkOrArtwork": { "enum": ["not_indicated", "possible", "present", "unknown"] },
+        "reviewStatus": { "enum": ["automatic_screen_only", "human_reviewed"] }
+      }
+    },
+    "localAsset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["relativePath", "sha256", "ignoredByGit"],
+      "properties": {
+        "relativePath": { "type": "string" },
+        "sha256": { "type": "string", "minLength": 64, "maxLength": 64 },
+        "ignoredByGit": { "const": true }
+      }
+    },
+    "image": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["width", "height", "mimeType"],
+      "properties": {
+        "width": { "type": "integer", "minimum": 1 },
+        "height": { "type": "integer", "minimum": 1 },
+        "mimeType": { "type": "string" }
+      }
+    },
+    "annotations": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["photographyCategories", "subjects", "lighting", "colorCharacteristics", "annotationStatus"],
+      "properties": {
+        "photographyCategories": { "type": "array", "items": { "type": "string" } },
+        "subjects": { "type": "array", "items": { "type": "string" } },
+        "lighting": { "type": "array", "items": { "type": "string" } },
+        "colorCharacteristics": { "type": "array", "items": { "type": "string" } },
+        "annotationStatus": { "enum": ["source_metadata_only", "human_reviewed"] }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["importedAt", "api", "featuredCollection", "originalEditedPairVerified"],
+      "properties": {
+        "importedAt": { "type": "string", "format": "date-time" },
+        "api": { "type": "string", "format": "uri" },
+        "featuredCollection": { "type": "boolean" },
+        "originalEditedPairVerified": { "type": "boolean" }
+      }
+    }
+  }
+}
