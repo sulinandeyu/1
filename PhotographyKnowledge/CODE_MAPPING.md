@@ -14,6 +14,10 @@
 | PT-REF-001 | `PhotographyReferenceMatcher`：当前图影调/色彩/中性色 + 语义辅助 + 许可门控 | 不产生像素参数，只返回适用性、置信度和不可迁移项 | 生产许可关闭、低置信度回退、语义不直接绑定参数 | Windows 30 查询已运行；iPhone 待验证 |
 | PT-REF-002 | `PhotographyReferenceTargetGenerator` + `AdaptivePhotographyParameterSolver(targetProfile:)` | 继续复用现有 Core Image 配方与局部处理 | 校准权重有界；不复制白平衡/HSL/曲线/直方图 | Swift 测试已写；Windows 无 Swift，远程/Apple 环境待执行 |
 | PT-REF-003 | `PhotoProcessingPipeline.evaluateReferenceCandidate` | 诊断导入生成 A/B/C，C 单独 Core Image 渲染与质检 | C 不替换 B；正式拍照不运行；失败明确记录 | 静态接入完成；iPhone 真机待执行 |
+| PT-UNDERSTANDING-001 | `PhotoAnalysis.visualSceneUnderstanding`、`SkySegmentationService.semanticObjectMasks` | 不直接改像素；向规划器提供带来源与未知项的结构化证据 | 类级蒙版不冒充实例识别；显著性不冒充对象身份 | Windows 静态接入完成；远程 Swift/iOS 编译与真机蒙版待验证 |
+| PT-AESTHETIC-001 | `AestheticPhotographyPlanner` | 通过现有 `AdaptivePhotographyParameterSolver` 和主体/亮度蒙版执行视觉层级目标 | C 诊断路径专用；噪声、人物和蒙版质量限制 | 契约测试待远程 Apple 环境执行；iPhone 审美待盲测 |
+| PT-AESTHETIC-002 | `AestheticPhotographyPlanner` + 动态求解器 HSL/Color Grading | 现有 Core Image HSL、色彩分级、皮肤保护链 | 无可靠区域/混合光证据时为 0；禁止复制参考参数 | 代码接入；肤色与中性色真机验证待执行 |
+| PT-AESTHETIC-003 | `VisualSceneUnderstandingResult`、`AdaptivePhotographyTargetGenerator` | 参数安全上限、亮度区域与高光保护 | 氛围是约束而非固定参数来源 | 代码接入；多光照真机验证待执行 |
 
 ## 已证实差距
 
@@ -21,6 +25,8 @@
 2. `CITemperatureAndTint` 已修正为 Apple 定义的“实测源白点→中性目标白点”；源白点仍是 sRGB 低分辨率近似估计，不能宣称具备专业 RAW 域 AWB。
 3. 局部蒙版有可靠度检查，但 Vision/Core Image 只能在 Apple 运行环境完成真实端到端验证。
 4. 候选评价已有技术指标，专业审美仍需经过授权案例和人工偏好校准。
+5. 内置 DETR panoptic 模型此前只输出五组环境蒙版；本阶段复用同一模型增加类级人物、车辆、动物、食物/果实、工作区、人工光源和道路证据，但它仍不具备摄影意图或实例关系理解。
+6. 新审美规划目前只进入隔离的 C 诊断路径，不替换 B；是否更好看必须等远程编译、iPhone Core Image 成片和人工盲测。
 
 ## 摄影数据集对接状态
 

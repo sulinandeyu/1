@@ -142,6 +142,32 @@ final class PhotoAnalyzer {
             height: statistics.height,
             mask: salientSubjectMask
         )
+        let semanticObjectRegions = (skySegmentation?.semanticObjectMasks ?? [:])
+            .compactMap { role, mask -> SemanticObjectRegion? in
+                let quality = mask.qualityAssessment
+                guard quality.isUsable else { return nil }
+                let regionStatistics = PhotoRegionStatistics.measure(
+                    rgbaPixels: statistics.rgbaPixels,
+                    width: statistics.width,
+                    height: statistics.height,
+                    mask: mask
+                )
+                let coverageEvidence = min(1, max(0, mask.activeCoverage / 0.04))
+                return SemanticObjectRegion(
+                    role: role,
+                    mask: mask,
+                    confidence: min(0.94, quality.reliability * 0.78 + coverageEvidence * 0.22),
+                    statistics: regionStatistics
+                )
+            }
+            .sorted { left, right in
+                if abs(left.confidence - right.confidence) > 0.001 {
+                    return left.confidence > right.confidence
+                }
+                return left.role.rawValue < right.role.rawValue
+            }
+        let resolvedPersonMask = personMask
+            ?? skySegmentation?.semanticObjectMasks[.person]
 
         return PhotoAnalysis(
             averageLuminance: statistics.averageLuminance,
@@ -167,7 +193,7 @@ final class PhotoAnalyzer {
             faceRegions: faceRegions,
             faceAverageLuminance: regionalTone.faceAverageLuminance,
             backgroundAverageLuminance: regionalTone.backgroundAverageLuminance,
-            personMask: personMask,
+            personMask: resolvedPersonMask,
             salientSubjectMask: salientSubjectMask,
             salientSubjectStatistics: salientSubjectStatistics,
             skinMask: capturedSkinMask?.isValid == true ? capturedSkinMask : nil,
@@ -185,7 +211,8 @@ final class PhotoAnalyzer {
             semanticLabels: classification.labels,
             sceneRecognitionDiagnostics: classification.diagnostics,
             segmentationDiagnostics: segmentationDiagnostics,
-            neutralColorStatistics: neutralColorStatistics
+            neutralColorStatistics: neutralColorStatistics,
+            semanticObjectRegions: semanticObjectRegions
         )
     }
 

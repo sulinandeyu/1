@@ -9,6 +9,9 @@ struct SkySegmentationResult: Equatable, Sendable {
     let vegetationMask: NormalizedPhotoMask?
     let waterMask: NormalizedPhotoMask?
     let architectureMask: NormalizedPhotoMask?
+    /// Additional class-level masks exposed by the same bundled panoptic model.
+    /// These are semantic regions, not instance detections.
+    let semanticObjectMasks: [SemanticObjectRole: NormalizedPhotoMask]
 }
 
 enum SceneSegmentationOutcome: Sendable {
@@ -27,6 +30,17 @@ final class SkySegmentationService {
     private static let vegetationClassIDs: Set<Int32> = [64, 119, 184, 193]
     private static let waterClassIDs: Set<Int32> = [148, 155, 178]
     private static let architectureClassIDs: Set<Int32> = [95, 112, 128, 151, 161, 171, 175, 176, 177, 180, 181, 185, 186, 197, 199]
+    // COCO panoptic IDs carried by this model. They are grouped only to expose
+    // evidence to the planner; no group selects a recipe or fixed parameter.
+    private static let semanticObjectClassIDs: [SemanticObjectRole: Set<Int32>] = [
+        .person: [1],
+        .vehicle: [2, 3, 4, 6, 7, 8, 9],
+        .animal: [16, 17, 18, 19, 20, 21, 22, 23, 24, 25],
+        .foodOrFruit: [52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 122, 196],
+        .furnitureOrWorkspace: [62, 63, 65, 67, 72, 73, 74, 75, 76, 77, 84],
+        .artificialLight: [10, 130],
+        .pathOrRoad: [147, 149, 191]
+    ]
     private static let inputSize = 448
 
     private let context = CIContext(options: [.cacheIntermediates: false])
@@ -182,6 +196,11 @@ final class SkySegmentationService {
         var vegetationPixels = [UInt8](repeating: 0, count: contentPixelCount)
         var waterPixels = [UInt8](repeating: 0, count: contentPixelCount)
         var architecturePixels = [UInt8](repeating: 0, count: contentPixelCount)
+        var semanticObjectPixels = Dictionary(
+            uniqueKeysWithValues: Self.semanticObjectClassIDs.keys.map {
+                ($0, [UInt8](repeating: 0, count: contentPixelCount))
+            }
+        )
         var activePixelCount = 0
         var topContactCount = 0
         let topBandHeight = max(1, height / 10)
@@ -202,6 +221,9 @@ final class SkySegmentationService {
                 if Self.vegetationClassIDs.contains(classID) { vegetationPixels[outputIndex] = 255 }
                 if Self.waterClassIDs.contains(classID) { waterPixels[outputIndex] = 255 }
                 if Self.architectureClassIDs.contains(classID) { architecturePixels[outputIndex] = 255 }
+                for (role, classIDs) in Self.semanticObjectClassIDs where classIDs.contains(classID) {
+                    semanticObjectPixels[role]?[outputIndex] = 255
+                }
             }
         }
 
@@ -221,13 +243,21 @@ final class SkySegmentationService {
             )
             : nil
 
+        let semanticObjectMasks = semanticObjectPixels.reduce(
+            into: [SemanticObjectRole: NormalizedPhotoMask]()
+        ) { result, entry in
+            if let mask = validatedRegionMask(entry.value, width: width, height: height) {
+                result[entry.key] = mask
+            }
+        }
         return SkySegmentationResult(
             mask: skyMask?.isValid == true ? skyMask : nil,
             coverage: skyMask?.isValid == true ? coverage : 0,
             groundMask: validatedRegionMask(groundPixels, width: width, height: height),
             vegetationMask: validatedRegionMask(vegetationPixels, width: width, height: height),
             waterMask: validatedRegionMask(waterPixels, width: width, height: height),
-            architectureMask: validatedRegionMask(architecturePixels, width: width, height: height)
+            architectureMask: validatedRegionMask(architecturePixels, width: width, height: height),
+            semanticObjectMasks: semanticObjectMasks
         )
     }
 

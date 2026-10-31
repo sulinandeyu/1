@@ -10,6 +10,7 @@ struct PhotographyDecision: Equatable, Sendable {
     let treatmentPlan: PhotographyTreatmentPlan
     let recipe: AutomaticEditingRecipe
     let parameterEvidence: [PhotographyParameterEvidence]
+    let aestheticPlan: AestheticPhotographyPlan?
 
     var summaryText: String {
         let actionText = actions.map(\.title).joined(separator: ", ")
@@ -73,7 +74,8 @@ struct PhotographyDecision: Equatable, Sendable {
                 portraitProtection: treatmentPlan.portraitProtection
             ),
             recipe: recipe,
-            parameterEvidence: parameterEvidence.map { $0.refreshingActualValue(from: recipe) }
+            parameterEvidence: parameterEvidence.map { $0.refreshingActualValue(from: recipe) },
+            aestheticPlan: aestheticPlan
         )
     }
 }
@@ -135,6 +137,10 @@ enum PhotographyKnowledgeRuleID: String, Equatable, Hashable, Sendable {
     case referenceApplicabilityGate = "PT-REF-001"
     case referenceTargetCalibration = "PT-REF-002"
     case referenceValidationIsolation = "PT-REF-003"
+    case semanticEvidenceBoundary = "PT-UNDERSTANDING-001"
+    case measuredVisualHierarchy = "PT-AESTHETIC-001"
+    case regionalColorHarmony = "PT-AESTHETIC-002"
+    case atmospherePreservation = "PT-AESTHETIC-003"
 }
 
 /// Metadata-only representation for future licensed reference pairs. It does
@@ -415,6 +421,7 @@ enum AestheticTarget: String, Equatable, Sendable {
     case balancedIndoor
     case workspaceClarity
     case neutral
+    case measuredHarmony
 
     var title: String {
         switch self {
@@ -430,6 +437,7 @@ enum AestheticTarget: String, Equatable, Sendable {
         case .balancedIndoor: return "色温自然的室内观感"
         case .workspaceClarity: return "保留黑位与材质的桌面质感"
         case .neutral: return "忠实自然"
+        case .measuredHarmony: return "逐图测量的摄影协调"
         }
     }
 }

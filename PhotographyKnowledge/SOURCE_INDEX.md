@@ -23,6 +23,14 @@
 | APPLE-VISION-01 | [Vision Saliency](https://developer.apple.com/documentation/vision/cropping-images-using-saliency) | 显著性可辅助构图和视觉优先级，但不等于物体身份识别。 |
 | APPLE-VISION-02 | [Person Segmentation](https://developer.apple.com/documentation/vision/applying-matte-effects-to-people-in-images-and-video) | 人物蒙版有不同质量/性能档位；局部处理前仍需检查覆盖率与边界可靠性。 |
 | APPLE-CI-03 | [CISharpenLuminance](https://developer.apple.com/documentation/coreimage/cisharpenluminance) | 亮度锐化可减少直接色彩放大，但仍需噪声与人物纹理安全上限。 |
+| APPLE-VISION-03 | [Classifying images for categorization and search](https://developer.apple.com/documentation/vision/classifying-images-for-categorization-and-search) | 图像分类返回类别观察结果，不能据此假定存在对象定位、实例关系或摄影审美理解。 |
+| APPLE-COREML-01 | [Integrating a Core ML model into your app](https://developer.apple.com/documentation/coreml/integrating-a-core-ml-model-into-your-app) | Core ML 模型必须作为真实资源接入并在目标设备验证输入输出、性能与兼容性；文件名或模型名称不能证明能力。 |
+
+## 本地未授权研究素材
+
+| ID | 来源 | 本项目采用的信息 |
+|---|---|---|
+| TUTORIAL-LOCAL-01 | `D:\MasterCamera\网上教程`（11 张网络教程截图，原发布链接与授权未核验） | 仅提炼“先判断原图问题、再建立主体/环境影调与颜色关系”的研发需求。禁止打包进 App、禁止训练、禁止上传第三方服务、禁止复制固定滑块/滤镜比例。逐图记录见 `docs/PHOTOGRAPHY_TUTORIAL_ANALYSIS.md`。 |
 
 ## 公开研究论文
 

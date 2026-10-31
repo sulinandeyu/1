@@ -8,10 +8,20 @@ final class PhotographyDecisionEngine {
     ) -> PhotographyDecision {
         let strategy = SceneStrategy.choose(for: analysis, problems: problems)
         let context = analysis.photographyContext
+        let aestheticPlan = targetProfile.flatMap { profile in
+            profile.referenceApplied
+                ? AestheticPhotographyPlanner().makePlan(
+                    analysis: analysis,
+                    problems: problems,
+                    targetProfile: profile
+                )
+                : nil
+        }
         let adaptiveSolution = AdaptivePhotographyParameterSolver().solve(
             analysis: analysis,
             problems: problems,
-            targetProfile: targetProfile
+            targetProfile: targetProfile,
+            aestheticPlan: aestheticPlan
         )
         // The adaptive solver is the sole source of creative/technical parameters.
         // Legacy scene methods remain below only for source compatibility and are
@@ -44,9 +54,10 @@ final class PhotographyDecisionEngine {
         return PhotographyDecision(
             sceneStrategy: strategy,
             context: context,
-            aestheticTarget: .neutral,
+            aestheticTarget: aestheticPlan == nil ? .neutral : .measuredHarmony,
             adaptiveTarget: adaptiveSolution.target,
-            intent: "依据当前照片测量结果生成专属摄影目标与参数，不按场景加载预设。",
+            intent: aestheticPlan?.primaryObjective
+                ?? "依据当前照片测量结果生成专属摄影目标与参数，不按场景加载预设。",
             actions: actions,
             treatmentPlan: treatmentPlan(
                 analysis: analysis,
@@ -57,7 +68,8 @@ final class PhotographyDecisionEngine {
             recipe: finalRecipe,
             parameterEvidence: adaptiveSolution.parameterEvidence.map {
                 $0.refreshingActualValue(from: finalRecipe)
-            }
+            },
+            aestheticPlan: aestheticPlan
         )
     }
 
@@ -122,7 +134,7 @@ final class PhotographyDecisionEngine {
         actions: inout [PhotographyAction]
     ) {
         let priority = analysis.subjectPriorityProfile
-        if priority.mode == .primarySubject, analysis.faceCount > 0 {
+        if priority.mode == .primarySubject, analysis.containsPersonEvidence {
             actions.append(PhotographyAction(
                 title: "人物主体模式：交由严格人物保护链",
                 reason: "可靠整人物蒙版建立人物与环境关系，但禁止人脸专属提亮、美颜、几何或生成式修改。"
@@ -130,8 +142,8 @@ final class PhotographyDecisionEngine {
             return
         }
         if priority.mode == .primarySubject,
-           analysis.faceCount == 0,
-           let subjectStatistics = analysis.salientSubjectStatistics {
+           !analysis.containsPersonEvidence,
+           let subjectStatistics = analysis.nonPersonPrimarySubjectStatistics {
             let subjectDeficit = max(0, analysis.averageLuminance - subjectStatistics.averageLuminance)
             let requestedLift = min(0.11, 0.035 + subjectDeficit * 0.28)
             recipe.subjectExposureEV = max(recipe.subjectExposureEV, requestedLift)
@@ -197,7 +209,7 @@ final class PhotographyDecisionEngine {
         recipe: inout AutomaticEditingRecipe,
         actions: inout [PhotographyAction]
     ) {
-        guard analysis.faceCount > 0 else { return }
+        guard analysis.containsPersonEvidence else { return }
 
         recipe.faceExposureEV = 0
         recipe.subjectExposureEV = analysis.personMask?.isValid == true
@@ -294,7 +306,7 @@ final class PhotographyDecisionEngine {
                 objective: "依据当前照片测量完成曝光、动态范围、白平衡、曲线和全图色彩关系的整体制作。"
             )
         ]
-        let sceneRegionsAllowed = analysis.faceCount == 0 || analysis.personMask?.isValid == true
+        let sceneRegionsAllowed = !analysis.containsPersonEvidence || analysis.personMask?.isValid == true
         func usable(_ mask: NormalizedPhotoMask?) -> Bool {
             guard let mask, mask.isValid else { return false }
             return mask.activeCoverage >= 0.004 && mask.activeCoverage <= 0.86
@@ -335,7 +347,7 @@ final class PhotographyDecisionEngine {
                 ))
             }
         }
-        if analysis.faceCount > 0, analysis.personMask?.isValid == true {
+        if analysis.containsPersonEvidence, analysis.personMask?.isValid == true {
             regions.append(RegionalTreatment(
                 region: .person,
                 objective: "以整个人物蒙版协调人物与环境明暗，不单独改脸、不改变外貌。"
@@ -353,7 +365,7 @@ final class PhotographyDecisionEngine {
             finalLook: "按逐图目标协调影调、色彩和区域关系：\(target.summaryText)",
             lightingDesign: "\(context.lightDirection.rawValue) · \(lighting.isEmpty ? "unclassified" : lighting)",
             regionalTreatments: regions,
-            portraitProtection: analysis.faceCount > 0 ? .strict : .inactive
+            portraitProtection: analysis.containsPersonEvidence ? .strict : .inactive
         )
     }
 
@@ -1245,6 +1257,149 @@ final class PhotographyDecisionEngine {
 
 }
 
+struct AestheticPhotographyPlan: Equatable, Sendable {
+    let confidence: Float
+    let visualUnderstanding: VisualSceneUnderstandingResult
+    let primaryObjective: String
+    let emphasizedRegions: [String]
+    let subduedRegions: [String]
+    let protectedRegions: [String]
+    let subjectBackgroundDeltaTarget: Float?
+    let localContrastTarget: Float
+    let shadowCoolTarget: Float
+    let midtoneWarmTarget: Float
+    let colorSeparationStrength: Float
+    let risks: [String]
+    let rationale: [String]
+
+    var traceSummary: String {
+        String(
+            format: "confidence=%.3f objective=%@ subjectDelta=%@ localContrast=%.3f shadowCool=%.3f midtoneWarm=%.3f colorSeparation=%.3f emphasize=[%@] subdue=[%@] protect=[%@] risks=[%@] rationale=[%@]",
+            confidence,
+            primaryObjective,
+            subjectBackgroundDeltaTarget.map { String(format: "%.3f", $0) } ?? "n/a",
+            localContrastTarget,
+            shadowCoolTarget,
+            midtoneWarmTarget,
+            colorSeparationStrength,
+            emphasizedRegions.joined(separator: ","),
+            subduedRegions.joined(separator: ","),
+            protectedRegions.joined(separator: ","),
+            risks.joined(separator: ","),
+            rationale.joined(separator: " | ")
+        )
+    }
+}
+
+/// Turns measured scene evidence into relationships the solver can pursue. It
+/// never selects a preset: every target is a bounded residual from this image.
+/// This is used only by the isolated C validation path until real iPhone blind
+/// tests show that it is preferable to the current B result.
+struct AestheticPhotographyPlanner {
+    func makePlan(
+        analysis: PhotoAnalysis,
+        problems: PhotoProblemReport,
+        targetProfile: PhotographyTargetProfile
+    ) -> AestheticPhotographyPlan {
+        let understanding = analysis.visualSceneUnderstanding
+        let subjectStatistics = reliableSubjectStatistics(analysis)
+        let currentSubjectDelta: Float? = {
+            if analysis.containsPersonEvidence {
+                return analysis.faceToBackgroundLuminanceDelta
+            }
+            guard let subjectStatistics else { return nil }
+            return subjectStatistics.averageLuminance - analysis.averageLuminance
+        }()
+        let subjectReliability = understanding.subjectConfidence
+        let desiredSubjectDelta = currentSubjectDelta.map { current -> Float in
+            let darkSubjectNeed = max(0, -0.035 - current)
+            let excessiveBrightness = max(0, current - 0.18)
+            let correction = darkSubjectNeed * 0.38 - excessiveBrightness * 0.18
+            return bounded(current + correction * subjectReliability, -0.08...0.18)
+        }
+        let contrastResidual = max(
+            0,
+            targetProfile.localContrastTarget - analysis.contrastRange
+        )
+        let noiseProtection = max(0.22, 1 - analysis.noiseEstimate * 2.8)
+        let localContrastTarget = bounded(
+            analysis.contrastRange + contrastResidual * 0.46 * noiseProtection,
+            analysis.contrastRange...(analysis.contrastRange + 0.08)
+        )
+
+        let hasMixedLightEvidence = analysis.mixedLightScore >= 0.12
+            && analysis.highlightSourceCount > 0
+        let channelWarmth = analysis.redAverage - analysis.blueAverage
+        let colorHeadroom = max(0, 0.10 - abs(channelWarmth))
+        let portraitProtection = analysis.containsPersonEvidence ? Float(0.45) : 1
+        let colorSeparation = hasMixedLightEvidence
+            ? bounded(
+                analysis.mixedLightScore * colorHeadroom * portraitProtection,
+                0...0.035
+            )
+            : 0
+        let shadowCool = bounded(
+            max(0, channelWarmth) * 0.10 * colorSeparation,
+            0...0.018
+        )
+        let midtoneWarm = bounded(
+            max(0, -channelWarmth) * 0.08 * colorSeparation,
+            0...0.014
+        )
+
+        var emphasized: [String] = []
+        if understanding.subjectConfidence >= 0.58 {
+            emphasized.append(understanding.primarySubjectDescription)
+        }
+        if analysis.groundMask?.qualityAssessment.isUsable == true,
+           (analysis.groundMask?.activeCoverage ?? 0) > 0.08 {
+            emphasized.append("地面/道路空间引导")
+        }
+        var subdued: [String] = []
+        if analysis.architectureMask?.qualityAssessment.isUsable == true,
+           analysis.subjectPriorityProfile.mode == .primarySubject,
+           (analysis.architectureMask?.activeCoverage ?? 0) < 0.12 {
+            subdued.append("低覆盖建筑背景")
+        }
+        var risks = understanding.unknowns
+        if analysis.noiseEstimate > 0.12 { risks.append("暗部提亮可能放大噪声") }
+        if analysis.mixedLightScore > 0.18 { risks.append("混合光下禁止强行统一色温") }
+        if analysis.containsPersonEvidence { risks.append("人物区域禁止美颜与局部生成式修改") }
+
+        let objective = understanding.subjectConfidence >= 0.58
+            ? "在保持真实氛围与人物/物体颜色身份的前提下，建立主体和环境的可读层次。"
+            : "主体证据不足，使用影调、颜色关系和可靠区域完成整图协调。"
+        let rationale = [
+            "视觉理解：\(understanding.primarySubjectDescription)，置信度 \(String(format: "%.1f", understanding.subjectConfidence * 100))%。",
+            String(format: "原图亮度 %.3f、反差 %.3f、阴影 %.3f、高光 %.3f、噪声 %.3f。", analysis.averageLuminance, analysis.contrastRange, analysis.shadowRatio, analysis.highlightRatio, analysis.noiseEstimate),
+            "参考特征只校准目标关系，影响 \(String(format: "%.1f", targetProfile.referenceInfluence * 100))%；不复制曲线、HSL 或白平衡。"
+        ]
+        return AestheticPhotographyPlan(
+            confidence: min(targetProfile.referenceMatch.confidence, max(0.42, subjectReliability)),
+            visualUnderstanding: understanding,
+            primaryObjective: objective,
+            emphasizedRegions: emphasized,
+            subduedRegions: subdued,
+            protectedRegions: understanding.protectedRegions,
+            subjectBackgroundDeltaTarget: desiredSubjectDelta,
+            localContrastTarget: localContrastTarget,
+            shadowCoolTarget: shadowCool,
+            midtoneWarmTarget: midtoneWarm,
+            colorSeparationStrength: colorSeparation,
+            risks: Array(Set(risks)).sorted(),
+            rationale: rationale
+        )
+    }
+
+    private func reliableSubjectStatistics(_ analysis: PhotoAnalysis) -> PhotoRegionStatistics? {
+        analysis.nonPersonPrimarySubjectStatistics
+    }
+
+    private func bounded(_ value: Float, _ range: ClosedRange<Float>) -> Float {
+        min(range.upperBound, max(range.lowerBound, value))
+    }
+}
+
 struct AdaptivePhotographySolution: Equatable, Sendable {
     let target: AdaptivePhotographyTarget
     let recipe: AutomaticEditingRecipe
@@ -1300,7 +1455,7 @@ struct AdaptivePhotographyTargetGenerator {
         let targetHighlight = (
             analysis.highlightRatio - recoverableHighlight * (0.22 + analysis.highlightConcentration * 0.32)
         ).clamped(to: highlightFloor...analysis.highlightRatio)
-        let saturationCenter: Float = analysis.faceCount > 0 ? 0.25 : 0.29
+        let saturationCenter: Float = analysis.containsPersonEvidence ? 0.25 : 0.29
         let saturationTarget = (
             analysis.averageSaturation
                 + (saturationCenter - analysis.averageSaturation) * (analysis.averageSaturation < saturationCenter ? 0.28 : 0.16)
@@ -1338,7 +1493,8 @@ struct AdaptivePhotographyParameterSolver {
     func solve(
         analysis: PhotoAnalysis,
         problems: PhotoProblemReport,
-        targetProfile: PhotographyTargetProfile? = nil
+        targetProfile: PhotographyTargetProfile? = nil,
+        aestheticPlan: AestheticPhotographyPlan? = nil
     ) -> AdaptivePhotographySolution {
         let target = targetProfile?.resolvedTarget
             ?? AdaptivePhotographyTargetGenerator().makeTarget(
@@ -1350,7 +1506,7 @@ struct AdaptivePhotographyParameterSolver {
         let conditions = Set(analysis.photographyContext.lightingConditions)
         let isNight = conditions.contains(.night) || target.atmosphereProtection > 0.62
         let isOvercast = conditions.contains(.overcast)
-        let hasPerson = analysis.faceCount > 0
+        let hasPerson = analysis.containsPersonEvidence
         let reliability = analysis.sceneRecognitionDiagnostics.status == .failed ? Float(0.72) : 1
 
         let targetLuminance = target.luminance
@@ -1448,9 +1604,9 @@ struct AdaptivePhotographyParameterSolver {
             ? 0
             : bounded(luminanceResidual * 1.1, 0...0.82)
 
-        if analysis.faceCount == 0,
+        if !hasPerson,
            analysis.subjectPriorityProfile.mode == .primarySubject,
-           let subject = analysis.salientSubjectStatistics {
+           let subject = reliableSubjectStatistics(analysis) {
             let subjectDeficit = analysis.averageLuminance - subject.averageLuminance
             recipe.subjectExposureEV = bounded(
                 subjectDeficit * 0.42 * analysis.subjectPriorityProfile.confidence,
@@ -1463,18 +1619,19 @@ struct AdaptivePhotographyParameterSolver {
         }
 
         if let targetProfile, targetProfile.referenceApplied {
-            let localContrastResidual = max(
-                0,
-                targetProfile.localContrastTarget - analysis.contrastRange
-            )
+            let localContrastResidual = max(0, (
+                aestheticPlan?.localContrastTarget
+                    ?? targetProfile.localContrastTarget
+            ) - analysis.contrastRange)
             recipe.localContrastAmount = max(
                 recipe.localContrastAmount,
                 bounded(localContrastResidual * 0.16, 0...0.045)
             )
-            if analysis.faceCount == 0,
+            if !hasPerson,
                analysis.subjectPriorityProfile.confidence >= 0.58,
-               let subject = analysis.salientSubjectStatistics,
-               let desiredDelta = targetProfile.subjectBackgroundDeltaTarget {
+               let subject = reliableSubjectStatistics(analysis),
+               let desiredDelta = aestheticPlan?.subjectBackgroundDeltaTarget
+                    ?? targetProfile.subjectBackgroundDeltaTarget {
                 let currentDelta = subject.averageLuminance - analysis.averageLuminance
                 let residual = desiredDelta - currentDelta
                 recipe.subjectExposureEV = bounded(
@@ -1492,8 +1649,8 @@ struct AdaptivePhotographyParameterSolver {
         // to inject a stock orange/teal/green treatment.
         recipe.hsl = .neutral
         if !hasPerson,
-           analysis.subjectPriorityProfile.confidence >= 0.54,
-           let subject = analysis.salientSubjectStatistics {
+           analysis.subjectPriorityProfile.confidence >= 0.54 || !analysis.semanticObjectRegions.isEmpty,
+           let subject = reliableSubjectStatistics(analysis) {
             let orangeHeadroom = max(0, 0.42 - subject.averageSaturation)
             recipe.hsl.orangeSaturation = bounded(orangeHeadroom * 0.16, 0...0.055)
             recipe.hsl.orangeLuminance = bounded(
@@ -1540,12 +1697,16 @@ struct AdaptivePhotographyParameterSolver {
             abs(analysis.greenAverage - (analysis.redAverage + analysis.blueAverage) * 0.5)
         )
         let gradeHeadroom = max(0, 0.075 - channelSpread) * (1 - target.atmosphereProtection)
-        recipe.colorGradeIntensity = bounded(gradeHeadroom * 0.35, 0...0.025)
-        recipe.shadowCoolAmount = bounded(
+        let measuredGrade = bounded(gradeHeadroom * 0.35, 0...0.025)
+        recipe.colorGradeIntensity = bounded(
+            max(measuredGrade, aestheticPlan?.colorSeparationStrength ?? 0),
+            0...0.035
+        )
+        recipe.shadowCoolAmount = aestheticPlan?.shadowCoolTarget ?? bounded(
             max(0, analysis.redAverage - analysis.blueAverage) * 0.08 * recipe.colorGradeIntensity,
             0...0.012
         )
-        recipe.midtoneWarmAmount = bounded(
+        recipe.midtoneWarmAmount = aestheticPlan?.midtoneWarmTarget ?? bounded(
             max(0, analysis.blueAverage - analysis.redAverage) * 0.07 * recipe.colorGradeIntensity,
             0...0.012
         )
@@ -1572,6 +1733,12 @@ struct AdaptivePhotographyParameterSolver {
                 reason: targetProfile.rationale.joined(separator: " ")
             ))
         }
+        if let aestheticPlan {
+            actions.append(PhotographyAction(
+                title: "逐图摄影审美规划（验证模式）",
+                reason: aestheticPlan.traceSummary
+            ))
+        }
 
         let solved = recipe.clamped()
         let parameterEvidence = evidence(
@@ -1589,11 +1756,20 @@ struct AdaptivePhotographyParameterSolver {
                 .midtoneContrast, .localExposure
             ]
             guard targetDrivenKeys.contains(item.key) else { return item }
-            return item.appendingKnowledgeRules([
+            var rules: [PhotographyKnowledgeRuleID] = [
                 .referenceApplicabilityGate,
                 .referenceTargetCalibration,
                 .referenceValidationIsolation
-            ])
+            ]
+            if aestheticPlan != nil {
+                rules += [
+                    .semanticEvidenceBoundary,
+                    .measuredVisualHierarchy,
+                    .regionalColorHarmony,
+                    .atmospherePreservation
+                ]
+            }
+            return item.appendingKnowledgeRules(rules)
         }
         return AdaptivePhotographySolution(
             target: target,
@@ -1601,6 +1777,10 @@ struct AdaptivePhotographyParameterSolver {
             parameterEvidence: parameterEvidence,
             actions: actions
         )
+    }
+
+    private func reliableSubjectStatistics(_ analysis: PhotoAnalysis) -> PhotoRegionStatistics? {
+        analysis.nonPersonPrimarySubjectStatistics
     }
 
     private func evidence(
@@ -1739,7 +1919,7 @@ struct AdaptivePhotographyParameterSolver {
         value: Float,
         analysis: PhotoAnalysis
     ) -> PhotographyParameterDecisionStatus {
-        if analysis.faceCount > 0,
+        if analysis.containsPersonEvidence,
            [.orangeHSL, .localExposure, .localColor].contains(key),
            analysis.personMask?.isValid != true {
             return .disabledBySafety
@@ -1868,7 +2048,8 @@ struct PhotographyCandidatePlanner {
         let contrastDeficit = max(0, target.contrast - analysis.contrastRange)
         let subjectLuminanceDeficit = max(
             0,
-            analysis.averageLuminance - (analysis.salientSubjectStatistics?.averageLuminance ?? analysis.averageLuminance)
+            analysis.averageLuminance
+                - (analysis.nonPersonPrimarySubjectStatistics?.averageLuminance ?? analysis.averageLuminance)
         )
         switch intent {
         case .natural:
@@ -1892,7 +2073,7 @@ struct PhotographyCandidatePlanner {
             applyTargetedProblems(kinds, analysis: analysis, recipe: &recipe)
         }
 
-        if analysis.faceCount == 0 {
+        if !analysis.containsPersonEvidence {
             switch (analysis.subjectPriorityProfile.mode, intent) {
             case (.primarySubject, .dimensional):
                 recipe.subjectExposureEV = min(
@@ -1922,7 +2103,7 @@ struct PhotographyCandidatePlanner {
             }
         }
 
-        if analysis.faceCount > 0 {
+        if analysis.containsPersonEvidence {
             recipe.faceExposureEV = 0
             recipe.subjectExposureEV = hasReliablePersonMask
                 ? min(recipe.subjectExposureEV, 0.15)

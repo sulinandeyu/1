@@ -363,6 +363,20 @@ final class PhotoProcessingPipeline {
                 expectedRegions: referenceDecision.treatmentPlan.regionalTreatments.map(\.region),
                 regionalExecutionDetails: regionalExecution
             )
+            let regionImpacts = try qualityService.measureRegionImpacts(
+                originalData: originalData,
+                editedData: candidateData,
+                analysis: analysis
+            )
+            let targetAttainment = AdaptiveTargetAttainmentScorer().score(
+                target: referenceDecision.adaptiveTarget,
+                source: analysis,
+                edited: quality.measuredAnalysis
+            )
+            let aestheticProxy = PhotographyAestheticProgressScorer().score(
+                source: analysis,
+                regionImpacts: regionImpacts
+            )
             let parameters = referenceDecision.parameterEvidence.map { evidence in
                 "\(evidence.key.rawValue)=\(String(format: "%.4f", evidence.actualValue)){rules=\(evidence.knowledgeRuleIDs.map(\.rawValue).joined(separator: ","));status=\(evidence.decisionStatus.rawValue)}"
             }.joined(separator: ",")
@@ -374,12 +388,15 @@ final class PhotoProcessingPipeline {
                 "状态=matchedForValidation；仅诊断导入启用，不替换正式 B",
                 "置信度=\(String(format: "%.1f", match.confidence * 100))%；参考影响=\(String(format: "%.1f", profile.referenceInfluence * 100))%",
                 "匹配依据=\(matchTrace)",
+                "结构化视觉理解=\(analysis.visualSceneUnderstanding.traceSummary)",
+                "摄影审美规划=\(referenceDecision.aestheticPlan?.traceSummary ?? "未生成；保持原逐图测量目标")",
                 "目标=\(profile.resolvedTarget.summaryText)；依据=\(profile.rationale.joined(separator: " "))",
                 "保护=\(profile.preservedProperties.joined(separator: ","))",
                 "参数=\(parameters)",
                 "局部计划=\(localPlan.isEmpty ? "无可靠局部区域" : localPlan)",
                 "区域执行=\(regionalExecution.joined(separator: " | "))",
                 "候选 C 质检=\(quality.status.rawValue)；问题=[\(quality.issues.map(\.rawValue).joined(separator: ","))]；RGB_MAE=\(String(format: "%.4f", quality.processingImpact.normalizedMeanAbsoluteRGBDifference))；肤色偏移=\(String(format: "%.4f", quality.colorIntegrity.skinColorDifference))；中性色染色=\(String(format: "%.4f", quality.colorIntegrity.neutralChromaIncrease))",
+                "摄影目标代理（不是审美结论）=逐图目标达成 \(String(format: "%.1f", targetAttainment * 100))%；主体关系 \(String(format: "%.1f", aestheticProxy.subjectPriority * 100))%；区域协调 \(String(format: "%.1f", aestheticProxy.regionalHarmony * 100))%；最终好看与否仍需盲测",
                 "耗时=\(duration)ms；iPhone 视觉审美=尚未人工验收"
             ]
             AppLogger.imageEngine.info(

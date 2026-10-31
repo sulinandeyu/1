@@ -289,6 +289,7 @@ struct PhotographyReferenceMatcher: Sendable {
         let values = analysis.semanticLabels.map(\.identifier)
             + analysis.photographyContext.sceneFacets.map(\.rawValue)
             + analysis.photographyContext.lightingConditions.map(\.rawValue)
+            + analysis.semanticObjectRegions.map { $0.role.rawValue }
         return tokens(from: values)
     }
 

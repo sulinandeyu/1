@@ -1579,6 +1579,190 @@ final class SceneAdaptationTests: XCTestCase {
         XCTAssertLessThan(targetDelta, -0.15)
     }
 
+    func testVisualUnderstandingKeepsSemanticRegionAndUnknownBoundariesExplicit() throws {
+        let mask = NormalizedPhotoMask(
+            width: 4,
+            height: 4,
+            pixels: Data([
+                0, 0, 0, 0,
+                0, 255, 255, 0,
+                0, 255, 255, 0,
+                0, 0, 0, 0
+            ])
+        )
+        let region = SemanticObjectRegion(
+            role: .foodOrFruit,
+            mask: mask,
+            confidence: 0.82,
+            statistics: regionStatistics(
+                luminance: 0.36,
+                contrast: 0.42,
+                saturation: 0.38,
+                red: 0.58,
+                green: 0.34,
+                blue: 0.18
+            )
+        )
+        let analysis = fixture(
+            luminance: 0.45,
+            contrast: 0.5,
+            saturation: 0.22,
+            labels: ["outdoor"],
+            neutralColorStatistics: nil,
+            semanticObjectRegions: [region]
+        )
+        let understanding = analysis.visualSceneUnderstanding
+
+        XCTAssertEqual(understanding.status, .reliable)
+        XCTAssertTrue(understanding.primarySubjectDescription.contains("foodOrFruit"))
+        XCTAssertTrue(understanding.unknowns.contains("光源绝对白平衡不确定"))
+        XCTAssertTrue(understanding.traceSummary.contains("类级蒙版"))
+        XCTAssertEqual(understanding.semanticRegions.first?.role, .foodOrFruit)
+    }
+
+    func testPersonMaskWithoutFaceStillActivatesStrictIdentityProtection() {
+        let personMask = NormalizedPhotoMask(
+            width: 4,
+            height: 4,
+            pixels: Data([
+                0, 0, 0, 0,
+                0, 255, 255, 0,
+                0, 255, 255, 0,
+                0, 0, 0, 0
+            ])
+        )
+        let analysis = fixture(
+            luminance: 0.42,
+            contrast: 0.46,
+            saturation: 0.2,
+            labels: ["outdoor", "person"],
+            personMask: personMask
+        )
+        let result = decision(for: analysis)
+
+        XCTAssertTrue(analysis.containsPersonEvidence)
+        XCTAssertTrue(result.treatmentPlan.portraitProtection.isActive)
+        XCTAssertEqual(result.recipe.faceExposureEV, 0)
+        XCTAssertEqual(result.recipe.hsl.orangeHue, 0)
+        XCTAssertEqual(result.recipe.hsl.orangeSaturation, 0)
+        XCTAssertFalse(result.treatmentPlan.portraitProtection.allowsGeometryChanges)
+        XCTAssertFalse(result.treatmentPlan.portraitProtection.allowsGenerativeChanges)
+    }
+
+    func testAestheticPlannerControlsOnlyReferenceValidationDecision() throws {
+        let subjectMask = NormalizedPhotoMask(
+            width: 4,
+            height: 4,
+            pixels: Data([
+                0, 0, 0, 0,
+                0, 255, 255, 0,
+                0, 255, 255, 0,
+                0, 0, 0, 0
+            ])
+        )
+        let analysis = fixture(
+            luminance: 0.44,
+            contrast: 0.42,
+            saturation: 0.2,
+            labels: ["outdoor", "food"],
+            salientSubjectMask: subjectMask,
+            salientSubjectStatistics: regionStatistics(
+                luminance: 0.3,
+                contrast: 0.34,
+                saturation: 0.34,
+                red: 0.55,
+                green: 0.31,
+                blue: 0.17
+            )
+        )
+        let problems = detector.detect(in: analysis)
+        let match = PhotographyReferenceMatcher(
+            index: referenceIndex(records: [
+                referenceRecord(
+                    id: "aesthetic-plan",
+                    luminance: 0.46,
+                    contrast: 0.53,
+                    saturation: 0.23,
+                    categories: ["outdoor", "food"]
+                )
+            ]),
+            usageMode: .diagnosticValidation
+        ).match(analysis: analysis)
+        let profile = PhotographyReferenceTargetGenerator().makeProfile(
+            analysis: analysis,
+            problems: problems,
+            matchResult: match
+        )
+        let baseline = engine.makeDecision(for: analysis, problems: problems)
+        let diagnostic = engine.makeDecision(
+            for: analysis,
+            problems: problems,
+            targetProfile: profile
+        )
+
+        XCTAssertNil(baseline.aestheticPlan)
+        XCTAssertEqual(baseline.aestheticTarget, .neutral)
+        XCTAssertNotNil(diagnostic.aestheticPlan)
+        XCTAssertEqual(diagnostic.aestheticTarget, .measuredHarmony)
+        XCTAssertTrue(diagnostic.parameterEvidence.contains {
+            $0.knowledgeRuleIDs.contains(.measuredVisualHierarchy)
+        })
+        XCTAssertTrue(diagnostic.actions.contains { $0.title.contains("摄影审美规划") })
+    }
+
+    func testAestheticPlannerUsesMeasurementsNotSceneNameForTargets() throws {
+        let dark = fixture(
+            luminance: 0.25,
+            contrast: 0.31,
+            saturation: 0.17,
+            labels: ["outdoor", "landscape"],
+            shadowRatio: 0.48,
+            noiseEstimate: 0.09
+        )
+        let bright = fixture(
+            luminance: 0.61,
+            contrast: 0.64,
+            saturation: 0.25,
+            labels: ["outdoor", "landscape"],
+            shadowRatio: 0.08,
+            highlightRatio: 0.18,
+            noiseEstimate: 0.03
+        )
+        func plan(_ analysis: PhotoAnalysis) throws -> AestheticPhotographyPlan {
+            let problems = detector.detect(in: analysis)
+            let match = PhotographyReferenceMatcher(
+                index: referenceIndex(records: [
+                    referenceRecord(
+                        id: "same-label-reference",
+                        luminance: analysis.averageLuminance,
+                        contrast: analysis.contrastRange,
+                        saturation: analysis.averageSaturation,
+                        categories: ["outdoor", "landscape"]
+                    )
+                ]),
+                usageMode: .diagnosticValidation
+            ).match(analysis: analysis)
+            let profile = PhotographyReferenceTargetGenerator().makeProfile(
+                analysis: analysis,
+                problems: problems,
+                matchResult: match
+            )
+            return AestheticPhotographyPlanner().makePlan(
+                analysis: analysis,
+                problems: problems,
+                targetProfile: profile
+            )
+        }
+
+        let darkPlan = try plan(dark)
+        let brightPlan = try plan(bright)
+        XCTAssertNotEqual(darkPlan.localContrastTarget, brightPlan.localContrastTarget)
+        XCTAssertEqual(darkPlan.shadowCoolTarget, 0)
+        XCTAssertEqual(brightPlan.shadowCoolTarget, 0)
+        XCTAssertTrue(darkPlan.rationale.joined().contains("0.250"))
+        XCTAssertTrue(brightPlan.rationale.joined().contains("0.610"))
+    }
+
     private func decision(for analysis: PhotoAnalysis) -> PhotographyDecision {
         engine.makeDecision(for: analysis, problems: detector.detect(in: analysis))
     }
@@ -1684,6 +1868,7 @@ final class SceneAdaptationTests: XCTestCase {
         mixedLightScore: Float = 0.05,
         spatialLuminanceVariance: Float = 0.08,
         neutralColorStatistics: NeutralColorStatistics? = nil,
+        semanticObjectRegions: [SemanticObjectRegion] = [],
         recognition: SceneRecognitionDiagnostics = SceneRecognitionDiagnostics(
             status: .recognized,
             topConfidence: 0.8,
@@ -1736,7 +1921,8 @@ final class SceneAdaptationTests: XCTestCase {
             semanticLabels: labels.map { SceneLabel(identifier: $0, confidence: 0.8) },
             sceneRecognitionDiagnostics: recognition,
             segmentationDiagnostics: segmentation,
-            neutralColorStatistics: neutralColorStatistics
+            neutralColorStatistics: neutralColorStatistics,
+            semanticObjectRegions: semanticObjectRegions
         )
     }
 
