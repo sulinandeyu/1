@@ -1,4 +1,6 @@
 import XCTest
+import CoreGraphics
+import CoreImage
 @testable import MasterCameraDecisionCore
 
 final class SceneAdaptationTests: XCTestCase {
@@ -1761,6 +1763,370 @@ final class SceneAdaptationTests: XCTestCase {
         XCTAssertEqual(brightPlan.shadowCoolTarget, 0)
         XCTAssertTrue(darkPlan.rationale.joined().contains("0.250"))
         XCTAssertTrue(brightPlan.rationale.joined().contains("0.610"))
+    }
+
+    func testManualRendererParametersMapOnlyDeclaredControls() {
+        let parameters = ManualPhotographyParameters(
+            identifier: "unit-test",
+            exposureEV: 0.22,
+            highlightAmount: 0.61,
+            shadowAmount: 0.27,
+            blackPoint: 0.014,
+            temperatureShift: 240,
+            tintShift: -4,
+            toneCurveAmount: 0.3,
+            toneCurveStyle: .softHighlights,
+            shadowZoneExposureEV: 0.1,
+            highlightZoneExposureEV: -0.12,
+            luminanceMaskStrength: 0.7
+        )
+        let recipe = parameters.makeRecipe()
+        XCTAssertEqual(recipe.exposureEV, 0.22, accuracy: 0.0001)
+        XCTAssertEqual(recipe.highlightAmount, 0.61, accuracy: 0.0001)
+        XCTAssertEqual(recipe.shadowAmount, 0.27, accuracy: 0.0001)
+        XCTAssertEqual(recipe.blackPoint, 0.014, accuracy: 0.0001)
+        XCTAssertEqual(recipe.temperatureShift, 240, accuracy: 0.0001)
+        XCTAssertEqual(recipe.tintShift, -4, accuracy: 0.0001)
+        XCTAssertEqual(recipe.toneCurveAmount, 0.3, accuracy: 0.0001)
+        XCTAssertEqual(recipe.toneCurveStyle, .softHighlights)
+        XCTAssertEqual(recipe.shadowZoneExposureEV, 0.1, accuracy: 0.0001)
+        XCTAssertEqual(recipe.highlightZoneExposureEV, -0.12, accuracy: 0.0001)
+        XCTAssertEqual(recipe.luminanceMaskStrength, 0.7, accuracy: 0.0001)
+        XCTAssertEqual(recipe.saturation, 1, accuracy: 0.0001)
+        XCTAssertEqual(recipe.hsl, .neutral)
+        XCTAssertEqual(recipe.grainAmount, 0, accuracy: 0.0001)
+    }
+
+    func testMeasuredAestheticDiagnosticPathDoesNotChangeFormalDecisionContract() {
+        let analysis = fixture(
+            luminance: 0.31,
+            contrast: 0.34,
+            saturation: 0.18,
+            labels: ["outdoor", "plant"],
+            shadowRatio: 0.38,
+            noiseEstimate: 0.07
+        )
+        let problems = detector.detect(in: analysis)
+        let formal = engine.makeDecision(for: analysis, problems: problems)
+        let diagnostic = engine.makeDecision(
+            for: analysis,
+            problems: problems,
+            enableMeasuredAestheticPlanning: true
+        )
+
+        XCTAssertNil(formal.aestheticPlan)
+        XCTAssertEqual(formal.aestheticTarget, .neutral)
+        XCTAssertNotNil(diagnostic.aestheticPlan)
+        XCTAssertEqual(diagnostic.aestheticTarget, .measuredHarmony)
+        XCTAssertTrue(diagnostic.intent.contains("真实氛围") || diagnostic.intent.contains("整图协调"))
+        XCTAssertTrue(diagnostic.parameterEvidence.contains { evidence in
+            evidence.knowledgeRuleIDs.contains(.measuredVisualHierarchy)
+        })
+        XCTAssertFalse(diagnostic.parameterEvidence.contains { evidence in
+            evidence.knowledgeRuleIDs.contains(.referenceTargetCalibration)
+        })
+    }
+
+    func testManualNeutralRecipeDoesNotAlterPixels() throws {
+        let source = syntheticImage(width: 4, height: 2, pixels: [
+            (32, 32, 32), (96, 96, 96), (180, 180, 180), (230, 230, 230),
+            (210, 105, 35), (30, 100, 220), (80, 150, 70), (150, 80, 130)
+        ])
+        let recipe = ManualPhotographyParameters(identifier: "neutral").makeRecipe()
+        var output = CoreImageParameterKernel.exposure(source, ev: recipe.exposureEV)
+        output = CoreImageParameterKernel.highlightShadow(
+            output,
+            highlights: recipe.highlightAmount,
+            shadows: recipe.shadowAmount
+        )
+        output = CoreImageParameterKernel.blackPoint(output, amount: recipe.blackPoint)
+        output = CinematicToneMappingEngine().apply(to: output, recipe: recipe)
+        output = CoreImageParameterKernel.whiteBalance(
+            output,
+            temperatureShift: recipe.temperatureShift,
+            tintShift: recipe.tintShift
+        )
+        output = CoreImageParameterKernel.colorControls(
+            output,
+            brightness: recipe.brightness,
+            contrast: recipe.contrast,
+            saturation: recipe.saturation
+        )
+        output = CoreImageParameterKernel.vibrance(output, amount: recipe.vibrance)
+        output = ProfessionalHSLProcessor().apply(to: output, adjustment: recipe.hsl)
+
+        XCTAssertEqual(try rgba8(output), try rgba8(source))
+        XCTAssertEqual(recipe.colorGradeIntensity, 0, accuracy: 0.0001)
+        XCTAssertEqual(recipe.backgroundSeparation, 0, accuracy: 0.0001)
+        XCTAssertEqual(recipe.subjectExposureEV, 0, accuracy: 0.0001)
+        XCTAssertEqual(recipe.skySaturation, 1, accuracy: 0.0001)
+    }
+
+    func testExposurePixelDirectionIsCorrect() throws {
+        let source = constantImage(width: 8, height: 8, value: 0.32)
+        let original = try meanRGB(source)
+        let darker = try meanRGB(CoreImageParameterKernel.exposure(source, ev: -0.25))
+        let brighter = try meanRGB(CoreImageParameterKernel.exposure(source, ev: 0.25))
+
+        XCTAssertLessThan(darker.luminance, original.luminance)
+        XCTAssertGreaterThan(brighter.luminance, original.luminance)
+    }
+
+    func testHighlightAndShadowControlsAffectExpectedLuminanceZones() throws {
+        let source = splitGrayImage(width: 64, height: 24, dark: 0.12, bright: 0.88)
+        let original = try samplePair(source, width: 64, height: 24)
+        let shadowLift = try samplePair(
+            CoreImageParameterKernel.highlightShadow(source, highlights: 1, shadows: 0.55),
+            width: 64,
+            height: 24
+        )
+        let highlightRecovery = try samplePair(
+            CoreImageParameterKernel.highlightShadow(source, highlights: 0.5, shadows: 0),
+            width: 64,
+            height: 24
+        )
+
+        XCTAssertGreaterThan(shadowLift.left - original.left, shadowLift.right - original.right)
+        XCTAssertGreaterThan(original.right - highlightRecovery.right, original.left - highlightRecovery.left)
+    }
+
+    func testBlackPointPreservesNeutralHueAndControlsDarkPixels() throws {
+        let source = splitGrayImage(width: 32, height: 16, dark: 0.10, bright: 0.72)
+        let output = CoreImageParameterKernel.blackPoint(source, amount: 0.025)
+        let originalPair = try samplePair(source, width: 32, height: 16)
+        let outputPair = try samplePair(output, width: 32, height: 16)
+        let sample = try rgbSample(output, x: 4, y: 8)
+
+        XCTAssertLessThan(outputPair.left, originalPair.left)
+        XCTAssertLessThan(outputPair.right, originalPair.right)
+        XCTAssertEqual(sample.r, sample.g, accuracy: 1.0 / 255.0)
+        XCTAssertEqual(sample.g, sample.b, accuracy: 1.0 / 255.0)
+    }
+
+    func testWhiteBalanceTemperatureDirectionsAreOpposedWithoutNeutralGreenCast() throws {
+        let neutral = constantImage(width: 16, height: 16, value: 0.55)
+        let coolCorrection = try meanRGB(CoreImageParameterKernel.whiteBalance(
+            neutral,
+            temperatureShift: 350,
+            tintShift: 0
+        ))
+        let warmCorrection = try meanRGB(CoreImageParameterKernel.whiteBalance(
+            neutral,
+            temperatureShift: -350,
+            tintShift: 0
+        ))
+
+        XCTAssertLessThan(coolCorrection.r - coolCorrection.b, warmCorrection.r - warmCorrection.b)
+        XCTAssertLessThan(abs(coolCorrection.g - ((coolCorrection.r + coolCorrection.b) / 2)), 0.12)
+        XCTAssertLessThan(abs(warmCorrection.g - ((warmCorrection.r + warmCorrection.b) / 2)), 0.12)
+    }
+
+    func testOrangeHSLDoesNotActLikeGlobalSaturation() throws {
+        let source = syntheticImage(width: 2, height: 1, pixels: [
+            (225, 118, 35),
+            (35, 95, 225)
+        ])
+        var adjustment = ProfessionalHSLAdjustment.neutral
+        adjustment.orangeSaturation = 0.16
+        let output = ProfessionalHSLProcessor().apply(to: source, adjustment: adjustment)
+        let sourceBytes = try rgba8(source)
+        let outputBytes = try rgba8(output)
+        let orangeDelta = rgbDelta(sourceBytes, outputBytes, pixel: 0)
+        let blueDelta = rgbDelta(sourceBytes, outputBytes, pixel: 1)
+
+        XCTAssertGreaterThan(orangeDelta, 2)
+        XCTAssertGreaterThan(orangeDelta, blueDelta * 2)
+    }
+
+    func testNormalizedMaskCoordinatesPreserveSubjectSide() throws {
+        let width = 64
+        let height = 32
+        let source = constantImage(width: width, height: height, red: 0.55, green: 0.32, blue: 0.20)
+        var maskPixels = Data(count: width * height)
+        maskPixels.withUnsafeMutableBytes { raw in
+            guard let bytes = raw.bindMemory(to: UInt8.self).baseAddress else { return }
+            for y in 0..<height {
+                for x in 0..<width {
+                    bytes[(y * width) + x] = x < width / 2 ? 255 : 0
+                }
+            }
+        }
+        let mask = NormalizedPhotoMask(width: width, height: height, pixels: maskPixels)
+        let analysis = fixture(
+            luminance: 0.4,
+            contrast: 0.4,
+            saturation: 0.2,
+            labels: ["person"],
+            personMask: mask
+        )
+        var recipe = AutomaticEditingRecipe.naturalEnhancement
+        recipe.backgroundSeparation = 0.18
+        let output = CinematicSpatialDepthProcessor().apply(
+            to: source,
+            analysis: analysis,
+            recipe: recipe
+        )
+        let sourceLeft = try rgbSample(source, x: 8, y: 16)
+        let sourceRight = try rgbSample(source, x: 56, y: 16)
+        let outputLeft = try rgbSample(output, x: 8, y: 16)
+        let outputRight = try rgbSample(output, x: 56, y: 16)
+
+        XCTAssertLessThan(rgbDistance(sourceLeft, outputLeft), 0.02)
+        XCTAssertGreaterThan(rgbDistance(sourceRight, outputRight), 0.01)
+    }
+
+    func testMeasuredDUsesDifferentParametersForDifferentMeasurementsInSameScene() {
+        let dark = fixture(
+            luminance: 0.24,
+            contrast: 0.30,
+            saturation: 0.15,
+            labels: ["outdoor", "landscape"],
+            shadowRatio: 0.5,
+            noiseEstimate: 0.08
+        )
+        let bright = fixture(
+            luminance: 0.68,
+            contrast: 0.62,
+            saturation: 0.27,
+            labels: ["outdoor", "landscape"],
+            shadowRatio: 0.06,
+            highlightRatio: 0.24,
+            noiseEstimate: 0.02
+        )
+        let darkDecision = engine.makeDecision(
+            for: dark,
+            problems: detector.detect(in: dark),
+            enableMeasuredAestheticPlanning: true
+        )
+        let brightDecision = engine.makeDecision(
+            for: bright,
+            problems: detector.detect(in: bright),
+            enableMeasuredAestheticPlanning: true
+        )
+
+        XCTAssertNotEqual(darkDecision.recipe.exposureEV, brightDecision.recipe.exposureEV)
+        XCTAssertNotEqual(darkDecision.recipe.highlightAmount, brightDecision.recipe.highlightAmount)
+        XCTAssertNotEqual(
+            darkDecision.parameterEvidence.map(\.actualValue),
+            brightDecision.parameterEvidence.map(\.actualValue)
+        )
+    }
+
+    private func syntheticImage(
+        width: Int,
+        height: Int,
+        pixels: [(UInt8, UInt8, UInt8)]
+    ) -> CIImage {
+        precondition(pixels.count == width * height)
+        var bytes = Data(capacity: width * height * 4)
+        for pixel in pixels {
+            bytes.append(pixel.0)
+            bytes.append(pixel.1)
+            bytes.append(pixel.2)
+            bytes.append(255)
+        }
+        return CIImage(
+            bitmapData: bytes,
+            bytesPerRow: width * 4,
+            size: CGSize(width: width, height: height),
+            format: .RGBA8,
+            colorSpace: CGColorSpace(name: CGColorSpace.sRGB)
+        )
+    }
+
+    private func constantImage(
+        width: Int,
+        height: Int,
+        value: Float
+    ) -> CIImage {
+        constantImage(width: width, height: height, red: value, green: value, blue: value)
+    }
+
+    private func constantImage(
+        width: Int,
+        height: Int,
+        red: Float,
+        green: Float,
+        blue: Float
+    ) -> CIImage {
+        CIImage(color: CIColor(red: CGFloat(red), green: CGFloat(green), blue: CGFloat(blue)))
+            .cropped(to: CGRect(x: 0, y: 0, width: width, height: height))
+    }
+
+    private func splitGrayImage(width: Int, height: Int, dark: Float, bright: Float) -> CIImage {
+        let left = constantImage(width: width / 2, height: height, value: dark)
+        let right = constantImage(width: width / 2, height: height, value: bright)
+            .transformed(by: CGAffineTransform(translationX: CGFloat(width / 2), y: 0))
+        return right.composited(over: left).cropped(to: CGRect(x: 0, y: 0, width: width, height: height))
+    }
+
+    private func rgba8(_ image: CIImage) throws -> [UInt8] {
+        let bounds = image.extent.integral
+        var bytes = [UInt8](repeating: 0, count: Int(bounds.width * bounds.height) * 4)
+        let context = CIContext(options: [.useSoftwareRenderer: true])
+        bytes.withUnsafeMutableBytes { buffer in
+            guard let baseAddress = buffer.baseAddress else { return }
+            context.render(
+                image,
+                toBitmap: baseAddress,
+                rowBytes: Int(bounds.width) * 4,
+                bounds: bounds,
+                format: .RGBA8,
+                colorSpace: CGColorSpace(name: CGColorSpace.sRGB)
+            )
+        }
+        return bytes
+    }
+
+    private func rgbSample(_ image: CIImage, x: Int, y: Int) throws -> (r: Float, g: Float, b: Float) {
+        let bytes = try rgba8(image)
+        let width = Int(image.extent.width)
+        let offset = ((y * width) + x) * 4
+        return (
+            Float(bytes[offset]) / 255,
+            Float(bytes[offset + 1]) / 255,
+            Float(bytes[offset + 2]) / 255
+        )
+    }
+
+    private func meanRGB(_ image: CIImage) throws -> (r: Float, g: Float, b: Float, luminance: Float) {
+        let bytes = try rgba8(image)
+        var red: Float = 0
+        var green: Float = 0
+        var blue: Float = 0
+        let count = Float(bytes.count / 4)
+        for offset in stride(from: 0, to: bytes.count, by: 4) {
+            red += Float(bytes[offset]) / 255
+            green += Float(bytes[offset + 1]) / 255
+            blue += Float(bytes[offset + 2]) / 255
+        }
+        red /= count
+        green /= count
+        blue /= count
+        return (red, green, blue, (red * 0.2126) + (green * 0.7152) + (blue * 0.0722))
+    }
+
+    private func samplePair(_ image: CIImage, width: Int, height: Int) throws -> (left: Float, right: Float) {
+        let left = try rgbSample(image, x: width / 4, y: height / 2)
+        let right = try rgbSample(image, x: (width * 3) / 4, y: height / 2)
+        return (
+            (left.r + left.g + left.b) / 3,
+            (right.r + right.g + right.b) / 3
+        )
+    }
+
+    private func rgbDelta(_ lhs: [UInt8], _ rhs: [UInt8], pixel: Int) -> Int {
+        let offset = pixel * 4
+        return abs(Int(lhs[offset]) - Int(rhs[offset]))
+            + abs(Int(lhs[offset + 1]) - Int(rhs[offset + 1]))
+            + abs(Int(lhs[offset + 2]) - Int(rhs[offset + 2]))
+    }
+
+    private func rgbDistance(
+        _ lhs: (r: Float, g: Float, b: Float),
+        _ rhs: (r: Float, g: Float, b: Float)
+    ) -> Float {
+        abs(lhs.r - rhs.r) + abs(lhs.g - rhs.g) + abs(lhs.b - rhs.b)
     }
 
     private func decision(for analysis: PhotoAnalysis) -> PhotographyDecision {

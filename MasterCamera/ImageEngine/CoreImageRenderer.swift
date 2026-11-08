@@ -72,7 +72,15 @@ final class CoreImageRenderer {
         recipe: AutomaticEditingRecipe,
         analysis: PhotoAnalysis?
     ) throws -> [ProcessingStagePreview] {
-        let result = try processImage(data: data, recipe: recipe, analysis: analysis)
+        // Stage cards are evidence thumbnails, not export masters.  Running the
+        // entire stage pipeline again at full resolution needlessly multiplies
+        // memory while A/B/C/D/M full-resolution outputs are already retained.
+        let result = try processImage(
+            data: data,
+            recipe: recipe,
+            analysis: analysis,
+            maximumLongEdge: 960
+        )
         return result.stages.compactMap { name, image in
             guard let imageData = makeStagePreviewData(from: image) else { return nil }
             return ProcessingStagePreview(name: name, imageData: imageData)
@@ -219,6 +227,63 @@ final class CoreImageRenderer {
         )
 
         return jpegData
+    }
+
+    /// Full-resolution renderer verification path. It deliberately bypasses the
+    /// automatic decision engine while using the exact same Core Image pipeline,
+    /// color spaces, mask mapping and JPEG encoder as automatic output.
+    func renderManualEdit(
+        from data: Data,
+        parameters: ManualPhotographyParameters,
+        analysis: PhotoAnalysis?
+    ) throws -> Data {
+        let recipe = parameters.makeRecipe()
+        AppLogger.imageEngine.info(
+            "人工参数 M 开始：id=\(parameters.identifier, privacy: .public) recipe=\(recipe.traceSummary, privacy: .public)"
+        )
+        return try renderAutomaticEdit(from: data, recipe: recipe, analysis: analysis)
+    }
+
+    /// One-control-at-a-time previews make parameter direction and interaction
+    /// failures visible without treating a hand-authored combination as a style.
+    /// These previews are diagnostic evidence only and never replace B or D.
+    func renderManualParameterProbePreviews(
+        from data: Data,
+        analysis: PhotoAnalysis?
+    ) throws -> [ProcessingStagePreview] {
+        var orangeHSL = ProfessionalHSLAdjustment.neutral
+        orangeHSL.orangeSaturation = 0.12
+        var blueHSL = ProfessionalHSLAdjustment.neutral
+        blueHSL.blueSaturation = 0.12
+        let probes: [(String, ManualPhotographyParameters)] = [
+            ("M 探针-曝光 -0.25EV", ManualPhotographyParameters(identifier: "exposure-minus", exposureEV: -0.25)),
+            ("M 探针-曝光 +0.25EV", ManualPhotographyParameters(identifier: "exposure-plus", exposureEV: 0.25)),
+            ("M 探针-高光 0.50", ManualPhotographyParameters(identifier: "highlights", highlightAmount: 0.5)),
+            ("M 探针-阴影 0.35", ManualPhotographyParameters(identifier: "shadows", shadowAmount: 0.35)),
+            ("M 探针-黑点 0.020", ManualPhotographyParameters(identifier: "black-point", blackPoint: 0.02)),
+            ("M 探针-色温源白点 -350K", ManualPhotographyParameters(identifier: "temperature-minus", temperatureShift: -350)),
+            ("M 探针-色温源白点 +350K", ManualPhotographyParameters(identifier: "temperature-plus", temperatureShift: 350)),
+            ("M 探针-色调 -8", ManualPhotographyParameters(identifier: "tint-minus", tintShift: -8)),
+            ("M 探针-色调 +8", ManualPhotographyParameters(identifier: "tint-plus", tintShift: 8)),
+            ("M 探针-橙色饱和 +0.12", ManualPhotographyParameters(identifier: "orange-hsl", hsl: orangeHSL)),
+            ("M 探针-蓝色饱和 +0.12", ManualPhotographyParameters(identifier: "blue-hsl", hsl: blueHSL)),
+            ("M 探针-亮度范围", ManualPhotographyParameters(
+                identifier: "luminance-zones",
+                shadowZoneExposureEV: 0.12,
+                highlightZoneExposureEV: -0.12,
+                luminanceMaskStrength: 0.65
+            ))
+        ]
+        return try probes.map { name, parameters in
+            ProcessingStagePreview(
+                name: name,
+                imageData: try renderEvaluationPreview(
+                    from: data,
+                    recipe: parameters.makeRecipe(),
+                    analysis: analysis
+                )
+            )
+        }
     }
 
     private func processImage(
@@ -488,46 +553,32 @@ final class CoreImageRenderer {
     }
 
     private func applyWhiteBalance(to image: CIImage, recipe: AutomaticEditingRecipe) -> CIImage {
-        guard abs(recipe.temperatureShift) > 0.5 || abs(recipe.tintShift) > 0.01 else {
-            return image
-        }
-
-        let filter = CIFilter.temperatureAndTint()
-        filter.inputImage = image
-        // CITemperatureAndTint defines `neutral` as the source white point and
-        // `targetNeutral` as the desired white point. The adaptive solver's
-        // values describe the measured source bias, so map that estimate back
-        // to the neutral photographic target instead of reversing the API.
-        filter.neutral = CIVector(
-            x: CGFloat(6500 + recipe.temperatureShift),
-            y: CGFloat(recipe.tintShift)
+        CoreImageParameterKernel.whiteBalance(
+            image,
+            temperatureShift: recipe.temperatureShift,
+            tintShift: recipe.tintShift
         )
-        filter.targetNeutral = CIVector(x: 6500, y: 0)
-        return filter.outputImage ?? image
     }
 
     private func applyExposure(to image: CIImage, recipe: AutomaticEditingRecipe) -> CIImage {
-        let filter = CIFilter.exposureAdjust()
-        filter.inputImage = image
-        filter.ev = recipe.exposureEV
-        return filter.outputImage ?? image
+        CoreImageParameterKernel.exposure(image, ev: recipe.exposureEV)
     }
 
     private func applyHighlightShadow(to image: CIImage, recipe: AutomaticEditingRecipe) -> CIImage {
-        let filter = CIFilter.highlightShadowAdjust()
-        filter.inputImage = image
-        filter.highlightAmount = recipe.highlightAmount
-        filter.shadowAmount = recipe.shadowAmount
-        return filter.outputImage ?? image
+        CoreImageParameterKernel.highlightShadow(
+            image,
+            highlights: recipe.highlightAmount,
+            shadows: recipe.shadowAmount
+        )
     }
 
     private func applyColorControls(to image: CIImage, recipe: AutomaticEditingRecipe) -> CIImage {
-        let filter = CIFilter.colorControls()
-        filter.inputImage = image
-        filter.brightness = recipe.brightness
-        filter.contrast = recipe.contrast
-        filter.saturation = recipe.saturation
-        return filter.outputImage ?? image
+        CoreImageParameterKernel.colorControls(
+            image,
+            brightness: recipe.brightness,
+            contrast: recipe.contrast,
+            saturation: recipe.saturation
+        )
     }
 
     private func applyToneCurve(to image: CIImage, recipe: AutomaticEditingRecipe) -> CIImage {
@@ -603,16 +654,7 @@ final class CoreImageRenderer {
     }
 
     private func applyBlackPoint(to image: CIImage, recipe: AutomaticEditingRecipe) -> CIImage {
-        let blackPoint = CGFloat(recipe.blackPoint)
-        guard blackPoint > 0.001, blackPoint < 0.99 else { return image }
-        let slope = 1 / (1 - blackPoint)
-        let offset = -blackPoint * slope
-        let coefficients = CIVector(x: offset, y: slope, z: 0, w: 0)
-        return image.applyingFilter("CIColorPolynomial", parameters: [
-            "inputRedCoefficients": coefficients,
-            "inputGreenCoefficients": coefficients,
-            "inputBlueCoefficients": coefficients
-        ])
+        CoreImageParameterKernel.blackPoint(image, amount: recipe.blackPoint)
     }
 
     private func applyLocalContrast(to image: CIImage, recipe: AutomaticEditingRecipe) -> CIImage {
@@ -677,10 +719,7 @@ final class CoreImageRenderer {
     }
 
     private func applyVibrance(to image: CIImage, recipe: AutomaticEditingRecipe) -> CIImage {
-        let filter = CIFilter.vibrance()
-        filter.inputImage = image
-        filter.amount = recipe.vibrance
-        return filter.outputImage ?? image
+        CoreImageParameterKernel.vibrance(image, amount: recipe.vibrance)
     }
 
     private func applyNoiseReduction(to image: CIImage, recipe: AutomaticEditingRecipe) -> CIImage {

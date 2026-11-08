@@ -5,12 +5,24 @@ struct ProcessingConfiguration: Equatable, Sendable {
     let quality: QualityConfiguration
     let portrait: PortraitConfiguration
     let referenceValidation: ReferenceValidationConfiguration
+    let diagnosticValidation: DiagnosticValidationConfiguration
 
     static let current = ProcessingConfiguration(
         analysis: .default,
         quality: .default,
         portrait: .default,
-        referenceValidation: .diagnosticImportsOnly
+        referenceValidation: .diagnosticImportsOnly,
+        diagnosticValidation: .diagnosticImportsOnly
+    )
+}
+
+struct DiagnosticValidationConfiguration: Equatable, Sendable {
+    let measuredAestheticCandidateEnabled: Bool
+    let manualParameters: ManualPhotographyParameters?
+
+    static let diagnosticImportsOnly = DiagnosticValidationConfiguration(
+        measuredAestheticCandidateEnabled: true,
+        manualParameters: .rendererVerification
     )
 }
 

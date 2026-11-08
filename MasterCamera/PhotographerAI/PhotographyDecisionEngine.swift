@@ -4,12 +4,21 @@ final class PhotographyDecisionEngine {
     func makeDecision(
         for analysis: PhotoAnalysis,
         problems: PhotoProblemReport,
-        targetProfile: PhotographyTargetProfile? = nil
+        targetProfile: PhotographyTargetProfile? = nil,
+        enableMeasuredAestheticPlanning: Bool = false
     ) -> PhotographyDecision {
         let strategy = SceneStrategy.choose(for: analysis, problems: problems)
         let context = analysis.photographyContext
-        let aestheticPlan = targetProfile.flatMap { profile in
-            profile.referenceApplied
+        let planningProfile = targetProfile ?? (
+            enableMeasuredAestheticPlanning
+                ? PhotographyTargetProfile.measuredBaseline(
+                    analysis: analysis,
+                    problems: problems
+                )
+                : nil
+        )
+        let aestheticPlan = planningProfile.flatMap { profile in
+            (profile.referenceApplied || enableMeasuredAestheticPlanning)
                 ? AestheticPhotographyPlanner().makePlan(
                     analysis: analysis,
                     problems: problems,
@@ -20,7 +29,7 @@ final class PhotographyDecisionEngine {
         let adaptiveSolution = AdaptivePhotographyParameterSolver().solve(
             analysis: analysis,
             problems: problems,
-            targetProfile: targetProfile,
+            targetProfile: planningProfile,
             aestheticPlan: aestheticPlan
         )
         // The adaptive solver is the sole source of creative/technical parameters.
@@ -1374,8 +1383,11 @@ struct AestheticPhotographyPlanner {
             String(format: "原图亮度 %.3f、反差 %.3f、阴影 %.3f、高光 %.3f、噪声 %.3f。", analysis.averageLuminance, analysis.contrastRange, analysis.shadowRatio, analysis.highlightRatio, analysis.noiseEstimate),
             "参考特征只校准目标关系，影响 \(String(format: "%.1f", targetProfile.referenceInfluence * 100))%；不复制曲线、HSL 或白平衡。"
         ]
+        let planningConfidence = targetProfile.referenceApplied
+            ? min(targetProfile.referenceMatch.confidence, max(0.42, subjectReliability))
+            : max(0.42, subjectReliability)
         return AestheticPhotographyPlan(
-            confidence: min(targetProfile.referenceMatch.confidence, max(0.42, subjectReliability)),
+            confidence: planningConfidence,
             visualUnderstanding: understanding,
             primaryObjective: objective,
             emphasizedRegions: emphasized,
@@ -1618,7 +1630,8 @@ struct AdaptivePhotographyParameterSolver {
             )
         }
 
-        if let targetProfile, targetProfile.referenceApplied {
+        if let targetProfile,
+           targetProfile.referenceApplied || aestheticPlan != nil {
             let localContrastResidual = max(0, (
                 aestheticPlan?.localContrastTarget
                     ?? targetProfile.localContrastTarget
@@ -1749,18 +1762,20 @@ struct AdaptivePhotographyParameterSolver {
             targetSaturation: target.saturation,
             noiseHeadroom: noiseHeadroom
         ).map { item -> PhotographyParameterEvidence in
-            guard targetProfile?.referenceApplied == true else { return item }
             let targetDrivenKeys: Set<PhotographyParameterKey> = [
                 .exposure, .brightness, .highlights, .shadows, .contrast,
                 .toneCurve, .saturation, .vibrance, .localContrast,
                 .midtoneContrast, .localExposure
             ]
             guard targetDrivenKeys.contains(item.key) else { return item }
-            var rules: [PhotographyKnowledgeRuleID] = [
-                .referenceApplicabilityGate,
-                .referenceTargetCalibration,
-                .referenceValidationIsolation
-            ]
+            var rules: [PhotographyKnowledgeRuleID] = []
+            if targetProfile?.referenceApplied == true {
+                rules += [
+                    .referenceApplicabilityGate,
+                    .referenceTargetCalibration,
+                    .referenceValidationIsolation
+                ]
+            }
             if aestheticPlan != nil {
                 rules += [
                     .semanticEvidenceBoundary,
@@ -1769,7 +1784,7 @@ struct AdaptivePhotographyParameterSolver {
                     .atmospherePreservation
                 ]
             }
-            return item.appendingKnowledgeRules(rules)
+            return rules.isEmpty ? item : item.appendingKnowledgeRules(rules)
         }
         return AdaptivePhotographySolution(
             target: target,
@@ -1966,12 +1981,14 @@ final class PhotographyDirector {
     func direct(
         analysis: PhotoAnalysis,
         problems: PhotoProblemReport,
-        targetProfile: PhotographyTargetProfile? = nil
+        targetProfile: PhotographyTargetProfile? = nil,
+        enableMeasuredAestheticPlanning: Bool = false
     ) -> PhotographyDecision {
         decisionEngine.makeDecision(
             for: analysis,
             problems: problems,
-            targetProfile: targetProfile
+            targetProfile: targetProfile,
+            enableMeasuredAestheticPlanning: enableMeasuredAestheticPlanning
         )
     }
 }

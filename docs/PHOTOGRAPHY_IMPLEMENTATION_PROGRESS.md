@@ -1,6 +1,6 @@
 # 专业摄影知识库与实现进度
 
-更新时间：2026-10-31
+更新时间：2026-11-07
 
 ## 状态定义
 
@@ -107,3 +107,54 @@
 - 已完成安全收口：候选计划、参数状态和摄影上下文不再只依赖 `faceCount`；人脸、整人物分割或可靠语义人物区域任一成立都会启用人物保护，非人物局部增强优先读取可靠类级语义区域的实测统计。
 - 已执行：`git diff --check`、参考索引/Schema JSON 解析和 250 张数据集完整性测试通过；新增 `scripts/Test-SemanticModelLabelMapping.ps1` 并通过，逐项核对模型 201 个标签中的 7 组/46 个实际 class ID 与 Swift 映射；现有参考检索脚本再次完成 21 条参考 × 30 个隔离查询，26 次匹配、4 次安全回退，本次 455 ms（只代表 Windows 脚本，不是 Core Image/真机性能）。授权案例 manifest 测试未执行，因为仓库仍没有可用的已授权原图—成片案例，不能拿 Schema 冒充案例。Windows 没有 `swift` 命令，本轮不能执行新增 Swift 测试，也不能声称 iOS 编译通过。
 - 未完成：远程 macOS `swift test`/iOS Simulator build、DETR 新类级蒙版真机准确性/耗时/内存、C 真实 Core Image 出图、人物肤色保护、五类照片盲测。
+# 2026-11-07：学习型空间自适应增强可行性阶段
+
+- 已审计 B/C 与 Core Image 调用链：B 正式全分辨率渲染存在；C 仅诊断导入，未覆盖 B。
+- 已建立 DeepLPF 隔离 Windows 原型并对 5 张真实手机原图执行实际模型推理、局部滤镜预测、像素输出和技术安全门。
+- 实测 4/5 输出因暗部裁切或中性色偏移被拒绝；树木图技术门通过但人工观察过度增绿，未判定审美通过。
+- 已建立 DeepLabV3-MobileNetV3 语义探针并输出类别蒙版、叠加图、置信度和耗时；确认人物/车辆部分可用，但天空/建筑/道路/植被大量未知且柿子图有人物误检。
+- 已核查 HDRNet、DeepLPF、FiveK 和语义探针许可：DeepLPF 公共权重受 FiveK 研究许可限制，禁止 App/TestFlight/商业训练。
+- 已分析 `摄影效果参考` 两组城市案例；均为不同视频帧，不作为同底片配对或固定参数目标。
+- 当前没有修改 iOS 正式算法、没有加入模型资源、没有提交/推送/上传 TestFlight。
+- 下一步入口：取得合法同底片训练配对，定义人物/中性色/裁切约束，训练轻量 HDRNet 类 residual 模型；Windows 隔离通过后再评估 Core ML C2。
+
+## 2026-11-07：学习型模型训练与画质校准阶段
+
+- 已完成：将技术安全门改为线性亮度 + CIE Lab D65；中性色亮度 `ΔL*` 与色度 `Δab` 分离；增加全图/阴影/高光/重要区域裁切、人物/肤色/纹理、饱和溢出、光晕和局部对比检查。
+- 已执行：使用可靠人物蒙版重新评估 DeepLPF 5 张实际输出，5/5 均被技术门拒绝；车辆人物肤色色度变化约 9.29 Δab，树木/柿子饱和溢出约 9.34%/7.91%。没有放宽阈值让失败结果通过。
+- 已完成：建立项目内 29,509 参数的 HDRNet 风格双边 residual 原型，显式恒等初始化、低分辨率系数网格、有界调整、边缘引导切片，语义缺失时支持安全推理。
+- 已完成：建立同底片/专家目标/授权/配准/XMP/人物和关键区域保护的配对数据 Schema 与导入器。5 对旧算法样本通过同画面验证，但均被标记 `pipeline_smoke_only`；产品训练合格样本为 0。
+- 已执行：RTX 5070 Ti、PyTorch 2.11.0+cu128 上运行 20 epoch 实际训练；约 19.86 秒、峰值已分配显存 35.32 MiB；训练/验证/测试严格分离，柿子图只作为测试。
+- 已导出：5 组 A 原图、B 旧算法目标、C2 模型输出及引导图；C2 技术门未拒绝但肉眼基本接近原图，不宣称达到专业摄影效果。
+- 已完成：人物肤色色度/纹理训练约束；两张人物样片 C2 的蒙版内肤色色度变化约 0.85/0.54 Δab，纹理比例约 0.85/0.89。该结果不等于身份/审美验收。
+- 已完成：随机化 B/C2 盲测清单，当前人工评价 0/5；没有生成虚假偏好。
+- 许可核查：FiveK 商业禁用；Unsplash Lite 不是专家配对且权重分发需确认；DPED 缺商业数据/权重明确授权；HDR+ 不是专家后期且存在 ShareAlike/隐私复核。当前没有可商业训练的专家配对。
+- DETR：确认 iOS 现有约 30.9 MiB panoptic Core ML 资源及更完整类别映射；Windows 未运行 Core ML，真机准确率、耗时与内存仍未验证。
+- 自动测试：Python 测试与 JSON/Schema/manifest 校验将在最终检查后记录；Windows GPU 训练已真实执行，但不是 Core Image、Vision 或 iPhone 验收。
+- 未修改：正式 A/B/C、拍照/保存、Xcode 资源和发布流程；未提交、未推送、未上传 TestFlight。
+- 下一步唯一有效入口：先取得书面授权的现代手机同底片专家后期配对及人物/模型分发权，再扩大数据、人工复核、训练、独立盲测；通过后才评估 Core ML/Metal C2。
+
+详细报告：`docs/LEARNING_MODEL_TRAINING_CALIBRATION.md`。
+# 2026-11-07：全场景最终整改（阶段 1：渲染与决策隔离诊断）
+
+- 已完成：完整读取本轮 706 行实施要求，并按项目约束复核 `PhotographyKnowledge/README.md`、`SOURCE_INDEX.md`、`CODE_MAPPING.md`。
+- 已确认根因之一：现有审美规划器只在摄影参考 C 匹配成功时启用；正式 B 虽使用逐图求解器，但无法单独验证“视觉关系规划”对最终像素的贡献。
+- 已确认验证缺口：此前只有自动配方渲染，没有“显式人工参数走同一完整分辨率渲染/编码链”的 M 路径，无法把决策问题与参数映射问题分开。
+- 已修改：`ManualPhotographyParameters` 提供明确人工输入；`CoreImageRenderer.renderManualEdit` 复用 B 的完整 Core Image 管线；增加曝光、高光、阴影、黑点、温度、色调、橙/蓝 HSL、亮度范围单控制探针。
+- 已修改：新增隔离 D 路径。`PhotographyTargetProfile.measuredBaseline` 只使用当前照片测量，`enableMeasuredAestheticPlanning` 将其送入现有 `AestheticPhotographyPlanner` 和 `AdaptivePhotographyParameterSolver`，最终执行全分辨率 Core Image；不读取参考库、不替换 B。
+- 已修改：诊断导入现在准备 A/B/C/D/M，以及蒙版和 M 单参数探针；D/M 的参数、区域执行、质量状态和待人工评价状态写入现有诊断记录。
+- 已增加决策测试：人工参数只映射声明字段；正式 B 契约保持无审美规划，D 具有测量驱动规划且不附加参考校准规则。
+- 当前验证状态：Windows 无 `swift`、Xcode、Core Image、Vision/Core ML 运行时；因此本阶段只有源码静态检查，**尚未执行 Swift 测试、iOS 编译、Core Image 参数方向验证或 iPhone 视觉验收**。
+- 下一步：先在现有远程 iOS Build 上执行 `swift test` 与 Simulator build，修复任何编译问题；随后用同一张真实原图检查 M 探针方向、蒙版坐标及 A/B/D/M。未经用户确认不得提交、推送或上传 TestFlight。
+
+# 2026-11-08：全场景最终整改（阶段 2：远程编译与真实像素验证准备）
+
+- 独立验证分支：`codex/diagnostic-render-validation-20261108`；不合并正式分支，不触发 TestFlight Release。
+- 已修复 M 基线污染：`ManualPhotographyParameters.makeRecipe()` 对所有未暴露但可能改变像素的字段显式归零；中性曝光、高光阴影、颜色控制、自然饱和度、白平衡和七段影调直接旁路，不再插入无意义滤镜或 32³ 恒等色彩立方体。
+- 已将生产渲染器的曝光、高光阴影、黑点、白平衡、颜色控制和自然饱和度参数映射提取为 `CoreImageParameterKernel`；应用与 macOS 像素测试调用同一实现，避免测试复制另一套公式。
+- 已增加实际像素测试：曝光正负方向、高光/阴影区域方向、黑点中性色保护、色温相反方向、橙色 HSL 选择性、中性 M 零污染、局部人物蒙版坐标，以及同场景不同测量生成不同 D 参数。
+- 已明确 D/M 状态：渲染失败、质检执行失败、质检返回 failed 分开记录；失败候选只供诊断，`eligibleToReplaceB=false`，正式 B 不变。
+- 已降低诊断额外内存：阶段卡片改为最长边 960 的证据预览；A/B/C/D/M 主候选仍串行执行并保留真实全分辨率数据，M 单参数探针继续使用低分辨率预览。
+- 已补齐诊断导出：相册保存保留 A/B，并按存在情况分别导出 C/D/M，文件名带明确版本标识。
+- 授权收口：`PhotographyReferenceIndex.v1.json` 的 `productionUseAllowed=false`，因此已从 iOS App Resources 移除；Package 内仍可用于非分发的验证测试。合规内部构建中 C 会明确不可用，不能用 D 或固定参数伪装 C。
+- Windows 限制：本机没有 Swift/Xcode/Core Image 运行时；上述 Swift/Core Image 测试必须由远程 macOS `swift test` 实际执行，结果将在工作流完成后补记。

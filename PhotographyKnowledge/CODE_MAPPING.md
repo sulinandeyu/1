@@ -18,6 +18,14 @@
 | PT-AESTHETIC-001 | `AestheticPhotographyPlanner` | 通过现有 `AdaptivePhotographyParameterSolver` 和主体/亮度蒙版执行视觉层级目标 | C 诊断路径专用；噪声、人物和蒙版质量限制 | 契约测试待远程 Apple 环境执行；iPhone 审美待盲测 |
 | PT-AESTHETIC-002 | `AestheticPhotographyPlanner` + 动态求解器 HSL/Color Grading | 现有 Core Image HSL、色彩分级、皮肤保护链 | 无可靠区域/混合光证据时为 0；禁止复制参考参数 | 代码接入；肤色与中性色真机验证待执行 |
 | PT-AESTHETIC-003 | `VisualSceneUnderstandingResult`、`AdaptivePhotographyTargetGenerator` | 参数安全上限、亮度区域与高光保护 | 氛围是约束而非固定参数来源 | 代码接入；多光照真机验证待执行 |
+| PT-LEARN-001 | `LearningEnhancementPrototype` 的模型/权重清单与 manifest | 仅允许本地研究推理；不进入 Xcode target | 代码、权重、训练数据三层许可都需满足 | DeepLPF 权重因 FiveK 研究许可被阻止分发 |
+| PT-LEARN-002 | `run_deeplpf_prototype.py` 的源图相对技术安全门 | 学习输出只作为隔离 C 候选；超限时拒绝 | 技术通过不等于审美通过；人物还需蒙版内比较 | 5 张真实手机图已运行，4 张被技术门拒绝 |
+| PT-LEARN-003 | `run_semantic_probe.py`；iOS 现有 DETR/Vision 分割 | 可靠语义仅限制/保护学习变换；未知区域走亮度/全局协调 | 禁止把 background 推断为天空/道路/建筑/植被 | Windows 5 图实测完成；iOS DETR 真机仍待验收 |
+| PT-TRAIN-001 | `import_training_pairs.py` + `training-pair.schema.json` + 许可清单 | 不直接渲染；生成含 SHA-256、配准相关性、用途和分区的训练 manifest | 专家目标、商业训练权、模型分发权缺一不可；不同帧拒绝 | 5 对旧算法样本导入；0 对产品合格；导入拒绝测试通过 |
+| PT-TRAIN-002 | `bilateral_residual_model.py` + `train_bilateral_residual.py` | `12×12×8` 双边 RGB 仿射系数网格、显式恒等基线、有界 residual、边缘引导切片 | 当前只在 Windows 隔离；烟雾权重不可分发；Core ML/Metal 切片待证实 | RTX 5070 Ti 实际训练 20 epoch；29,509 参数；iPhone 未执行 |
+| PT-TRAIN-003 | `photo_quality_metrics.py` + 人物/肤色训练约束 + `prepare_blind_comparison.py` | Lab 中性色、线性亮度、人物/肤色/纹理、裁切、饱和、光晕和局部对比拒绝；随机 B/C2 盲测 | 技术通过不等于审美通过；人物蒙版不可靠时不得伪造结论 | 12 项 Python 测试（最终以实际测试输出为准）；DeepLPF 5/5 被新安全门拒绝；人工评价仍为 0 |
+| PT-TONE-001/003、PT-COLOR-001/003、PT-LOCAL-001/002 | `ManualPhotographyParameters`、`CoreImageRenderer.renderManualEdit`、单控制探针 | M 路径使用与 B/D 相同的完整分辨率 Core Image、色彩空间和 JPEG 编码链；曝光、高光、阴影、黑点、白平衡、HSL、亮度范围分别生成诊断探针 | 仅诊断导入；显式人工值不进入正式算法，也不代表审美方案 | Windows 静态接入完成；Swift 编译、参数方向和组合效果待远程 Apple 环境/真机验证 |
+| PT-UNDERSTANDING-001、PT-AESTHETIC-001/002/003 | `PhotographyTargetProfile.measuredBaseline`、`enableMeasuredAestheticPlanning`、`evaluateMeasuredAestheticCandidate` | D 路径不读取摄影参考，直接将当前图测量、问题、视觉关系送入现有求解器并进行完整分辨率渲染 | 仅诊断导入，不替换 B；技术代理不冒充审美结论 | 决策契约测试已增加但 Windows 无 Swift；iPhone A/B/D 视觉盲测待执行 |
 
 ## 已证实差距
 

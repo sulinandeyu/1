@@ -108,7 +108,7 @@ struct PhotoPreviewView: View {
                         .buttonStyle(.plain)
                         .accessibilityLabel(
                             photo.isDiagnosticImport
-                                ? "保存 A 原图、B 正式算法成片和可用的 C 参考候选"
+                                ? "保存 A/B 及可用的 C/D/M 诊断成片"
                                 : "保存原图和 AI 成片"
                         )
                         .disabled(saveState.isSaving)
@@ -358,7 +358,7 @@ struct PhotoPreviewView: View {
 private extension SaveState {
     var textColor: Color {
         switch self {
-        case .idle, .saving, .saved, .savedDiagnosticABC:
+        case .idle, .saving, .saved, .savedDiagnosticBundle:
             return .white
         case .failed:
             return .red

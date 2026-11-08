@@ -339,6 +339,36 @@ struct PhotographyTargetProfile: Equatable, Sendable {
     var referenceApplied: Bool {
         referenceInfluence > 0 && referenceMatch.isApplicable
     }
+
+    /// Builds a reference-free profile so the aesthetic planner can be exercised
+    /// independently of the licensed-reference experiment. Every target remains
+    /// derived from the current photo and its detected problems.
+    static func measuredBaseline(
+        analysis: PhotoAnalysis,
+        problems: PhotoProblemReport
+    ) -> PhotographyTargetProfile {
+        let baseline = AdaptivePhotographyTargetGenerator().makeTarget(
+            analysis: analysis,
+            problems: problems
+        )
+        let subjectDelta = analysis.nonPersonPrimarySubjectStatistics.map {
+            $0.averageLuminance - analysis.averageLuminance
+        }
+        var protections = ["真实场景结构", "不可恢复的高光与暗部", "中性色与现场光氛围"]
+        if analysis.containsPersonEvidence {
+            protections += ["人物身份与身体结构", "真实肤色与皮肤纹理"]
+        }
+        return PhotographyTargetProfile(
+            baselineTarget: baseline,
+            resolvedTarget: baseline,
+            referenceMatch: .unavailable("D 路径不读取摄影参考；只使用当前照片测量。"),
+            referenceInfluence: 0,
+            localContrastTarget: baseline.contrast,
+            subjectBackgroundDeltaTarget: subjectDelta,
+            rationale: ["由当前照片的亮度、动态范围、颜色、噪声和可靠区域关系生成，不使用场景预设或摄影参考参数。"],
+            preservedProperties: protections
+        )
+    }
 }
 
 struct PhotographyReferenceTargetGenerator {

@@ -10,6 +10,7 @@ final class CinematicToneMappingEngine {
     private let cubeDimension = 32
 
     func apply(to image: CIImage, recipe: AutomaticEditingRecipe) -> CIImage {
+        guard requiresToneMapping(recipe) else { return image }
         let strength = intensityScale(recipe.cinematicIntensity)
         guard strength > 0 else { return image }
 
@@ -47,6 +48,16 @@ final class CinematicToneMappingEngine {
             "inputCubeDimension": cubeDimension,
             "inputCubeData": data
         ]).cropped(to: image.extent)
+    }
+
+    private func requiresToneMapping(_ recipe: AutomaticEditingRecipe) -> Bool {
+        recipe.cinematicToneStyle != .natural
+            || abs(recipe.shadowRollOff) > 0.0001
+            || abs(recipe.lowerMidtoneLift) > 0.0001
+            || abs(recipe.midtoneBias) > 0.0001
+            || abs(recipe.upperMidtoneSeparation) > 0.0001
+            || abs(recipe.highlightRollOff) > 0.0001
+            || abs(recipe.whitePoint - 1) > 0.0001
     }
 
     private func baseAnchors(for style: CinematicToneStyle) -> [Float] {
@@ -89,6 +100,91 @@ final class CinematicToneMappingEngine {
 
     private func clamp(_ value: Float) -> Float {
         min(max(value, 0), 1)
+    }
+}
+
+/// Shared, deterministic Core Image parameter mapping used by the production
+/// renderer and the macOS pixel tests.  Neutral values return the input image
+/// without inserting a filter, which is required for uncontaminated M probes.
+enum CoreImageParameterKernel {
+    static func exposure(_ image: CIImage, ev: Float) -> CIImage {
+        guard abs(ev) > 0.0001 else { return image }
+        let filter = CIFilter.exposureAdjust()
+        filter.inputImage = image
+        filter.ev = ev
+        return filter.outputImage ?? image
+    }
+
+    static func highlightShadow(
+        _ image: CIImage,
+        highlights: Float,
+        shadows: Float
+    ) -> CIImage {
+        guard abs(highlights - 1) > 0.0001 || abs(shadows) > 0.0001 else {
+            return image
+        }
+        let filter = CIFilter.highlightShadowAdjust()
+        filter.inputImage = image
+        filter.highlightAmount = highlights
+        filter.shadowAmount = shadows
+        return filter.outputImage ?? image
+    }
+
+    static func colorControls(
+        _ image: CIImage,
+        brightness: Float,
+        contrast: Float,
+        saturation: Float
+    ) -> CIImage {
+        guard abs(brightness) > 0.0001
+                || abs(contrast - 1) > 0.0001
+                || abs(saturation - 1) > 0.0001
+        else { return image }
+        let filter = CIFilter.colorControls()
+        filter.inputImage = image
+        filter.brightness = brightness
+        filter.contrast = contrast
+        filter.saturation = saturation
+        return filter.outputImage ?? image
+    }
+
+    static func vibrance(_ image: CIImage, amount: Float) -> CIImage {
+        guard abs(amount) > 0.0001 else { return image }
+        let filter = CIFilter.vibrance()
+        filter.inputImage = image
+        filter.amount = amount
+        return filter.outputImage ?? image
+    }
+
+    static func whiteBalance(
+        _ image: CIImage,
+        temperatureShift: Float,
+        tintShift: Float
+    ) -> CIImage {
+        guard abs(temperatureShift) > 0.5 || abs(tintShift) > 0.01 else {
+            return image
+        }
+        let filter = CIFilter.temperatureAndTint()
+        filter.inputImage = image
+        filter.neutral = CIVector(
+            x: CGFloat(6500 + temperatureShift),
+            y: CGFloat(tintShift)
+        )
+        filter.targetNeutral = CIVector(x: 6500, y: 0)
+        return filter.outputImage ?? image
+    }
+
+    static func blackPoint(_ image: CIImage, amount: Float) -> CIImage {
+        let blackPoint = CGFloat(amount)
+        guard blackPoint > 0.001, blackPoint < 0.99 else { return image }
+        let slope = 1 / (1 - blackPoint)
+        let offset = -blackPoint * slope
+        let coefficients = CIVector(x: offset, y: slope, z: 0, w: 0)
+        return image.applyingFilter("CIColorPolynomial", parameters: [
+            "inputRedCoefficients": coefficients,
+            "inputGreenCoefficients": coefficients,
+            "inputBlueCoefficients": coefficients
+        ])
     }
 }
 

@@ -43,7 +43,6 @@
 		C00000000000000000000001 /* ImageProcessingDiagnostics.swift in Sources */ = {isa = PBXBuildFile; fileRef = C00000000000000000000101 /* ImageProcessingDiagnostics.swift */; };
 		D00000000000000000000001 /* CinematicImagingEngines.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00000000000000000000101 /* CinematicImagingEngines.swift */; };
 		E00000000000000000000001 /* PhotographyReferenceMatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = E00000000000000000000101 /* PhotographyReferenceMatcher.swift */; };
-		E00000000000000000000002 /* PhotographyReferenceIndex.v1.json in Resources */ = {isa = PBXBuildFile; fileRef = E00000000000000000000102 /* PhotographyReferenceIndex.v1.json */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -339,7 +338,6 @@
 			buildActionMask = 2147483647;
 			files = (
 				A0000000000000000000001D /* Assets.xcassets in Resources */,
-				E00000000000000000000002 /* PhotographyReferenceIndex.v1.json in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

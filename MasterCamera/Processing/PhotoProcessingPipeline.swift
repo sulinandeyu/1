@@ -140,6 +140,17 @@ final class PhotoProcessingPipeline {
             problems: problemReport,
             isDiagnosticImport: photo.isDiagnosticImport
         )
+        let measuredAestheticValidation = evaluateMeasuredAestheticCandidate(
+            originalData: photo.originalImageData,
+            analysis: analysis,
+            problems: problemReport,
+            isDiagnosticImport: photo.isDiagnosticImport
+        )
+        let manualValidation = evaluateManualCandidate(
+            originalData: photo.originalImageData,
+            analysis: analysis,
+            isDiagnosticImport: photo.isDiagnosticImport
+        )
 
         var stageRecords = [
             ProcessingStageRecord(
@@ -182,6 +193,12 @@ final class PhotoProcessingPipeline {
         if let referenceStage = referenceValidation?.stage {
             stageRecords.append(referenceStage)
         }
+        if let measuredStage = measuredAestheticValidation?.stage {
+            stageRecords.append(measuredStage)
+        }
+        if let manualStage = manualValidation?.stage {
+            stageRecords.append(manualStage)
+        }
         let diagnosticsResult: ImageDiagnosticsResult?
         do {
             let finalRegionImpacts = try qualityService.measureRegionImpacts(
@@ -208,7 +225,9 @@ final class PhotoProcessingPipeline {
                 ),
                 candidateEvaluations: candidateResult.evaluations,
                 finalRegionImpacts: finalRegionImpacts,
-                referenceValidationDetails: referenceValidation?.details ?? [],
+                referenceValidationDetails: (referenceValidation?.details ?? [])
+                    + (measuredAestheticValidation?.details ?? [])
+                    + (manualValidation?.details ?? []),
                 stages: stageRecords,
                 fallbackReason: finalEdit.fallbackReason
             )
@@ -237,10 +256,21 @@ final class PhotoProcessingPipeline {
                 if let referencePreview = referenceValidation?.preview {
                     comparisonPreviews.append(referencePreview)
                 }
+                if let measuredPreview = measuredAestheticValidation?.preview {
+                    comparisonPreviews.append(measuredPreview)
+                }
+                if let manualPreview = manualValidation?.preview {
+                    comparisonPreviews.append(manualPreview)
+                }
+                let manualProbePreviews = (try? renderer.renderManualParameterProbePreviews(
+                    from: photo.originalImageData,
+                    analysis: analysis
+                )) ?? []
                 stagePreviews = comparisonPreviews
                     + candidateResult.previews
                     + renderedStages
                     + maskDiagnostics
+                    + manualProbePreviews
             } else {
                 stagePreviews = renderedStages
             }
@@ -254,6 +284,12 @@ final class PhotoProcessingPipeline {
                 ]
                 if let referencePreview = referenceValidation?.preview {
                     comparisonPreviews.append(referencePreview)
+                }
+                if let measuredPreview = measuredAestheticValidation?.preview {
+                    comparisonPreviews.append(measuredPreview)
+                }
+                if let manualPreview = manualValidation?.preview {
+                    comparisonPreviews.append(manualPreview)
                 }
                 stagePreviews = comparisonPreviews + candidateResult.previews
             } else {
@@ -433,6 +469,226 @@ final class PhotoProcessingPipeline {
                     durationMilliseconds: duration,
                     executed: false,
                     detail: "渲染或质检失败：\(error.localizedDescription)"
+                )
+            )
+        }
+    }
+
+    /// D is a reference-free, measured aesthetic-planning candidate. It shares
+    /// the analyzer, problem detector, adaptive solver and full-resolution Core
+    /// Image renderer with B, but remains isolated to diagnostic imports.
+    private func evaluateMeasuredAestheticCandidate(
+        originalData: Data,
+        analysis: PhotoAnalysis,
+        problems: PhotoProblemReport,
+        isDiagnosticImport: Bool
+    ) -> IsolatedDiagnosticCandidateResult? {
+        guard isDiagnosticImport,
+              configuration.diagnosticValidation.measuredAestheticCandidateEnabled
+        else { return nil }
+        let start = ProcessInfo.processInfo.systemUptime
+        var phase = "planning"
+        var renderedData: Data?
+        do {
+            let decision = photographyDirector.direct(
+                analysis: analysis,
+                problems: problems,
+                enableMeasuredAestheticPlanning: true
+            )
+            phase = "rendering"
+            let data = try renderer.renderAutomaticEdit(
+                from: originalData,
+                recipe: decision.recipe,
+                analysis: analysis
+            )
+            renderedData = data
+            phase = "qualityEvaluation"
+            let regionalExecution = renderer.regionalExecutionDetails(
+                for: decision.recipe,
+                analysis: analysis
+            )
+            let quality = try qualityService.check(
+                originalData: originalData,
+                editedData: data,
+                sourceAnalysis: analysis,
+                expectedRegions: decision.treatmentPlan.regionalTreatments.map(\.region),
+                regionalExecutionDetails: regionalExecution
+            )
+            let impacts = try qualityService.measureRegionImpacts(
+                originalData: originalData,
+                editedData: data,
+                analysis: analysis
+            )
+            let attainment = AdaptiveTargetAttainmentScorer().score(
+                target: decision.adaptiveTarget,
+                source: analysis,
+                edited: quality.measuredAnalysis
+            )
+            let aestheticProxy = PhotographyAestheticProgressScorer().score(
+                source: analysis,
+                regionImpacts: impacts
+            )
+            let parameters = decision.parameterEvidence.map { evidence in
+                "\(evidence.key.rawValue)=\(String(format: "%.4f", evidence.actualValue)){input=\(evidence.inputEvidence);target=\(evidence.target);rules=\(evidence.knowledgeRuleIDs.map(\.rawValue).joined(separator: ","));status=\(evidence.decisionStatus.rawValue)}"
+            }.joined(separator: ";")
+            let duration = Self.milliseconds(ProcessInfo.processInfo.systemUptime - start)
+            let passedTechnicalQuality = quality.status != .failed
+            let details = [
+                "[D] 状态=measuredAestheticDiagnostic；不读取摄影参考，不替换 B",
+                "[D] renderStatus=completed；technicalQualityStatus=\(quality.status.rawValue)；eligibleToReplaceB=false",
+                "[D] 视觉理解=\(analysis.visualSceneUnderstanding.traceSummary)",
+                "[D] 摄影问题=\(problems.problems.map { $0.kind.rawValue }.joined(separator: ","))",
+                "[D] 审美目标=\(decision.aestheticPlan?.traceSummary ?? "未生成")",
+                "[D] 动态参数=\(parameters)",
+                "[D] 区域执行=\(regionalExecution.joined(separator: " | "))",
+                "[D] 技术质检=\(quality.status.rawValue)；问题=[\(quality.issues.map(\.rawValue).joined(separator: ","))]；目标达成=\(String(format: "%.1f", attainment * 100))%；主体代理=\(String(format: "%.1f", aestheticProxy.subjectPriority * 100))%；协调代理=\(String(format: "%.1f", aestheticProxy.regionalHarmony * 100))%；不是审美结论",
+                "[D] 耗时=\(duration)ms；人工偏好=待评价"
+            ]
+            return IsolatedDiagnosticCandidateResult(
+                preview: ProcessingStagePreview(
+                    name: "D 新版逐图自动后期（\(quality.status.rawValue)）",
+                    imageData: data
+                ),
+                details: details,
+                stage: ProcessingStageRecord(
+                    name: "D 新版逐图自动后期",
+                    durationMilliseconds: duration,
+                    executed: true,
+                    detail: "渲染完成 · 技术质检 \(passedTechnicalQuality ? "通过/警告" : "失败")（\(quality.status.rawValue)）· 仅诊断 · 未替换 B"
+                )
+            )
+        } catch {
+            let duration = Self.milliseconds(ProcessInfo.processInfo.systemUptime - start)
+            if let renderedData {
+                AppLogger.imageEngine.error(
+                    "D 新版逐图候选已渲染但质检执行失败，B 不受影响：\(error.localizedDescription, privacy: .public)"
+                )
+                return IsolatedDiagnosticCandidateResult(
+                    preview: ProcessingStagePreview(
+                        name: "D 新版逐图自动后期（质检执行失败）",
+                        imageData: renderedData
+                    ),
+                    details: [
+                        "[D] 状态=qualityEvaluationFailed",
+                        "[D] renderStatus=completed；technicalQualityStatus=notCompleted；eligibleToReplaceB=false",
+                        "[D] 错误=\(error.localizedDescription)",
+                        "[D] 保留真实渲染结果仅供诊断；未标记通过；B 不受影响"
+                    ],
+                    stage: ProcessingStageRecord(
+                        name: "D 新版逐图自动后期",
+                        durationMilliseconds: duration,
+                        executed: true,
+                        detail: "全分辨率渲染完成；技术质检执行失败：\(error.localizedDescription)"
+                    )
+                )
+            }
+            AppLogger.imageEngine.error(
+                "D 新版逐图候选失败，B 不受影响：\(error.localizedDescription, privacy: .public)"
+            )
+            return IsolatedDiagnosticCandidateResult(
+                preview: nil,
+                details: [
+                    "[D] 状态=\(phase)Failed",
+                    "[D] renderStatus=notCompleted；technicalQualityStatus=notRun；eligibleToReplaceB=false",
+                    "[D] 错误=\(error.localizedDescription)",
+                    "[D] 未把失败结果冒充成片；B 不受影响"
+                ],
+                stage: ProcessingStageRecord(
+                    name: "D 新版逐图自动后期",
+                    durationMilliseconds: duration,
+                    executed: false,
+                    detail: "失败：\(error.localizedDescription)"
+                )
+            )
+        }
+    }
+
+    /// M bypasses all automatic decisions and proves whether declared controls
+    /// reach the same full-resolution pixel renderer and encoder used by B/D.
+    private func evaluateManualCandidate(
+        originalData: Data,
+        analysis: PhotoAnalysis,
+        isDiagnosticImport: Bool
+    ) -> IsolatedDiagnosticCandidateResult? {
+        guard isDiagnosticImport,
+              let parameters = configuration.diagnosticValidation.manualParameters
+        else { return nil }
+        let start = ProcessInfo.processInfo.systemUptime
+        let recipe = parameters.makeRecipe()
+        var renderedData: Data?
+        do {
+            let data = try renderer.renderManualEdit(
+                from: originalData,
+                parameters: parameters,
+                analysis: analysis
+            )
+            renderedData = data
+            let regionalExecution = renderer.regionalExecutionDetails(
+                for: recipe,
+                analysis: analysis
+            )
+            let quality = try qualityService.check(
+                originalData: originalData,
+                editedData: data,
+                sourceAnalysis: analysis,
+                expectedRegions: [],
+                regionalExecutionDetails: regionalExecution
+            )
+            let duration = Self.milliseconds(ProcessInfo.processInfo.systemUptime - start)
+            return IsolatedDiagnosticCandidateResult(
+                preview: ProcessingStagePreview(
+                    name: "M 人工参数真实渲染（\(quality.status.rawValue)）",
+                    imageData: data
+                ),
+                details: [
+                    "[M] 状态=manualRendererVerification；id=\(parameters.identifier)；不参与自动决策，不替换 B/D",
+                    "[M] renderStatus=completed；technicalQualityStatus=\(quality.status.rawValue)",
+                    "[M] 声明参数=\(recipe.traceSummary)",
+                    "[M] 执行模块=\(renderer.executedModuleNames(for: recipe, analysis: analysis).joined(separator: " → "))",
+                    "[M] 技术质检=\(quality.status.rawValue)；问题=[\(quality.issues.map(\.rawValue).joined(separator: ","))]；RGB_MAE=\(String(format: "%.4f", quality.processingImpact.normalizedMeanAbsoluteRGBDifference))",
+                    "[M] 单参数方向另见 M 探针预览；Core Image/iPhone 视觉正确性仍需真机确认"
+                ],
+                stage: ProcessingStageRecord(
+                    name: "M 人工参数渲染验证",
+                    durationMilliseconds: duration,
+                    executed: true,
+                    detail: "显式人工参数 → 同一全分辨率 Core Image/编码链 · \(quality.status.rawValue)"
+                )
+            )
+        } catch {
+            let duration = Self.milliseconds(ProcessInfo.processInfo.systemUptime - start)
+            if let renderedData {
+                return IsolatedDiagnosticCandidateResult(
+                    preview: ProcessingStagePreview(
+                        name: "M 人工参数真实渲染（质检执行失败）",
+                        imageData: renderedData
+                    ),
+                    details: [
+                        "[M] 状态=qualityEvaluationFailed；id=\(parameters.identifier)",
+                        "[M] renderStatus=completed；technicalQualityStatus=notCompleted",
+                        "[M] 错误=\(error.localizedDescription)",
+                        "[M] 保留真实渲染结果仅供诊断；未标记通过"
+                    ],
+                    stage: ProcessingStageRecord(
+                        name: "M 人工参数渲染验证",
+                        durationMilliseconds: duration,
+                        executed: true,
+                        detail: "全分辨率渲染完成；技术质检执行失败：\(error.localizedDescription)"
+                    )
+                )
+            }
+            return IsolatedDiagnosticCandidateResult(
+                preview: nil,
+                details: [
+                    "[M] 状态=renderFailed；id=\(parameters.identifier)",
+                    "[M] 错误=\(error.localizedDescription)",
+                    "[M] 未把失败结果冒充成片"
+                ],
+                stage: ProcessingStageRecord(
+                    name: "M 人工参数渲染验证",
+                    durationMilliseconds: duration,
+                    executed: false,
+                    detail: "失败：\(error.localizedDescription)"
                 )
             )
         }
@@ -913,6 +1169,12 @@ final class PhotoProcessingPipeline {
 }
 
 private struct ReferenceValidationCandidateResult {
+    let preview: ProcessingStagePreview?
+    let details: [String]
+    let stage: ProcessingStageRecord
+}
+
+private struct IsolatedDiagnosticCandidateResult {
     let preview: ProcessingStagePreview?
     let details: [String]
     let stage: ProcessingStageRecord

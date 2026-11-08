@@ -51,23 +51,28 @@ enum PhotoLibraryManager {
                 options: editedOptions
             )
 
-            // Diagnostic imports may carry a separately rendered C candidate.
-            // Save it as a third, clearly named asset for blind comparison. It
-            // never replaces the normal B result and is never created by capture.
-            if
-                photo.isDiagnosticImport,
-                let referenceCandidate = photo.processingStagePreviews.first(where: {
-                    $0.name.hasPrefix("C 摄影参考校准候选") && !$0.imageData.isEmpty
-                })
-            {
-                let referenceOptions = PHAssetResourceCreationOptions()
-                referenceOptions.originalFilename = "XiaoSuCamera_\(stamp)_C_ReferenceCandidate.jpg"
-                let referenceRequest = PHAssetCreationRequest.forAsset()
-                referenceRequest.addResource(
-                    with: .photo,
-                    data: referenceCandidate.imageData,
-                    options: referenceOptions
-                )
+            // Diagnostic imports may carry separately rendered C/D/M outputs.
+            // Each remains an explicitly named diagnostic asset and never
+            // replaces the production B result.
+            if photo.isDiagnosticImport {
+                let diagnosticExports: [(prefix: String, filename: String)] = [
+                    ("C 摄影参考校准候选", "C_ReferenceCandidate"),
+                    ("D 新版逐图自动后期", "D_MeasuredAesthetic"),
+                    ("M 人工参数真实渲染", "M_ManualRenderer")
+                ]
+                for export in diagnosticExports {
+                    guard let candidate = photo.processingStagePreviews.first(where: {
+                        $0.name.hasPrefix(export.prefix) && !$0.imageData.isEmpty
+                    }) else { continue }
+                    let options = PHAssetResourceCreationOptions()
+                    options.originalFilename = "XiaoSuCamera_\(stamp)_\(export.filename).jpg"
+                    let request = PHAssetCreationRequest.forAsset()
+                    request.addResource(
+                        with: .photo,
+                        data: candidate.imageData,
+                        options: options
+                    )
+                }
             }
         }
     }

@@ -592,6 +592,105 @@ struct AutomaticEditingRecipe: Equatable, Sendable {
     }
 }
 
+/// Explicit developer-supplied controls for the diagnostic M path. These values
+/// are never selected from a scene label and are never used by the production B
+/// path. Keeping the input separate from `AutomaticEditingRecipe` makes it clear
+/// whether a pixel change came from a human control test or the automatic solver.
+struct ManualPhotographyParameters: Equatable, Sendable {
+    let identifier: String
+    var exposureEV: Float = 0
+    var highlightAmount: Float = 1
+    var shadowAmount: Float = 0
+    var brightness: Float = 0
+    var contrast: Float = 1
+    var blackPoint: Float = 0
+    var whitePoint: Float = 1
+    var temperatureShift: Float = 0
+    var tintShift: Float = 0
+    var saturation: Float = 1
+    var vibrance: Float = 0
+    var toneCurveAmount: Float = 0
+    var toneCurveStyle: ToneCurveStyle = .neutral
+    var localContrastAmount: Float = 0
+    var shadowZoneExposureEV: Float = 0
+    var highlightZoneExposureEV: Float = 0
+    var luminanceMaskStrength: Float = 0
+    var hsl: ProfessionalHSLAdjustment = .neutral
+    var noiseReductionAmount: Float = 0
+    var sharpeningAmount: Float = 0
+
+    func makeRecipe() -> AutomaticEditingRecipe {
+        var recipe = AutomaticEditingRecipe.naturalEnhancement
+        // Do not inherit any hidden look from the automatic baseline.  M is a
+        // renderer probe: every pixel-affecting value not exposed above must be
+        // reset explicitly so a future change to `naturalEnhancement` cannot
+        // contaminate a one-control-at-a-time measurement.
+        recipe.cinematicIntensity = .natural
+        recipe.cinematicToneStyle = .natural
+        recipe.shadowRollOff = 0
+        recipe.lowerMidtoneLift = 0
+        recipe.midtoneBias = 0
+        recipe.upperMidtoneSeparation = 0
+        recipe.highlightRollOff = 0
+        recipe.shadowCoolAmount = 0
+        recipe.midtoneWarmAmount = 0
+        recipe.highlightWarmAmount = 0
+        recipe.colorGradeIntensity = 0
+        recipe.colorContrast = 0
+        recipe.skinTextureProtection = 0
+        recipe.vignetteIntensity = 0
+        recipe.subjectExposureEV = 0
+        recipe.faceExposureEV = 0
+        recipe.skyExposureEV = 0
+        recipe.skyHighlightAmount = 1
+        recipe.skySaturation = 1
+        recipe.grainAmount = 0
+        recipe.bloomIntensity = 0
+        recipe.halationIntensity = 0
+        recipe.highlightGlowThreshold = 0.92
+        recipe.backgroundSeparation = 0
+        recipe.exposureEV = exposureEV
+        recipe.highlightAmount = highlightAmount
+        recipe.shadowAmount = shadowAmount
+        recipe.brightness = brightness
+        recipe.contrast = contrast
+        recipe.blackPoint = blackPoint
+        recipe.whitePoint = whitePoint
+        recipe.temperatureShift = temperatureShift
+        recipe.tintShift = tintShift
+        recipe.saturation = saturation
+        recipe.vibrance = vibrance
+        recipe.toneCurveAmount = toneCurveAmount
+        recipe.toneCurveStyle = toneCurveStyle
+        recipe.localContrastAmount = localContrastAmount
+        recipe.shadowZoneExposureEV = shadowZoneExposureEV
+        recipe.highlightZoneExposureEV = highlightZoneExposureEV
+        recipe.luminanceMaskStrength = luminanceMaskStrength
+        recipe.hsl = hsl
+        recipe.noiseReductionAmount = noiseReductionAmount
+        recipe.sharpeningAmount = sharpeningAmount
+        return recipe.clamped()
+    }
+
+    /// A deliberately declared control combination for renderer verification.
+    /// It is not an aesthetic preset and is only enabled for diagnostic imports.
+    static let rendererVerification = ManualPhotographyParameters(
+        identifier: "manual-render-verification-v1",
+        highlightAmount: 0.74,
+        shadowAmount: 0.18,
+        contrast: 1.025,
+        blackPoint: 0.006,
+        whitePoint: 0.985,
+        toneCurveAmount: 0.16,
+        toneCurveStyle: .softHighlights,
+        localContrastAmount: 0.035,
+        shadowZoneExposureEV: 0.07,
+        highlightZoneExposureEV: -0.08,
+        luminanceMaskStrength: 0.48,
+        sharpeningAmount: 0.035
+    )
+}
+
 /// V6 的统一专业配方名称；保留旧名称以兼容现有相机与诊断数据。
 typealias ProfessionalEditingRecipe = AutomaticEditingRecipe
 
