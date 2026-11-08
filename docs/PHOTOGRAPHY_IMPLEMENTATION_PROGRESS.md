@@ -181,4 +181,5 @@
 - 已增强 M 证据：导出实际反差、中性色亮度指标、阈值和区域影响；M v3 降低会导致过硬/中性亮部损失的组合强度，仍仅用于诊断。
 - 已更新知识规则 `PT-AESTHETIC-002`，新增 `PT-AESTHETIC-004`；增加源图相对目标、区域颜色关系和导出状态契约测试。
 - 已运行 Windows ZIP 像素分析工具；详细证据见 `docs/BUILD28_DIAGNOSTIC_CLOSURE.md`。
-- 尚未执行：远程 Swift/iOS Simulator/Core Image 测试、新版 iPhone A/B/D/M ZIP、不同场景回归和人工盲测。未经确认不得上传 TestFlight或替换 B。
+- 远程验证：实现提交 `a3af9569` 的 iOS Build #72 暴露一处诊断日志变量改名遗漏；修复提交 `c5c069cfbb946d1e80a1afab5dc7abdb08339c49` 的 iOS Build #73（run `42480693382`）成功，73 项 Swift 测试 0 失败，iOS Simulator `BUILD SUCCEEDED`。
+- 尚未执行：新版 iPhone A/B/D/M ZIP、真机 Core Image 成片验收、不同场景回归和人工盲测。未经确认不得上传 TestFlight 或替换 B。

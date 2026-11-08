@@ -1,7 +1,7 @@
 # Build 28 真机诊断与自动摄影闭环整改
 
 日期：2026-11-08
-状态：Build 28 真机证据已复核；代码整改完成待远程 Apple 环境编译；尚未上传新 TestFlight；尚未完成人工盲测。
+状态：Build 28 真机证据已复核；整改提交已通过远程 Swift 测试与 iOS Simulator 编译；尚未上传新 TestFlight；尚未完成人工盲测。
 
 ## 1. 证据来源
 
@@ -60,10 +60,18 @@
 - 新增/补充测试：源图相对亮度目标、黄色/绿色区域关系、动态黄色 HSL、C unavailable 不可导图、候选必须 exact executed stage。
 - Windows 已实际运行 ZIP 像素分析；本机无 Swift/Xcode，不能把静态检查写成 Core Image 测试通过。
 
-## 6. 仍待验证
+## 6. 远程 Apple 环境验证
 
-1. 远程 `swift test`、iOS Simulator 编译和 Core Image 像素测试。
-2. 新 D 首轮/反馈轮实际耗时与峰值内存；只有触发残差时才产生第二轮。
-3. 同一秋季街道的新 A/B/D/M ZIP 与人工盲测。
-4. 人物、室内、夜景和普通建筑手机原图的回归；目前没有任何证据证明新版 D 比 B 更好看。
-5. M v3 是否在保留白车/建筑细节的同时通过质检，必须由下一次 iPhone 导出确认。
+- 分支：`codex/build28-decision-closure-20261108`。
+- 实现提交：`a3af9569`；iOS Build #72 在 Simulator 编译时发现诊断日志变量改名遗漏，测试步骤已先通过。
+- 修复提交：`c5c069cfbb946d1e80a1afab5dc7abdb08339c49`。
+- GitHub Actions iOS Build #73（run `42480693382`）：`swift test` 共 73 项、0 失败；iOS Simulator `BUILD SUCCEEDED`。
+- 该结果证明源码可编译且决策契约通过，不等于 iPhone Core Image 成片或摄影审美验收通过。
+
+## 7. 仍待验证
+
+1. 新 D 首轮/反馈轮的真机实际耗时与峰值内存；只有触发残差时才产生第二轮。
+2. 同一秋季街道的新 A/B/D/M ZIP 与人工盲测。
+3. 人物、室内、夜景和普通建筑手机原图的回归；目前没有任何证据证明新版 D 比 B 更好看。
+4. M v3 是否在保留白车/建筑细节的同时通过质检，必须由下一次 iPhone 导出确认。
+5. 本工作流执行的是 Swift 决策测试和 Simulator 构建；没有单独运行 iPhone 真机 Core Image 像素验收。
