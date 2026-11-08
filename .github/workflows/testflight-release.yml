@@ -7,9 +7,15 @@ on:
         description: Optional numeric build number override
         required: false
         type: string
+      verify_only:
+        description: Only verify App Store Connect processing and internal TestFlight availability
+        required: false
+        default: false
+        type: boolean
 
 jobs:
   release:
+    if: ${{ inputs.verify_only != true }}
     runs-on: macos-latest
 
     env:
@@ -191,4 +197,191 @@ jobs:
             --file "$IPA_PATH" \
             --apiKey "$APP_STORE_CONNECT_API_KEY_ID" \
             --apiIssuer "$APP_STORE_CONNECT_API_ISSUER_ID"
+
+  verify-testflight:
+    if: ${{ inputs.verify_only == true }}
+    runs-on: macos-latest
+    env:
+      BUNDLE_ID: com.sulinandeyu.mastercamera
+      BUILD_NUMBER: ${{ inputs.build_number }}
+      APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+      APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
+      APP_STORE_CONNECT_API_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
+    steps:
+      - name: Validate status metadata
+        run: |
+          set -euo pipefail
+          if ! [[ "$BUILD_NUMBER" =~ ^[0-9]+$ ]]; then
+            echo "Build number must contain digits only: $BUILD_NUMBER"
+            exit 1
+          fi
+          for name in APP_STORE_CONNECT_API_KEY_ID APP_STORE_CONNECT_API_ISSUER_ID APP_STORE_CONNECT_API_KEY_BASE64; do
+            if [[ -z "${!name:-}" ]]; then
+              echo "Missing required GitHub Secret: $name"
+              exit 1
+            fi
+          done
+
+      - name: Query processing state and internal test group
+        run: |
+          set -euo pipefail
+          KEY_PATH="$RUNNER_TEMP/AuthKey_${APP_STORE_CONNECT_API_KEY_ID}.p8"
+          echo "$APP_STORE_CONNECT_API_KEY_BASE64" | base64 --decode > "$KEY_PATH"
+          export ASC_KEY_PATH="$KEY_PATH"
+
+          python3 <<'PY'
+          import base64
+          import json
+          import os
+          import subprocess
+          import time
+          import urllib.error
+          import urllib.parse
+          import urllib.request
+
+          BASE = "https://api.appstoreconnect.apple.com"
+          BUNDLE_ID = os.environ["BUNDLE_ID"]
+          BUILD_NUMBER = os.environ["BUILD_NUMBER"]
+          KEY_ID = os.environ["APP_STORE_CONNECT_API_KEY_ID"]
+          ISSUER = os.environ["APP_STORE_CONNECT_API_ISSUER_ID"]
+          KEY_PATH = os.environ["ASC_KEY_PATH"]
+
+          def b64url(data):
+              return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
+
+          def read_length(data, index):
+              first = data[index]
+              index += 1
+              if first < 0x80:
+                  return first, index
+              count = first & 0x7F
+              value = int.from_bytes(data[index:index + count], "big")
+              return value, index + count
+
+          def der_signature_to_raw(data):
+              index = 0
+              if data[index] != 0x30:
+                  raise RuntimeError("Unexpected ECDSA signature container")
+              _, index = read_length(data, index + 1)
+              values = []
+              for _ in range(2):
+                  if data[index] != 0x02:
+                      raise RuntimeError("Unexpected ECDSA integer")
+                  length, index = read_length(data, index + 1)
+                  value = data[index:index + length]
+                  index += length
+                  value = value.lstrip(b"\x00")
+                  if len(value) > 32:
+                      raise RuntimeError("ECDSA integer is wider than P-256")
+                  values.append(value.rjust(32, b"\x00"))
+              return b"".join(values)
+
+          now = int(time.time())
+          header = b64url(json.dumps({"alg": "ES256", "kid": KEY_ID, "typ": "JWT"}, separators=(",", ":")).encode())
+          payload = b64url(json.dumps({"iss": ISSUER, "iat": now, "exp": now + 1190, "aud": "appstoreconnect-v1"}, separators=(",", ":")).encode())
+          signing_input = f"{header}.{payload}".encode("ascii")
+          signature_der = subprocess.run(
+              ["openssl", "dgst", "-sha256", "-sign", KEY_PATH],
+              input=signing_input,
+              check=True,
+              capture_output=True,
+          ).stdout
+          token = f"{header}.{payload}.{b64url(der_signature_to_raw(signature_der))}"
+
+          def api(path, method="GET", payload=None):
+              data = None if payload is None else json.dumps(payload).encode("utf-8")
+              request = urllib.request.Request(
+                  BASE + path,
+                  data=data,
+                  method=method,
+                  headers={
+                      "Authorization": "Bearer " + token,
+                      "Accept": "application/json",
+                      "Content-Type": "application/json",
+                  },
+              )
+              try:
+                  with urllib.request.urlopen(request, timeout=60) as response:
+                      body = response.read()
+                      return {} if not body else json.loads(body)
+              except urllib.error.HTTPError as error:
+                  detail = error.read().decode("utf-8", "replace")
+                  raise RuntimeError(f"App Store Connect {method} {path} failed: HTTP {error.code}: {detail}")
+
+          def query(resource, parameters):
+              return api("/v1/" + resource + "?" + urllib.parse.urlencode(parameters))
+
+          apps = query("apps", {"filter[bundleId]": BUNDLE_ID, "limit": "5"}).get("data", [])
+          if len(apps) != 1:
+              raise RuntimeError(f"Expected one App Store Connect app for {BUNDLE_ID}, found {len(apps)}")
+          app_id = apps[0]["id"]
+
+          build = None
+          for attempt in range(40):
+              builds = query("builds", {
+                  "filter[app]": app_id,
+                  "filter[version]": BUILD_NUMBER,
+                  "sort": "-uploadedDate",
+                  "limit": "10",
+              }).get("data", [])
+              build = builds[0] if builds else None
+              state = build.get("attributes", {}).get("processingState") if build else "NOT_VISIBLE"
+              print(f"Build {BUILD_NUMBER} processingState={state} attempt={attempt + 1}")
+              if state == "VALID":
+                  break
+              if state in {"FAILED", "INVALID"}:
+                  raise RuntimeError(f"Build {BUILD_NUMBER} processing failed with state {state}")
+              time.sleep(30)
+          if not build or build.get("attributes", {}).get("processingState") != "VALID":
+              raise RuntimeError(f"Build {BUILD_NUMBER} did not become VALID before timeout")
+
+          build_id = build["id"]
+
+          def groups_for_build(identifier):
+              return api(f"/v1/builds/{identifier}/betaGroups?limit=200").get("data", [])
+
+          groups = groups_for_build(build_id)
+          if not groups:
+              previous = query("builds", {
+                  "filter[app]": app_id,
+                  "filter[version]": "27",
+                  "sort": "-uploadedDate",
+                  "limit": "10",
+              }).get("data", [])
+              source_groups = groups_for_build(previous[0]["id"]) if previous else []
+              internal_groups = []
+              for linkage in source_groups:
+                  group = api(f"/v1/betaGroups/{linkage['id']}").get("data", {})
+                  if group.get("attributes", {}).get("isInternalGroup") is True:
+                      internal_groups.append(group)
+
+              if not internal_groups:
+                  candidates = query("betaGroups", {"filter[app]": app_id, "limit": "200"}).get("data", [])
+                  internal_groups = [group for group in candidates if group.get("attributes", {}).get("isInternalGroup") is True]
+                  if len(internal_groups) != 1:
+                      raise RuntimeError(
+                          "Build 28 has no group, Build 27 provides no reusable internal group, "
+                          f"and the app has {len(internal_groups)} internal groups; refusing to guess."
+                      )
+
+              for group in internal_groups:
+                  api(
+                      f"/v1/betaGroups/{group['id']}/relationships/builds",
+                      method="POST",
+                      payload={"data": [{"type": "builds", "id": build_id}]},
+                  )
+                  print(f"Assigned Build {BUILD_NUMBER} to existing internal group: {group.get('attributes', {}).get('name', group['id'])}")
+              groups = groups_for_build(build_id)
+
+          detail = api(f"/v1/builds/{build_id}/buildBetaDetail").get("data", {})
+          internal_state = detail.get("attributes", {}).get("internalBuildState", "UNKNOWN")
+          print(f"Build {BUILD_NUMBER} final processingState=VALID")
+          print(f"Build {BUILD_NUMBER} internalBuildState={internal_state}")
+          print(f"Build {BUILD_NUMBER} internalGroupCount={len(groups)}")
+          if internal_state not in {"READY_FOR_BETA_TESTING", "IN_BETA_TESTING"}:
+              raise RuntimeError(f"Build {BUILD_NUMBER} is not internally installable: {internal_state}")
+          if not groups:
+              raise RuntimeError(f"Build {BUILD_NUMBER} is not assigned to an internal testing group")
+          print(f"TESTFLIGHT_INTERNAL_INSTALLABLE build={BUILD_NUMBER} state={internal_state}")
+          PY
 
