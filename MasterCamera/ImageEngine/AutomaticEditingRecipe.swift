@@ -679,33 +679,33 @@ struct ManualPhotographyParameters: Equatable, Sendable {
     /// It is not an aesthetic preset and is only enabled for diagnostic imports.
     static let rendererVerification: ManualPhotographyParameters = {
         var measuredColorExpression = ProfessionalHSLAdjustment.neutral
-        measuredColorExpression.orangeSaturation = 0.035
-        measuredColorExpression.yellowSaturation = 0.085
-        measuredColorExpression.yellowLuminance = 0.018
-        measuredColorExpression.greenSaturation = -0.03
-        measuredColorExpression.greenLuminance = -0.006
+        measuredColorExpression.orangeSaturation = 0.028
+        measuredColorExpression.yellowSaturation = 0.065
+        measuredColorExpression.yellowLuminance = 0.014
+        measuredColorExpression.greenSaturation = -0.025
+        measuredColorExpression.greenLuminance = -0.004
         return ManualPhotographyParameters(
-        identifier: "manual-spatial-color-expression-v3",
-        exposureEV: -0.015,
-        highlightAmount: 0.74,
-        shadowAmount: 0.08,
-        contrast: 1.025,
-        blackPoint: 0.005,
-        whitePoint: 0.988,
-        saturation: 0.995,
-        vibrance: 0.03,
-        toneCurveAmount: 0.15,
+        identifier: "manual-spatial-color-expression-v4-safe-depth",
+        exposureEV: -0.01,
+        highlightAmount: 0.76,
+        shadowAmount: 0.14,
+        contrast: 1.005,
+        blackPoint: 0,
+        whitePoint: 0.99,
+        saturation: 0.99,
+        vibrance: 0.025,
+        toneCurveAmount: 0.085,
         toneCurveStyle: .softHighlights,
-        localContrastAmount: 0.045,
-        skyExposureEV: -0.05,
-        skyHighlightAmount: 0.69,
+        localContrastAmount: 0.018,
+        skyExposureEV: -0.04,
+        skyHighlightAmount: 0.72,
         skySaturation: 0.99,
-        shadowZoneExposureEV: 0.035,
-        highlightZoneExposureEV: -0.075,
-        luminanceMaskStrength: 0.55,
+        shadowZoneExposureEV: 0.055,
+        highlightZoneExposureEV: -0.065,
+        luminanceMaskStrength: 0.48,
         hsl: measuredColorExpression,
-        noiseReductionAmount: 0.01,
-        sharpeningAmount: 0.03
+        noiseReductionAmount: 0.012,
+        sharpeningAmount: 0.015
         )
     }()
 }

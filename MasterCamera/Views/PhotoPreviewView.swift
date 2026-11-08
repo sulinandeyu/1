@@ -114,7 +114,7 @@ struct PhotoPreviewView: View {
                         .buttonStyle(.plain)
                         .accessibilityLabel(
                             photo.isDiagnosticImport
-                                ? "保存 A/B 及可用的 C/D/M 诊断成片"
+                                ? "保存 A/B 及可用的 C/D/E1/E2/M 诊断成片"
                                 : "保存原图和 AI 成片"
                         )
                         .disabled(saveState.isSaving)
@@ -301,7 +301,7 @@ struct PhotoPreviewView: View {
                                 } else {
                                     Image(systemName: "archivebox")
                                 }
-                                Text(isExportingDiagnostics ? "正在生成诊断 ZIP…" : "一键导出 A/B/D/M 诊断 ZIP")
+                                Text(isExportingDiagnostics ? "正在生成诊断 ZIP…" : "一键导出 A/B/D/E1/E2/M 诊断 ZIP")
                                     .font(.caption.weight(.semibold))
                             }
                             .foregroundStyle(.black)
@@ -311,7 +311,7 @@ struct PhotoPreviewView: View {
                         }
                         .buttonStyle(.plain)
                         .disabled(isExportingDiagnostics)
-                        .accessibilityLabel("一键导出 A、B、D、M 诊断证据 ZIP")
+                        .accessibilityLabel("一键导出 A、B、D、E1、E2、M 诊断证据 ZIP")
                     }
 
                     if !photo.processingStagePreviews.isEmpty {

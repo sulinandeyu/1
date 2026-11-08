@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Measure same-source A/B/D/M evidence exported by XiaoSu Camera.
+"""Measure same-source A/B/D/E1/E2/M evidence exported by XiaoSu Camera.
 
 This is a Windows-side evidence tool. It does not emulate Core Image and does
 not claim aesthetic success. Masks and candidate images must come from the
@@ -22,6 +22,8 @@ IMAGE_NAMES = {
     "A": "A_original.jpg",
     "B": "B_formal_output.jpg",
     "D": "D_automatic_diagnostic.jpg",
+    "E1": "E1_spatial_emphasis.jpg",
+    "E2": "E2_restrained_depth.jpg",
     "M": "M_manual_render.jpg",
 }
 MASK_NAMES = {
@@ -134,7 +136,11 @@ def analyze(root: Path) -> dict[str, Any]:
     images_dir = root / "images"
     source = load_rgb(images_dir / IMAGE_NAMES["A"])
     height, width = source.shape[:2]
-    images = {key: load_rgb(images_dir / name) for key, name in IMAGE_NAMES.items()}
+    images = {
+        key: load_rgb(images_dir / name)
+        for key, name in IMAGE_NAMES.items()
+        if (images_dir / name).exists()
+    }
     for key, image in images.items():
         if image.shape != source.shape:
             raise ValueError(f"{key} shape {image.shape} does not match A {source.shape}")
@@ -174,9 +180,9 @@ def analyze(root: Path) -> dict[str, Any]:
     }
 
 
-def markdown(report: dict[str, Any]) -> str:
+def markdown(report: dict[str, Any], label: str) -> str:
     lines = [
-        "# Build 28 diagnostic pixel analysis",
+        f"# {label} diagnostic pixel analysis",
         "",
         "> Windows evidence analysis only; this does not emulate Core Image or certify aesthetic quality.",
         "",
@@ -185,7 +191,9 @@ def markdown(report: dict[str, Any]) -> str:
         "|Candidate|Mean luma|P05–P95|Shadow|Highlight|Saturation|RGB MAE|",
         "|---|---:|---:|---:|---:|---:|---:|",
     ]
-    for key in ("A", "B", "D", "M"):
+    for key in ("A", "B", "D", "E1", "E2", "M"):
+        if key not in report["candidates"]:
+            continue
         entry = report["candidates"][key]
         full = entry["full"]
         lines.append(
@@ -196,7 +204,9 @@ def markdown(report: dict[str, Any]) -> str:
     lines += ["", "## Region measurements", ""]
     for region in ("ground", "vegetation", "sky", "architecture"):
         lines += [f"### {region}", "", "|Candidate|Luma|Contrast|Saturation|Yellow|Green|", "|---|---:|---:|---:|---:|---:|"]
-        for key in ("A", "B", "D", "M"):
+        for key in ("A", "B", "D", "E1", "E2", "M"):
+            if key not in report["candidates"]:
+                continue
             value = report["candidates"][key]["regions"][region]
             lines.append(
                 f"|{key}|{value.get('luminance_mean', math.nan):.4f}|{value.get('contrast_p05_p95', math.nan):.4f}|"
@@ -219,6 +229,7 @@ def main() -> None:
     parser.add_argument("bundle", type=Path, help="Extracted diagnostic bundle directory")
     parser.add_argument("--json", type=Path)
     parser.add_argument("--markdown", type=Path)
+    parser.add_argument("--label", default="Diagnostic bundle")
     args = parser.parse_args()
     report = analyze(args.bundle)
     if args.json:
@@ -226,7 +237,7 @@ def main() -> None:
         args.json.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     if args.markdown:
         args.markdown.parent.mkdir(parents=True, exist_ok=True)
-        args.markdown.write_text(markdown(report), encoding="utf-8")
+        args.markdown.write_text(markdown(report, args.label), encoding="utf-8")
     print(json.dumps(report, ensure_ascii=False, indent=2))
 
 

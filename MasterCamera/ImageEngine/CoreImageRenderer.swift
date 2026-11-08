@@ -74,7 +74,7 @@ final class CoreImageRenderer {
     ) throws -> [ProcessingStagePreview] {
         // Stage cards are evidence thumbnails, not export masters.  Running the
         // entire stage pipeline again at full resolution needlessly multiplies
-        // memory while A/B/C/D/M full-resolution outputs are already retained.
+        // memory while A/B/C/D/E1/E2/M full-resolution outputs are already retained.
         let result = try processImage(
             data: data,
             recipe: recipe,

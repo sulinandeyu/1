@@ -40,8 +40,8 @@ final class DiagnosticBundleExporter {
         add("images/A_original.jpg", photo.originalImageData, "A source original")
         add("images/B_formal_output.jpg", photo.editedImageData, "B formal algorithm output")
 
-        let comparisonPrefixes = ["A ", "B ", "C ", "D ", "M 人工参数真实渲染"]
-        for identifier in ["C", "D", "M"] {
+        let comparisonPrefixes = ["A ", "B ", "C ", "D ", "E1 ", "E2 ", "M 人工参数真实渲染"]
+        for identifier in ["C", "D", "E1", "E2", "M"] {
             let candidate = photo.diagnosticCandidates.first { $0.identifier == identifier }
             let preview = Self.resolvedPreview(
                 for: candidate,
@@ -49,7 +49,7 @@ final class DiagnosticBundleExporter {
             )
             if let preview {
                 add(
-                    "images/\(identifier)_\(identifier == "D" ? "automatic_diagnostic" : identifier == "M" ? "manual_render" : "reference_candidate").jpg",
+                    "images/\(candidateFileStem(identifier)).jpg",
                     preview.imageData,
                     "\(identifier) full-resolution diagnostic output"
                 )
@@ -109,10 +109,10 @@ final class DiagnosticBundleExporter {
             ]
         }
         let metadata: [String: Any] = [
-            "schemaVersion": 1,
+            "schemaVersion": 2,
             "createdAt": ISO8601DateFormatter().string(from: Date()),
             "sourceSha256": sourceHash,
-            "sameSourceRequirement": "A/B/D/M and probes were produced from the source identified above in one diagnostic import.",
+            "sameSourceRequirement": "A/B/D/E1/E2/M and probes were produced from the source identified above in one diagnostic import.",
             "app": [
                 "name": Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String ?? "小苏相机",
                 "version": Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "unknown",
@@ -129,6 +129,8 @@ final class DiagnosticBundleExporter {
                 "B": "formal algorithm result shown by the top B button",
                 "C": "reference-calibrated diagnostic; unavailable when licensing/index gates fail",
                 "D": "measured automatic aesthetic diagnostic; never replaces B",
+                "E1": "independently solved spatial-emphasis target experiment; human preference pending",
+                "E2": "independently solved restrained-depth target experiment; human preference pending",
                 "M": "human-declared renderer verification; never replaces B or D",
                 "difference": "A versus B, amplified five times"
             ],
@@ -147,6 +149,17 @@ final class DiagnosticBundleExporter {
         try? FileManager.default.removeItem(at: destination)
         try NativeZipArchiveWriter.write(entries: entries, to: destination)
         return destination
+    }
+
+    private func candidateFileStem(_ identifier: String) -> String {
+        switch identifier {
+        case "C": return "C_reference_candidate"
+        case "D": return "D_automatic_diagnostic"
+        case "E1": return "E1_spatial_emphasis"
+        case "E2": return "E2_restrained_depth"
+        case "M": return "M_manual_render"
+        default: return "\(identifier)_diagnostic"
+        }
     }
 
     /// An exported candidate image must be the exact full-resolution stage that
@@ -268,6 +281,9 @@ final class DiagnosticBundleExporter {
             [
                 "identifier": candidate.identifier,
                 "qualityStatus": candidate.qualityStatus ?? "notRun",
+                "targetQualityStatus": candidate.targetQualityStatus,
+                "humanAestheticStatus": candidate.humanAestheticStatus,
+                "assessmentEvidence": candidate.assessmentEvidence,
                 "states": candidate.states.map(\.rawValue),
                 "rejected": candidate.rejected,
                 "fallback": candidate.fallback,
@@ -312,10 +328,13 @@ final class DiagnosticBundleExporter {
         B = 顶部“B 正式成片”按钮显示的正式算法输出
         C = 摄影参考候选；许可或索引不可用时只有 UNAVAILABLE 记录
         D = 逐图自动后期诊断输出，不替换 B
+        E1 = 由当前照片测量独立求解的空间层次目标实验，人工偏好待评价
+        E2 = 由当前照片测量独立求解的克制暗调目标实验，人工偏好待评价
         M = 人工声明参数的渲染表达能力验证，不替换 B/D
-        差异图 = A 与 B 的五倍放大差异，不代表 D 或 M
+        差异图 = A 与 B 的五倍放大差异，不代表 D、E1、E2 或 M
 
-        candidate_states_and_parameters.json 明确区分 planned、executed、rejected、fallback、unavailable。
+        candidate_states_and_parameters.json 明确区分 planned、executed、rejected、fallback、unavailable，
+        并分别记录技术质检、摄影目标质量状态和人工审美状态。
         屏幕截图不是实际成片文件；images 目录中的 JPEG 才是本次处理实际输出。
         """
     }

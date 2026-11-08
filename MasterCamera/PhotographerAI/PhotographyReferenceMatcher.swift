@@ -327,11 +327,13 @@ struct PhotographyReferenceMatcher: Sendable {
 /// statistics may only make a small, explainable correction to the baseline;
 /// white balance, HSL, curves and local masks remain computed from the source.
 struct PhotographyTargetProfile: Equatable, Sendable {
+    let hypothesisIdentifier: String
     let baselineTarget: AdaptivePhotographyTarget
     let resolvedTarget: AdaptivePhotographyTarget
     let referenceMatch: PhotographyReferenceMatchResult
     let referenceInfluence: Float
     let localContrastTarget: Float
+    let regionalColorSeparationTarget: Float
     let subjectBackgroundDeltaTarget: Float?
     let rationale: [String]
     let preservedProperties: [String]
@@ -398,15 +400,198 @@ struct PhotographyTargetProfile: Equatable, Sendable {
             protections += ["人物身份与身体结构", "真实肤色与皮肤纹理"]
         }
         return PhotographyTargetProfile(
+            hypothesisIdentifier: "D-measured-continuity",
             baselineTarget: baseline,
             resolvedTarget: measuredTarget,
             referenceMatch: .unavailable("D 路径不读取摄影参考；只使用当前照片测量。"),
             referenceInfluence: 0,
             localContrastTarget: measuredTarget.contrast,
+            regionalColorSeparationTarget: 0,
             subjectBackgroundDeltaTarget: subjectDelta,
             rationale: [measuredTarget.rationale, "目标与渲染后复测共用 PhotoAnalyzer 指标，不使用场景预设或摄影参考参数。"],
             preservedProperties: protections
         )
+    }
+}
+
+/// PT-AESTHETIC-005: diagnostic-only, source-measured alternatives to the D
+/// continuity target. These are target hypotheses, not looks or scene presets:
+/// every value is recomputed from this image's endpoints, noise, reliable masks
+/// and regional colour relationships. Human preference remains unknown until a
+/// blind comparison is recorded.
+enum AestheticTargetHypothesisKind: String, Equatable, Sendable {
+    case spatialEmphasis = "E1-spatial-emphasis"
+    case restrainedDepth = "E2-restrained-depth"
+}
+
+struct AestheticTargetHypothesis: Equatable, Sendable {
+    let kind: AestheticTargetHypothesisKind
+    let displayName: String
+    let profile: PhotographyTargetProfile
+    let targetQualityStatus: String
+    let evidenceConfidence: Float
+    let rationale: [String]
+}
+
+struct AestheticTargetHypothesisGenerator {
+    func makeHypotheses(
+        analysis: PhotoAnalysis,
+        problems: PhotoProblemReport
+    ) -> [AestheticTargetHypothesis] {
+        let continuity = PhotographyTargetProfile.measuredBaseline(
+            analysis: analysis,
+            problems: problems
+        )
+        let source = analysis
+        let noiseHeadroom = (1 - source.noiseEstimate * 2.7).clamped(to: 0.25...1)
+        let atmosphereHeadroom = (1 - continuity.resolvedTarget.atmosphereProtection * 0.72)
+            .clamped(to: 0.25...1)
+        let usableRegionalCoverage = [
+            source.groundMask?.qualityAssessment.isUsable == true ? source.groundMask?.activeCoverage : nil,
+            source.vegetationMask?.qualityAssessment.isUsable == true ? source.vegetationMask?.activeCoverage : nil,
+            source.architectureMask?.qualityAssessment.isUsable == true ? source.architectureMask?.activeCoverage : nil
+        ]
+            .compactMap { $0 }
+            .reduce(0, +)
+            .clamped(to: 0...0.9)
+        let regionEvidenceConfidence = (
+            0.24
+                + usableRegionalCoverage * 0.44
+                + max(source.sceneRecognitionDiagnostics.topConfidence, source.subjectPriorityProfile.confidence) * 0.22
+        ).clamped(to: 0.18...0.82)
+        let colorSeparationEvidence: Float = {
+            guard
+                source.vegetationMask?.qualityAssessment.isUsable == true,
+                let vegetation = source.vegetationStatistics
+            else { return 0 }
+            let yellowEvidence = (vegetation.yellowColorRatio / 0.42).clamped(to: 0...1)
+            let greenEvidence = (vegetation.greenColorRatio / 0.30).clamped(to: 0...1)
+            let coexistence = min(yellowEvidence, greenEvidence)
+            let yellowDominance = max(0, yellowEvidence - greenEvidence * 0.35)
+            let saturationHeadroom = ((0.46 - vegetation.averageSaturation) / 0.46)
+                .clamped(to: 0...1)
+            return (max(coexistence * 0.72, yellowDominance * 0.48) * saturationHeadroom * 0.065)
+                .clamped(to: 0...0.055)
+        }()
+        let portraitColorProtection: Float = source.containsPersonEvidence ? 0.25 : 1
+        let e1SaturationLift = min(0.016, colorSeparationEvidence * 0.30) * portraitColorProtection
+        let e2SaturationLift = min(0.010, colorSeparationEvidence * 0.20) * portraitColorProtection
+
+        let recoverableHighlight = max(0, source.highlightRatio - source.whiteRatio)
+        let endpointPressure = (
+            recoverableHighlight * 0.14 + max(0, source.whiteRatio - 0.035) * 0.10
+        ).clamped(to: 0...0.035)
+        let spatialDepthOpportunity = (
+            max(0, source.averageLuminance - 0.46) * 0.105
+                + usableRegionalCoverage * 0.012
+        ) * noiseHeadroom * atmosphereHeadroom
+        let e1LuminanceShift = -(endpointPressure + spatialDepthOpportunity)
+            .clamped(to: 0.010...0.052)
+        let e1Luminance = (continuity.resolvedTarget.luminance + e1LuminanceShift)
+            .clamped(to: 0.25...0.68)
+        let e1Contrast = max(
+            continuity.resolvedTarget.contrast,
+            source.contrastRange - max(0, source.contrastRange - 0.70) * 0.38
+        ).clamped(to: 0.50...0.79)
+        let e1Target = AdaptivePhotographyTarget(
+            luminance: e1Luminance,
+            luminanceMinimum: (e1Luminance - 0.040).clamped(to: 0.20...0.66),
+            luminanceMaximum: (e1Luminance + 0.045).clamped(to: 0.30...0.73),
+            contrast: e1Contrast,
+            shadowRatio: continuity.resolvedTarget.shadowRatio,
+            highlightRatio: continuity.resolvedTarget.highlightRatio,
+            saturation: (continuity.resolvedTarget.saturation + e1SaturationLift)
+                .clamped(to: 0.12...0.46),
+            atmosphereProtection: continuity.resolvedTarget.atmosphereProtection,
+            rationale: String(
+                format: "E1 由本图区域覆盖 %.3f、源亮度 %.3f、源反差 %.3f、可恢复高光 %.3f、噪声余量 %.3f 求得；目标亮度 %.3f、反差 %.3f。",
+                usableRegionalCoverage,
+                source.averageLuminance,
+                source.contrastRange,
+                recoverableHighlight,
+                noiseHeadroom,
+                e1Luminance,
+                e1Contrast
+            )
+        )
+        let e1Profile = PhotographyTargetProfile(
+            hypothesisIdentifier: AestheticTargetHypothesisKind.spatialEmphasis.rawValue,
+            baselineTarget: continuity.baselineTarget,
+            resolvedTarget: e1Target,
+            referenceMatch: .unavailable("E1 不读取摄影参考；目标只来自当前照片测量。"),
+            referenceInfluence: 0,
+            localContrastTarget: (source.contrastRange + usableRegionalCoverage * 0.030 * noiseHeadroom)
+                .clamped(to: source.contrastRange...(source.contrastRange + 0.055)),
+            regionalColorSeparationTarget: colorSeparationEvidence,
+            subjectBackgroundDeltaTarget: continuity.subjectBackgroundDeltaTarget,
+            rationale: [e1Target.rationale, "强调现有空间关系，不创建原图不存在的光源、颜色或主体。"],
+            preservedProperties: continuity.preservedProperties
+        )
+
+        let lowKeyHeadroom = (
+            max(0, source.averageLuminance - 0.38)
+                * noiseHeadroom
+                * atmosphereHeadroom
+        ).clamped(to: 0...0.26)
+        let e2AdditionalDepth = (0.018 + lowKeyHeadroom * 0.13 + usableRegionalCoverage * 0.008)
+            .clamped(to: 0.018...0.060)
+        let e2Luminance = (continuity.resolvedTarget.luminance - e2AdditionalDepth)
+            .clamped(to: 0.24...0.63)
+        let e2Contrast = max(
+            continuity.resolvedTarget.contrast,
+            source.contrastRange - max(0, source.contrastRange - 0.68) * 0.46
+        ).clamped(to: 0.48...0.765)
+        let e2Target = AdaptivePhotographyTarget(
+            luminance: e2Luminance,
+            luminanceMinimum: (e2Luminance - 0.045).clamped(to: 0.19...0.61),
+            luminanceMaximum: (e2Luminance + 0.050).clamped(to: 0.28...0.70),
+            contrast: e2Contrast,
+            shadowRatio: max(source.blackRatio, continuity.resolvedTarget.shadowRatio - lowKeyHeadroom * 0.018),
+            highlightRatio: continuity.resolvedTarget.highlightRatio,
+            saturation: (continuity.resolvedTarget.saturation + e2SaturationLift)
+                .clamped(to: 0.12...0.44),
+            atmosphereProtection: continuity.resolvedTarget.atmosphereProtection,
+            rationale: String(
+                format: "E2 由本图暗调余量 %.3f、区域覆盖 %.3f、噪声余量 %.3f 求得；目标亮度 %.3f、反差 %.3f，并保持源黑位为硬边界。",
+                lowKeyHeadroom,
+                usableRegionalCoverage,
+                noiseHeadroom,
+                e2Luminance,
+                e2Contrast
+            )
+        )
+        let e2Profile = PhotographyTargetProfile(
+            hypothesisIdentifier: AestheticTargetHypothesisKind.restrainedDepth.rawValue,
+            baselineTarget: continuity.baselineTarget,
+            resolvedTarget: e2Target,
+            referenceMatch: .unavailable("E2 不读取摄影参考；目标只来自当前照片测量。"),
+            referenceInfluence: 0,
+            localContrastTarget: (source.contrastRange + usableRegionalCoverage * 0.020 * noiseHeadroom)
+                .clamped(to: source.contrastRange...(source.contrastRange + 0.040)),
+            regionalColorSeparationTarget: colorSeparationEvidence * 0.82,
+            subjectBackgroundDeltaTarget: continuity.subjectBackgroundDeltaTarget,
+            rationale: [e2Target.rationale, "暗调假设只有技术可行性，不代表自动审美优胜；必须盲测。"],
+            preservedProperties: continuity.preservedProperties
+        )
+
+        return [
+            AestheticTargetHypothesis(
+                kind: .spatialEmphasis,
+                displayName: "E1 动态空间层次",
+                profile: e1Profile,
+                targetQualityStatus: "uncertain_pending_render_and_human_review",
+                evidenceConfidence: regionEvidenceConfidence,
+                rationale: e1Profile.rationale
+            ),
+            AestheticTargetHypothesis(
+                kind: .restrainedDepth,
+                displayName: "E2 动态克制暗调",
+                profile: e2Profile,
+                targetQualityStatus: "uncertain_pending_render_and_human_review",
+                evidenceConfidence: min(regionEvidenceConfidence, 0.68),
+                rationale: e2Profile.rationale
+            )
+        ]
     }
 }
 
@@ -422,11 +607,13 @@ struct PhotographyReferenceTargetGenerator {
         )
         guard matchResult.isApplicable else {
             return PhotographyTargetProfile(
+                hypothesisIdentifier: "C-reference-calibration",
                 baselineTarget: baseline,
                 resolvedTarget: baseline,
                 referenceMatch: matchResult,
                 referenceInfluence: 0,
                 localContrastTarget: baseline.contrast,
+                regionalColorSeparationTarget: 0,
                 subjectBackgroundDeltaTarget: nil,
                 rationale: [matchResult.fallbackReason ?? "参考适用性不足，未修改逐图目标。"],
                 preservedProperties: defaultProtections(analysis: analysis)
@@ -494,6 +681,7 @@ struct PhotographyReferenceTargetGenerator {
             subjectDelta = nil
         }
         return PhotographyTargetProfile(
+            hypothesisIdentifier: "C-reference-calibration",
             baselineTarget: baseline,
             resolvedTarget: resolved,
             referenceMatch: matchResult,
@@ -502,6 +690,7 @@ struct PhotographyReferenceTargetGenerator {
                 baseline.contrast + (weighted.localContrast - 0.12) * influence * 0.4,
                 0.44...0.68
             ),
+            regionalColorSeparationTarget: 0,
             subjectBackgroundDeltaTarget: subjectDelta,
             rationale: [
                 "先由当前照片测量生成基线，再用通过适用性门控的参考统计做有限校准。",

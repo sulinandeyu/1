@@ -2211,6 +2211,174 @@ final class SceneAdaptationTests: XCTestCase {
         XCTAssertTrue(plan.emphasizedRegions.contains { $0.contains("暖黄色关系") })
     }
 
+    func testMeasuredAestheticHypothesesAreIndependentlySolvedFromCurrentPhoto() {
+        let vegetationMask = NormalizedPhotoMask(
+            width: 4,
+            height: 4,
+            pixels: Data([0, 255, 255, 0, 255, 255, 255, 255, 255, 255, 255, 255, 0, 255, 255, 0])
+        )
+        let source = fixture(
+            luminance: 0.637,
+            contrast: 0.831,
+            saturation: 0.168,
+            labels: ["outdoor"],
+            shadowRatio: 0.055,
+            highlightRatio: 0.253,
+            blackRatio: 0.01,
+            whiteRatio: 0.04,
+            noiseEstimate: 0.04,
+            vegetationMask: vegetationMask,
+            vegetationStatistics: regionStatistics(
+                luminance: 0.43,
+                contrast: 0.57,
+                saturation: 0.24,
+                red: 0.43,
+                green: 0.42,
+                blue: 0.25,
+                yellowColorRatio: 0.509,
+                greenColorRatio: 0.192
+            ),
+            segmentation: SceneSegmentationDiagnostics(
+                status: .available,
+                reason: nil,
+                skyCoverage: 0.104,
+                groundCoverage: 0.328,
+                vegetationCoverage: vegetationMask.activeCoverage,
+                waterCoverage: 0,
+                architectureCoverage: 0.015
+            )
+        )
+        let hypotheses = AestheticTargetHypothesisGenerator().makeHypotheses(
+            analysis: source,
+            problems: detector.detect(in: source)
+        )
+
+        XCTAssertEqual(hypotheses.map(\.kind), [.spatialEmphasis, .restrainedDepth])
+        XCTAssertGreaterThan(
+            abs(
+                hypotheses[0].profile.resolvedTarget.luminance
+                    - hypotheses[1].profile.resolvedTarget.luminance
+            ),
+            0.0001
+        )
+        XCTAssertGreaterThan(hypotheses[0].profile.regionalColorSeparationTarget, 0.01)
+        XCTAssertGreaterThan(
+            hypotheses[0].profile.resolvedTarget.saturation,
+            PhotographyTargetProfile.measuredBaseline(
+                analysis: source,
+                problems: detector.detect(in: source)
+            ).resolvedTarget.saturation
+        )
+        XCTAssertEqual(hypotheses[0].targetQualityStatus, "uncertain_pending_render_and_human_review")
+        XCTAssertTrue(hypotheses.allSatisfy { $0.profile.referenceInfluence == 0 })
+    }
+
+    func testMeasuredAestheticHypothesesChangeWithExposureNotSceneName() {
+        let bright = fixture(
+            luminance: 0.66,
+            contrast: 0.72,
+            saturation: 0.18,
+            labels: ["outdoor"],
+            shadowRatio: 0.04,
+            highlightRatio: 0.28,
+            blackRatio: 0.008,
+            whiteRatio: 0.05,
+            noiseEstimate: 0.03
+        )
+        let dark = fixture(
+            luminance: 0.31,
+            contrast: 0.72,
+            saturation: 0.18,
+            labels: ["outdoor"],
+            shadowRatio: 0.24,
+            highlightRatio: 0.03,
+            blackRatio: 0.07,
+            whiteRatio: 0.005,
+            noiseEstimate: 0.13
+        )
+        let generator = AestheticTargetHypothesisGenerator()
+        let brightE1 = generator.makeHypotheses(
+            analysis: bright,
+            problems: detector.detect(in: bright)
+        )[0]
+        let darkE1 = generator.makeHypotheses(
+            analysis: dark,
+            problems: detector.detect(in: dark)
+        )[0]
+
+        XCTAssertGreaterThan(brightE1.profile.resolvedTarget.luminance, darkE1.profile.resolvedTarget.luminance)
+        XCTAssertGreaterThan(
+            abs(
+                brightE1.profile.resolvedTarget.highlightRatio
+                    - darkE1.profile.resolvedTarget.highlightRatio
+            ),
+            0.0001
+        )
+        XCTAssertTrue(brightE1.rationale.joined().contains("源亮度"))
+    }
+
+    func testManualV4ExpressionAvoidsBlackPointAndHarshLocalContrastDefaults() {
+        let recipe = ManualPhotographyParameters.rendererVerification.makeRecipe()
+
+        XCTAssertEqual(recipe.blackPoint, 0, accuracy: 0.0001)
+        XCTAssertLessThanOrEqual(recipe.toneCurveAmount, 0.09)
+        XCTAssertLessThanOrEqual(recipe.localContrastAmount, 0.02)
+        XCTAssertGreaterThanOrEqual(recipe.shadowAmount, 0.12)
+        XCTAssertTrue(ManualPhotographyParameters.rendererVerification.identifier.contains("v4"))
+    }
+
+    func testMeasuredAestheticHypothesisReducesColorLiftWhenPersonEvidenceExists() {
+        let vegetationMask = NormalizedPhotoMask(
+            width: 4,
+            height: 4,
+            pixels: Data([0, 255, 255, 0, 255, 255, 255, 255, 255, 255, 255, 255, 0, 255, 255, 0])
+        )
+        func source(faceCount: Int) -> PhotoAnalysis {
+            fixture(
+                luminance: 0.58,
+                contrast: 0.72,
+                saturation: 0.17,
+                labels: ["outdoor"],
+                faceCount: faceCount,
+                vegetationMask: vegetationMask,
+                vegetationStatistics: regionStatistics(
+                    luminance: 0.44,
+                    contrast: 0.58,
+                    saturation: 0.21,
+                    red: 0.44,
+                    green: 0.41,
+                    blue: 0.24,
+                    yellowColorRatio: 0.46,
+                    greenColorRatio: 0.23
+                )
+            )
+        }
+        let landscape = source(faceCount: 0)
+        let portrait = source(faceCount: 1)
+        let generator = AestheticTargetHypothesisGenerator()
+        let landscapeTarget = generator.makeHypotheses(
+            analysis: landscape,
+            problems: detector.detect(in: landscape)
+        )[0].profile.resolvedTarget.saturation
+        let portraitTarget = generator.makeHypotheses(
+            analysis: portrait,
+            problems: detector.detect(in: portrait)
+        )[0].profile.resolvedTarget.saturation
+        let landscapeBaseline = PhotographyTargetProfile.measuredBaseline(
+            analysis: landscape,
+            problems: detector.detect(in: landscape)
+        ).resolvedTarget.saturation
+        let portraitBaseline = PhotographyTargetProfile.measuredBaseline(
+            analysis: portrait,
+            problems: detector.detect(in: portrait)
+        ).resolvedTarget.saturation
+
+        XCTAssertGreaterThan(
+            landscapeTarget - landscapeBaseline,
+            portraitTarget - portraitBaseline
+        )
+    }
+
     func testDiagnosticExportPolicyRejectsUnavailableCandidateEvenWithStaleStage() {
         XCTAssertNil(DiagnosticCandidateExportPolicy.resolvedStageName(
             stateNames: ["planned", "unavailable"],

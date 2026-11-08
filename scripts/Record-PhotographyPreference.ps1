@@ -3,7 +3,7 @@ param(
     [string]$CaseId,
 
     [Parameter(Mandatory = $true)]
-    [ValidateSet('A', 'B', 'C', 'none', 'original')]
+    [ValidateSet('A', 'B', 'C', 'D', 'E1', 'E2', 'M', 'all_bad', 'no_difference', 'original')]
     [string]$Choice,
 
     [Parameter(Mandatory = $true)]
@@ -16,6 +16,14 @@ param(
     [string]$Reason,
 
     [string]$ProblemSummary = '',
+
+    [ValidateSet('passed', 'warning', 'failed', 'not_evaluated')]
+    [string]$TechnicalStatus = 'not_evaluated',
+
+    [ValidateSet('reasonable', 'uncertain', 'unreasonable', 'not_evaluated')]
+    [string]$TargetQualityStatus = 'not_evaluated',
+
+    [string[]]$IssueTags = @(),
     [string]$OutputPath = (Join-Path $PSScriptRoot '..\TestPhotos\photography_preferences.jsonl')
 )
 
@@ -33,9 +41,13 @@ $record = [ordered]@{
     build = $Build
     photoSha256 = $PhotoSha256.ToUpperInvariant()
     choice = $Choice
-    candidateMapping = 'A=natural;B=dimensional;C=targeted;none=all bad;original=original preferred'
+    candidateMapping = 'A=source;B=formal;C=licensed-reference-diagnostic;D=measured-continuity;E1=spatial-emphasis;E2=restrained-depth;M=manual-renderer-probe;all_bad=none acceptable;no_difference=no meaningful preference;original=source preferred'
+    technicalStatus = $TechnicalStatus
+    targetQualityStatus = $TargetQualityStatus
+    humanAestheticStatus = 'human-confirmed'
     reason = $Reason
     problemSummary = $ProblemSummary
+    issueTags = $IssueTags
     evidenceStatus = 'human-confirmed'
 }
 

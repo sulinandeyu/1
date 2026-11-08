@@ -84,6 +84,9 @@ struct DiagnosticCandidateEvidence: Codable, Equatable, Sendable {
     let fallback: [String]
     let unavailable: [String]
     let qualityStatus: String?
+    let targetQualityStatus: String
+    let humanAestheticStatus: String
+    let assessmentEvidence: [String]
     let durationMilliseconds: Int?
 }
 

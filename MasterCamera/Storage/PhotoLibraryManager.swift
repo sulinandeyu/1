@@ -51,19 +51,23 @@ enum PhotoLibraryManager {
                 options: editedOptions
             )
 
-            // Diagnostic imports may carry separately rendered C/D/M outputs.
+            // Diagnostic imports may carry separately rendered C/D/E1/E2/M outputs.
             // Each remains an explicitly named diagnostic asset and never
             // replaces the production B result.
             if photo.isDiagnosticImport {
-                let diagnosticExports: [(prefix: String, filename: String)] = [
-                    ("C 摄影参考校准候选", "C_ReferenceCandidate"),
-                    ("D 新版逐图自动后期", "D_MeasuredAesthetic"),
-                    ("M 人工参数真实渲染", "M_ManualRenderer")
+                let diagnosticExports: [(identifier: String, filename: String)] = [
+                    ("C", "C_ReferenceCandidate"),
+                    ("D", "D_MeasuredAesthetic"),
+                    ("E1", "E1_SpatialEmphasis"),
+                    ("E2", "E2_RestrainedDepth"),
+                    ("M", "M_ManualRenderer")
                 ]
                 for export in diagnosticExports {
-                    guard let candidate = photo.processingStagePreviews.first(where: {
-                        $0.name.hasPrefix(export.prefix) && !$0.imageData.isEmpty
-                    }) else { continue }
+                    let evidence = photo.diagnosticCandidates.first { $0.identifier == export.identifier }
+                    guard let candidate = DiagnosticBundleExporter.resolvedPreview(
+                        for: evidence,
+                        in: photo.processingStagePreviews
+                    ), !candidate.imageData.isEmpty else { continue }
                     let options = PHAssetResourceCreationOptions()
                     options.originalFilename = "XiaoSuCamera_\(stamp)_\(export.filename).jpg"
                     let request = PHAssetCreationRequest.forAsset()

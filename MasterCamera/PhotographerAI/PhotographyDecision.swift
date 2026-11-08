@@ -142,6 +142,8 @@ enum PhotographyKnowledgeRuleID: String, Equatable, Hashable, Sendable {
     case regionalColorHarmony = "PT-AESTHETIC-002"
     case atmospherePreservation = "PT-AESTHETIC-003"
     case renderMeasureFeedback = "PT-AESTHETIC-004"
+    case measuredTargetHypotheses = "PT-AESTHETIC-005"
+    case separatedAestheticAssessment = "PT-AESTHETIC-006"
 }
 
 /// Pure export policy shared by the iOS ZIP exporter and decision-core tests.

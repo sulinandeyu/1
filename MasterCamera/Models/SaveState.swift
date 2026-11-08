@@ -20,7 +20,7 @@ enum SaveState: Equatable {
         case .saved:
             return "原图和 AI 成片已保存。"
         case .savedDiagnosticBundle:
-            return "诊断输出已按 A/B/C/D/M 可用项分别保存。"
+            return "诊断输出已按 A/B/C/D/E1/E2/M 可用项分别保存。"
         case .failed(let message):
             return message
         }

@@ -1302,8 +1302,8 @@ struct AestheticPhotographyPlan: Equatable, Sendable {
 
 /// Turns measured scene evidence into relationships the solver can pursue. It
 /// never selects a preset: every target is a bounded residual from this image.
-/// This is used only by the isolated C validation path until real iPhone blind
-/// tests show that it is preferable to the current B result.
+/// This is used only by isolated C/D/E diagnostic paths until real iPhone blind
+/// tests show that any hypothesis is preferable to the current B result.
 struct AestheticPhotographyPlanner {
     func makePlan(
         analysis: PhotoAnalysis,
@@ -1367,7 +1367,10 @@ struct AestheticPhotographyPlanner {
             return max(coexistence, dominantAccent) * saturationHeadroom * 0.16
         }()
         let colorSeparation = bounded(
-            max(mixedLightSeparation, regionalColorEvidence) * portraitProtection,
+            max(
+                max(mixedLightSeparation, regionalColorEvidence),
+                targetProfile.regionalColorSeparationTarget
+            ) * portraitProtection,
             0...0.06
         )
         let shadowCool = bounded(
@@ -1416,9 +1419,27 @@ struct AestheticPhotographyPlanner {
             } ?? "无可靠植被区域颜色统计。",
             "参考特征只校准目标关系，影响 \(String(format: "%.1f", targetProfile.referenceInfluence * 100))%；不复制曲线、HSL 或白平衡。"
         ]
+        let reliableMaskCoverage = [
+            analysis.skyMask?.qualityAssessment.isUsable == true ? analysis.skyMask?.activeCoverage : nil,
+            analysis.groundMask?.qualityAssessment.isUsable == true ? analysis.groundMask?.activeCoverage : nil,
+            analysis.vegetationMask?.qualityAssessment.isUsable == true ? analysis.vegetationMask?.activeCoverage : nil,
+            analysis.architectureMask?.qualityAssessment.isUsable == true ? analysis.architectureMask?.activeCoverage : nil
+        ]
+            .compactMap { $0 }
+            .reduce(0, +)
+            .clamped(to: 0...0.9)
+        let recognitionEvidence = analysis.sceneRecognitionDiagnostics.status == .recognized
+            ? analysis.sceneRecognitionDiagnostics.topConfidence
+            : 0
+        let measuredPlanningConfidence = (
+            0.12
+                + subjectReliability * 0.28
+                + reliableMaskCoverage * 0.36
+                + recognitionEvidence * 0.16
+        ).clamped(to: 0.12...0.82)
         let planningConfidence = targetProfile.referenceApplied
-            ? min(targetProfile.referenceMatch.confidence, max(0.42, subjectReliability))
-            : max(0.42, subjectReliability)
+            ? min(targetProfile.referenceMatch.confidence, measuredPlanningConfidence)
+            : measuredPlanningConfidence
         return AestheticPhotographyPlan(
             confidence: planningConfidence,
             visualUnderstanding: understanding,

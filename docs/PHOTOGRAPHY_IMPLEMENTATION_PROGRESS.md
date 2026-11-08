@@ -183,3 +183,15 @@
 - 已运行 Windows ZIP 像素分析工具；详细证据见 `docs/BUILD28_DIAGNOSTIC_CLOSURE.md`。
 - 远程验证：实现提交 `a3af9569` 的 iOS Build #72 暴露一处诊断日志变量改名遗漏；修复提交 `c5c069cfbb946d1e80a1afab5dc7abdb08339c49` 的 iOS Build #73（run `42480693382`）成功，73 项 Swift 测试 0 失败，iOS Simulator `BUILD SUCCEEDED`。
 - 尚未执行：新版 iPhone A/B/D/M ZIP、真机 Core Image 成片验收、不同场景回归和人工盲测。未经确认不得上传 TestFlight 或替换 B。
+
+# 2026-11-09：Build 29 摄影审美目标根因整改
+
+- 已读取 Build 29 真机 ZIP，并与 Build 28 同源 ZIP 的 A/B/D/M 全分辨率像素、区域、中性色和导出状态比较；详细证据见 `docs/BUILD29_AESTHETIC_TARGET_REMEDIATION.md`。
+- 已确认：Build 29 D 更亮是源图相对目标约 `0.605` 与弱曝光修正造成；最终亮度约 `0.613`，反差约 `0.774`，比 Build 28 D 更接近原图且更平。`92.6%` 只表示接近当前保守目标，不是审美成功。
+- 已确认：旧 ZIP 丢失 D 有限反馈的生成/采纳状态，不能根据最终参数猜测第二轮是否触发。
+- 已实现诊断专用 E1/E2 逐图目标假设：只使用当前图端点、噪声、可靠区域覆盖和颜色关系求解，复用现有规划器、求解器、全分辨率 Core Image 和质检；不按场景名绑定参数，不替换 B。
+- 已移除审美规划置信度的 `0.42` 硬下限；置信度改由主体、可靠蒙版和识别证据计算。
+- 已分离 `technicalQualityStatus`、`targetQualityStatus`、`humanAestheticStatus`；目标达成率不再冒充审美成功率。D/E1/E2 会导出最终实际配方、同定义复测和有限反馈状态。
+- 已将 M 调整为 v4 安全表达探针：不放宽 `tooHarsh` 阈值，取消黑点并降低曲线、局部对比、HSL 和锐化；仍不进入正式算法。
+- 已扩展 ZIP、相册导出和人工偏好工具以区分 A/B/C/D/E1/E2/M；C 继续受许可门控。
+- 当前验证状态：Windows 同源像素复核已完成；Windows 无 Swift/Xcode/Core Image，远程 Swift 测试与 iOS Simulator 构建待执行；E1/E2/M v4 真机图片和人工盲测尚未执行。未经用户确认不得上传 Build 30。

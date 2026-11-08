@@ -146,6 +146,12 @@ final class PhotoProcessingPipeline {
             problems: problemReport,
             isDiagnosticImport: photo.isDiagnosticImport
         )
+        let aestheticTargetExperiments = evaluateAestheticTargetExperiments(
+            originalData: photo.originalImageData,
+            analysis: analysis,
+            problems: problemReport,
+            isDiagnosticImport: photo.isDiagnosticImport
+        )
         let manualValidation = evaluateManualCandidate(
             originalData: photo.originalImageData,
             analysis: analysis,
@@ -196,6 +202,7 @@ final class PhotoProcessingPipeline {
         if let measuredStage = measuredAestheticValidation?.stage {
             stageRecords.append(measuredStage)
         }
+        stageRecords.append(contentsOf: aestheticTargetExperiments.map { $0.result.stage })
         if let manualStage = manualValidation?.stage {
             stageRecords.append(manualStage)
         }
@@ -259,6 +266,7 @@ final class PhotoProcessingPipeline {
                 if let measuredPreview = measuredAestheticValidation?.preview {
                     comparisonPreviews.append(measuredPreview)
                 }
+                comparisonPreviews.append(contentsOf: aestheticTargetExperiments.compactMap { $0.result.preview })
                 if let manualPreview = manualValidation?.preview {
                     comparisonPreviews.append(manualPreview)
                 }
@@ -307,6 +315,7 @@ final class PhotoProcessingPipeline {
                 finalFallbackReason: finalEdit.fallbackReason,
                 referenceValidation: referenceValidation,
                 measuredAestheticValidation: measuredAestheticValidation,
+                aestheticTargetExperiments: aestheticTargetExperiments,
                 manualValidation: manualValidation
             )
             : []
@@ -337,6 +346,7 @@ final class PhotoProcessingPipeline {
         finalFallbackReason: String?,
         referenceValidation: ReferenceValidationCandidateResult?,
         measuredAestheticValidation: IsolatedDiagnosticCandidateResult?,
+        aestheticTargetExperiments: [AestheticExperimentCandidateResult],
         manualValidation: IsolatedDiagnosticCandidateResult?
     ) -> [DiagnosticCandidateEvidence] {
         let parameterPlan = finalDecision.parameterEvidence.map { item in
@@ -364,6 +374,9 @@ final class PhotoProcessingPipeline {
             fallback: [],
             unavailable: [],
             qualityStatus: "source",
+            targetQualityStatus: "source_not_applicable",
+            humanAestheticStatus: "source_reference",
+            assessmentEvidence: ["A 是同源输入，不接受技术成片或审美优胜判定。"],
             durationMilliseconds: nil
         )
         let b = DiagnosticCandidateEvidence(
@@ -382,9 +395,12 @@ final class PhotoProcessingPipeline {
             fallback: bFallback,
             unavailable: [],
             qualityStatus: finalQualityCheck.status.rawValue,
+            targetQualityStatus: "formal_algorithm_not_reassessed_in_experiment",
+            humanAestheticStatus: "awaiting_blind_review",
+            assessmentEvidence: ["B 保持正式算法；本轮未用 D/E 的目标分数替代人工偏好。"],
             durationMilliseconds: nil
         )
-        return [
+        var candidates = [
             a,
             b,
             evidence(
@@ -402,7 +418,19 @@ final class PhotoProcessingPipeline {
                 details: measuredAestheticValidation?.details,
                 stage: measuredAestheticValidation?.stage,
                 nilReason: "D 诊断路径未启用"
-            ),
+            )
+        ]
+        candidates.append(contentsOf: aestheticTargetExperiments.map { experiment in
+            evidence(
+                identifier: experiment.identifier,
+                displayName: experiment.displayName,
+                preview: experiment.result.preview,
+                details: experiment.result.details,
+                stage: experiment.result.stage,
+                nilReason: "\(experiment.identifier) 目标实验未启用"
+            )
+        })
+        candidates.append(
             evidence(
                 identifier: "M",
                 displayName: "人工参数渲染验证",
@@ -411,7 +439,8 @@ final class PhotoProcessingPipeline {
                 stage: manualValidation?.stage,
                 nilReason: "M 诊断路径未启用"
             )
-        ]
+        )
+        return candidates
     }
 
     private func evidence(
@@ -424,7 +453,7 @@ final class PhotoProcessingPipeline {
     ) -> DiagnosticCandidateEvidence {
         let lines = details ?? []
         let plannedKeywords = ["视觉理解", "摄影问题", "审美目标", "动态参数", "声明参数", "目标=", "参数=", "局部计划"]
-        let executedKeywords = ["renderStatus=completed", "区域执行", "执行模块", "技术质检", "耗时="]
+        let executedKeywords = ["renderStatus=completed", "区域执行", "执行模块", "技术质检", "耗时=", "同定义复测", "有限反馈", "最终实际参数"]
         let rejectedKeywords = [
             "technicalQualityStatus=failed",
             "qualityEvaluationFailed",
@@ -464,6 +493,14 @@ final class PhotoProcessingPipeline {
         }
 
         let qualityLine = lines.first { $0.contains("technicalQualityStatus=") || $0.contains("质检=") }
+        let targetQualityLine = lines.first { $0.contains("targetQualityStatus=") }
+        let humanAestheticLine = lines.first { $0.contains("humanAestheticStatus=") || $0.contains("人工偏好=") }
+        let assessmentEvidence = lines.filter {
+            $0.contains("targetQualityStatus=")
+                || $0.contains("humanAestheticStatus=")
+                || $0.contains("不是审美结论")
+                || $0.contains("有限反馈=")
+        }
         return DiagnosticCandidateEvidence(
             identifier: identifier,
             displayName: displayName,
@@ -475,6 +512,9 @@ final class PhotoProcessingPipeline {
             fallback: fallback,
             unavailable: unavailable,
             qualityStatus: qualityLine,
+            targetQualityStatus: targetQualityLine ?? "notEvaluated",
+            humanAestheticStatus: humanAestheticLine ?? "awaiting_blind_review",
+            assessmentEvidence: assessmentEvidence,
             durationMilliseconds: stage?.durationMilliseconds
         )
     }
@@ -785,10 +825,13 @@ final class PhotoProcessingPipeline {
             let details = [
                 "[D] 状态=measuredAestheticDiagnostic；不读取摄影参考，不替换 B",
                 "[D] renderStatus=completed；technicalQualityStatus=\(selectedQuality.status.rawValue)；eligibleToReplaceB=false",
+                "[D] targetQualityStatus=uncertain_single_hypothesis；目标达成率只衡量当前目标，不证明目标具有摄影审美价值",
+                "[D] humanAestheticStatus=awaiting_blind_review",
                 "[D] 视觉理解=\(analysis.visualSceneUnderstanding.traceSummary)",
                 "[D] 摄影问题=\(problems.problems.map { $0.kind.rawValue }.joined(separator: ","))",
                 "[D] 审美目标=\(decision.aestheticPlan?.traceSummary ?? "未生成")",
                 "[D] 动态参数=\(parameters)",
+                "[D] 最终实际参数=\(selectedRecipe.traceSummary)",
                 String(format: "[D] 同定义复测=源亮度 %.4f/反差 %.4f/饱和 %.4f；首轮 %.4f/%.4f/%.4f；最终 %.4f/%.4f/%.4f；反馈次数=%d",
                        analysis.averageLuminance, analysis.contrastRange, analysis.averageSaturation,
                        initialQuality.measuredAnalysis.averageLuminance, initialQuality.measuredAnalysis.contrastRange, initialQuality.measuredAnalysis.averageSaturation,
@@ -853,6 +896,235 @@ final class PhotoProcessingPipeline {
                     durationMilliseconds: duration,
                     executed: false,
                     detail: "失败：\(error.localizedDescription)"
+                )
+            )
+        }
+    }
+
+    /// PT-AESTHETIC-005/006: E1 and E2 are independently solved target
+    /// hypotheses for the same source. They are rendered sequentially only for
+    /// diagnostic imports and are never ranked as an automatic aesthetic winner.
+    private func evaluateAestheticTargetExperiments(
+        originalData: Data,
+        analysis: PhotoAnalysis,
+        problems: PhotoProblemReport,
+        isDiagnosticImport: Bool
+    ) -> [AestheticExperimentCandidateResult] {
+        guard isDiagnosticImport,
+              configuration.diagnosticValidation.measuredAestheticCandidateEnabled
+        else { return [] }
+
+        return AestheticTargetHypothesisGenerator()
+            .makeHypotheses(analysis: analysis, problems: problems)
+            .map { hypothesis in
+                autoreleasepool {
+                    evaluateAestheticTargetExperiment(
+                        hypothesis,
+                        originalData: originalData,
+                        analysis: analysis,
+                        problems: problems
+                    )
+                }
+            }
+    }
+
+    private func evaluateAestheticTargetExperiment(
+        _ hypothesis: AestheticTargetHypothesis,
+        originalData: Data,
+        analysis: PhotoAnalysis,
+        problems: PhotoProblemReport
+    ) -> AestheticExperimentCandidateResult {
+        let identifier = hypothesis.kind == .spatialEmphasis ? "E1" : "E2"
+        let start = ProcessInfo.processInfo.systemUptime
+        var renderedData: Data?
+        do {
+            let decision = photographyDirector.direct(
+                analysis: analysis,
+                problems: problems,
+                targetProfile: hypothesis.profile,
+                enableMeasuredAestheticPlanning: true
+            )
+            let initialData = try renderer.renderAutomaticEdit(
+                from: originalData,
+                recipe: decision.recipe,
+                analysis: analysis
+            )
+            renderedData = initialData
+            let initialRegionalExecution = renderer.regionalExecutionDetails(
+                for: decision.recipe,
+                analysis: analysis
+            )
+            let initialQuality = try qualityService.check(
+                originalData: originalData,
+                editedData: initialData,
+                sourceAnalysis: analysis,
+                expectedRegions: decision.treatmentPlan.regionalTreatments.map(\.region),
+                regionalExecutionDetails: initialRegionalExecution
+            )
+            let initialImpacts = try qualityService.measureRegionImpacts(
+                originalData: originalData,
+                editedData: initialData,
+                analysis: analysis
+            )
+            let initialAttainment = AdaptiveTargetAttainmentScorer().score(
+                target: decision.adaptiveTarget,
+                source: analysis,
+                edited: initialQuality.measuredAnalysis
+            )
+
+            var selectedData = initialData
+            var selectedRecipe = decision.recipe
+            var selectedQuality = initialQuality
+            var selectedImpacts = initialImpacts
+            var selectedAttainment = initialAttainment
+            var feedbackStatus = "notGenerated"
+            if let feedbackRecipe = measuredAestheticFeedbackRecipe(
+                from: decision.recipe,
+                target: decision.adaptiveTarget,
+                plan: decision.aestheticPlan,
+                rendered: initialQuality.measuredAnalysis,
+                regionImpacts: initialImpacts
+            ) {
+                do {
+                    let feedbackData = try renderer.renderAutomaticEdit(
+                        from: originalData,
+                        recipe: feedbackRecipe,
+                        analysis: analysis
+                    )
+                    let feedbackExecution = renderer.regionalExecutionDetails(
+                        for: feedbackRecipe,
+                        analysis: analysis
+                    )
+                    let feedbackQuality = try qualityService.check(
+                        originalData: originalData,
+                        editedData: feedbackData,
+                        sourceAnalysis: analysis,
+                        expectedRegions: decision.treatmentPlan.regionalTreatments.map(\.region),
+                        regionalExecutionDetails: feedbackExecution
+                    )
+                    let feedbackImpacts = try qualityService.measureRegionImpacts(
+                        originalData: originalData,
+                        editedData: feedbackData,
+                        analysis: analysis
+                    )
+                    let feedbackAttainment = AdaptiveTargetAttainmentScorer().score(
+                        target: decision.adaptiveTarget,
+                        source: analysis,
+                        edited: feedbackQuality.measuredAnalysis
+                    )
+                    if shouldSelectMeasuredAestheticFeedback(
+                        initialQuality: initialQuality,
+                        initialAttainment: initialAttainment,
+                        feedbackQuality: feedbackQuality,
+                        feedbackAttainment: feedbackAttainment
+                    ) {
+                        selectedData = feedbackData
+                        selectedRecipe = feedbackRecipe
+                        selectedQuality = feedbackQuality
+                        selectedImpacts = feedbackImpacts
+                        selectedAttainment = feedbackAttainment
+                        renderedData = feedbackData
+                        feedbackStatus = String(
+                            format: "generatedAndAdopted; attainment %.3f→%.3f; quality %@→%@",
+                            initialAttainment,
+                            feedbackAttainment,
+                            initialQuality.status.rawValue,
+                            feedbackQuality.status.rawValue
+                        )
+                    } else {
+                        feedbackStatus = String(
+                            format: "generatedAndRejected; attainment %.3f→%.3f; quality %@→%@",
+                            initialAttainment,
+                            feedbackAttainment,
+                            initialQuality.status.rawValue,
+                            feedbackQuality.status.rawValue
+                        )
+                    }
+                } catch {
+                    feedbackStatus = "generatedButFailed; \(error.localizedDescription)"
+                }
+            }
+
+            let regionalExecution = renderer.regionalExecutionDetails(
+                for: selectedRecipe,
+                analysis: analysis
+            )
+            let impactTrace = selectedImpacts.map {
+                String(
+                    format: "%@{coverage=%.3f,luma=%+.4f,color=%.4f,contrast=%+.4f,changed=%.3f}",
+                    $0.region.rawValue,
+                    $0.maskCoverage,
+                    $0.luminanceDelta,
+                    $0.colorDelta,
+                    $0.contrastDelta,
+                    $0.changedPixelRatio
+                )
+            }.joined(separator: " | ")
+            let parameters = decision.parameterEvidence.map {
+                $0.refreshingActualValue(from: selectedRecipe)
+            }.map {
+                "\($0.key.rawValue)=\(String(format: "%.4f", $0.actualValue)){input=\($0.inputEvidence);target=\($0.target);rules=\(($0.knowledgeRuleIDs + [.measuredTargetHypotheses, .separatedAestheticAssessment]).map(\.rawValue).joined(separator: ","));status=\($0.decisionStatus.rawValue)}"
+            }.joined(separator: ";")
+            let duration = Self.milliseconds(ProcessInfo.processInfo.systemUptime - start)
+            let details = [
+                "[\(identifier)] 状态=isolatedMeasuredTargetHypothesis；eligibleToReplaceB=false",
+                "[\(identifier)] renderStatus=completed；technicalQualityStatus=\(selectedQuality.status.rawValue)",
+                "[\(identifier)] targetQualityStatus=\(hypothesis.targetQualityStatus)；evidenceConfidence=\(String(format: "%.3f", hypothesis.evidenceConfidence))；目标可执行不等于目标审美合理",
+                "[\(identifier)] humanAestheticStatus=awaiting_blind_review；禁止自动宣称优于 B/D",
+                "[\(identifier)] 摄影目标=\(hypothesis.profile.hypothesisIdentifier)；\(hypothesis.profile.resolvedTarget.summaryText)；依据=[\(hypothesis.rationale.joined(separator: " | "))]",
+                "[\(identifier)] 审美目标=\(decision.aestheticPlan?.traceSummary ?? "未生成")",
+                "[\(identifier)] 最终实际参数=\(selectedRecipe.traceSummary)；证据=[\(parameters)]",
+                String(format: "[\(identifier)] 同定义复测=源亮度 %.4f/反差 %.4f/饱和 %.4f；最终 %.4f/%.4f/%.4f；目标达成 %.1f%%（仅技术目标）",
+                       analysis.averageLuminance, analysis.contrastRange, analysis.averageSaturation,
+                       selectedQuality.measuredAnalysis.averageLuminance,
+                       selectedQuality.measuredAnalysis.contrastRange,
+                       selectedQuality.measuredAnalysis.averageSaturation,
+                       selectedAttainment * 100),
+                "[\(identifier)] 有限反馈=\(feedbackStatus)",
+                "[\(identifier)] 区域执行=\(regionalExecution.joined(separator: " | "))",
+                "[\(identifier)] 区域实测=\(impactTrace.isEmpty ? "无可靠区域蒙版" : impactTrace)",
+                "[\(identifier)] 技术质检=\(selectedQuality.status.rawValue)；问题=[\(selectedQuality.issues.map(\.rawValue).joined(separator: ","))]；不是审美结论",
+                "[\(identifier)] 耗时=\(duration)ms；人工偏好=待评价"
+            ]
+            return AestheticExperimentCandidateResult(
+                identifier: identifier,
+                displayName: hypothesis.displayName,
+                result: IsolatedDiagnosticCandidateResult(
+                    preview: ProcessingStagePreview(
+                        name: "\(identifier) \(hypothesis.displayName)（\(selectedQuality.status.rawValue)）",
+                        imageData: selectedData
+                    ),
+                    details: details,
+                    stage: ProcessingStageRecord(
+                        name: "\(identifier) 动态摄影目标实验",
+                        durationMilliseconds: duration,
+                        executed: true,
+                        detail: "独立逐图目标 → 全分辨率 Core Image · \(selectedQuality.status.rawValue) · 人工审美待评价"
+                    )
+                )
+            )
+        } catch {
+            let duration = Self.milliseconds(ProcessInfo.processInfo.systemUptime - start)
+            let preview = renderedData.map {
+                ProcessingStagePreview(name: "\(identifier) 已渲染但质检失败", imageData: $0)
+            }
+            return AestheticExperimentCandidateResult(
+                identifier: identifier,
+                displayName: hypothesis.displayName,
+                result: IsolatedDiagnosticCandidateResult(
+                    preview: preview,
+                    details: [
+                        "[\(identifier)] 状态=experimentFailed；technicalQualityStatus=notCompleted",
+                        "[\(identifier)] targetQualityStatus=notEvaluated",
+                        "[\(identifier)] humanAestheticStatus=notEvaluated",
+                        "[\(identifier)] 错误=\(error.localizedDescription)；不替换 B/D"
+                    ],
+                    stage: ProcessingStageRecord(
+                        name: "\(identifier) 动态摄影目标实验",
+                        durationMilliseconds: duration,
+                        executed: preview != nil,
+                        detail: "失败：\(error.localizedDescription)"
+                    )
                 )
             )
         }
@@ -994,6 +1266,8 @@ final class PhotoProcessingPipeline {
                 details: [
                     "[M] 状态=manualRendererVerification；id=\(parameters.identifier)；不参与自动决策，不替换 B/D",
                     "[M] renderStatus=completed；technicalQualityStatus=\(quality.status.rawValue)",
+                    "[M] targetQualityStatus=manual_expression_probe_not_automatic_target",
+                    "[M] humanAestheticStatus=awaiting_blind_review",
                     "[M] 声明参数=\(recipe.traceSummary)",
                     "[M] 执行模块=\(renderer.executedModuleNames(for: recipe, analysis: analysis).joined(separator: " → "))",
                     "[M] 技术质检=\(quality.status.rawValue)；问题=[\(quality.issues.map(\.rawValue).joined(separator: ","))]；RGB_MAE=\(String(format: "%.4f", quality.processingImpact.normalizedMeanAbsoluteRGBDifference))",
@@ -1534,6 +1808,12 @@ private struct IsolatedDiagnosticCandidateResult {
     let preview: ProcessingStagePreview?
     let details: [String]
     let stage: ProcessingStageRecord
+}
+
+private struct AestheticExperimentCandidateResult {
+    let identifier: String
+    let displayName: String
+    let result: IsolatedDiagnosticCandidateResult
 }
 
 enum PhotoProcessingError: LocalizedError {
