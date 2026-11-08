@@ -346,32 +346,17 @@ jobs:
 
           groups = groups_for_build(build_id)
           if not groups:
-              previous = query("builds", {
+              candidates = query("betaGroups", {
                   "filter[app]": app_id,
-                  "filter[version]": "27",
-                  "sort": "-uploadedDate",
-                  "limit": "10",
+                  "filter[isInternalGroup]": "true",
+                  "limit": "200",
               }).get("data", [])
-              source_groups = groups_for_build(previous[0]["id"]) if previous else []
-              internal_groups = source_groups
-
-              if not internal_groups:
-                  candidates = query("betaGroups", {"filter[app]": app_id, "limit": "200"}).get("data", [])
-                  internal_groups = [group for group in candidates if group.get("attributes", {}).get("isInternalGroup") is True]
-                  if len(internal_groups) != 1:
-                      raise RuntimeError(
-                          "Build 28 has no group, Build 27 provides no reusable internal group, "
-                          f"and the app has {len(internal_groups)} internal groups; refusing to guess."
-                      )
-
-              for group in internal_groups:
-                  api(
-                      f"/v1/betaGroups/{group['id']}/relationships/builds",
-                      method="POST",
-                      payload={"data": [{"type": "builds", "id": build_id}]},
+              groups = [group for group in candidates if group.get("attributes", {}).get("hasAccessToAllBuilds") is True]
+              if groups:
+                  print(
+                      f"Build {BUILD_NUMBER} inherits access from {len(groups)} existing "
+                      "internal group(s) with hasAccessToAllBuilds=true"
                   )
-                  print(f"Assigned Build {BUILD_NUMBER} to existing internal group: {group.get('attributes', {}).get('name', group['id'])}")
-              groups = groups_for_build(build_id)
 
           detail = api(f"/v1/builds/{build_id}/buildBetaDetail").get("data", {})
           internal_state = detail.get("attributes", {}).get("internalBuildState", "UNKNOWN")
@@ -381,7 +366,10 @@ jobs:
           if internal_state not in {"READY_FOR_BETA_TESTING", "IN_BETA_TESTING"}:
               raise RuntimeError(f"Build {BUILD_NUMBER} is not internally installable: {internal_state}")
           if not groups:
-              raise RuntimeError(f"Build {BUILD_NUMBER} is not assigned to an internal testing group")
+              raise RuntimeError(
+                  f"Build {BUILD_NUMBER} has no explicit internal group and no existing "
+                  "internal group with hasAccessToAllBuilds=true"
+              )
           print(f"TESTFLIGHT_INTERNAL_INSTALLABLE build={BUILD_NUMBER} state={internal_state}")
           PY
 
