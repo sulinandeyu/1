@@ -170,3 +170,15 @@
 - 远程验证：分支 `codex/build27-diagnostic-export-20261108`，摄影与诊断实现提交 `93a274cb4418794fb0c99b5c14d66a89d0bdfde7`；GitHub Actions iOS Build #65（run `42455850567`）成功，69 项 Swift 测试 0 失败，iOS Simulator 构建成功。
 - 尚未验证：ZIP 分享、A/B/D/M 真机导出内容、M 视觉表达和修复后 D 的摄影效果仍需下一版 iPhone 实测；本阶段未触发 TestFlight Release。
 - 下一步：建议内部测试构建号使用 Build 28。用户确认上传后，在同一原图上选择 B/D/M 并一键导出诊断 ZIP；以 ZIP 中的真实全分辨率图片和 executed/rejected/fallback 证据继续验收。
+
+# 2026-11-08：Build 28 真机 ZIP 与自动摄影闭环整改
+
+- 已读取真实 ZIP 内 A/B/D/M 四张 `2160×2880` 图片、候选状态、参数、蒙版、质量和性能 JSON；不再依赖录屏截图推测。
+- Windows 同源像素复核：A/B/D/M 平均亮度分别为 `0.6313/0.5800/0.5830/0.5683`；D 与 B 的道路、植被和黄色/绿色关系几乎相同；M 的 5–95% 跨度 `0.9535`，支持 `tooHarsh` 结论。
+- 已确认 D 根因：区域黄色/绿色证据只进入说明，旧规划器颜色分离只由混合光触发；D 只渲染一次且目标亮度与安全参数范围不协调。
+- 已修改 D-only：源图相对摄影目标、区域颜色协调目标、HSL 动态映射，以及最多一次同定义“渲染—复测—有界修正—重新质检”；正式 B 不变。
+- 已修复 C 导出：`unavailable` 不再按名称前缀抓取旧预览；只有 exact `imageStageName` + `executed` 状态可导出图片。
+- 已增强 M 证据：导出实际反差、中性色亮度指标、阈值和区域影响；M v3 降低会导致过硬/中性亮部损失的组合强度，仍仅用于诊断。
+- 已更新知识规则 `PT-AESTHETIC-002`，新增 `PT-AESTHETIC-004`；增加源图相对目标、区域颜色关系和导出状态契约测试。
+- 已运行 Windows ZIP 像素分析工具；详细证据见 `docs/BUILD28_DIAGNOSTIC_CLOSURE.md`。
+- 尚未执行：远程 Swift/iOS Simulator/Core Image 测试、新版 iPhone A/B/D/M ZIP、不同场景回归和人工盲测。未经确认不得上传 TestFlight或替换 B。

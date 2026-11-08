@@ -2142,6 +2142,99 @@ final class SceneAdaptationTests: XCTestCase {
         XCTAssertEqual(evidenceValue ?? -1, measuredDecision.recipe.hsl.yellowSaturation, accuracy: 0.0001)
     }
 
+    func testMeasuredDTargetUsesSourceRelativeLuminanceWithSameAnalyzerDefinition() {
+        let bright = fixture(
+            luminance: 0.637,
+            contrast: 0.831,
+            saturation: 0.168,
+            labels: ["outdoor"],
+            shadowRatio: 0.055,
+            highlightRatio: 0.253,
+            blackRatio: 0.01,
+            whiteRatio: 0.04,
+            noiseEstimate: 0.04
+        )
+        let profile = PhotographyTargetProfile.measuredBaseline(
+            analysis: bright,
+            problems: detector.detect(in: bright)
+        )
+
+        XCTAssertGreaterThan(profile.resolvedTarget.luminance, 0.55)
+        XCTAssertLessThan(profile.resolvedTarget.luminance, bright.averageLuminance)
+        XCTAssertTrue(profile.rationale.joined().contains("同一测量定义"))
+    }
+
+    func testRegionalYellowAndGreenRelationshipCreatesMeasuredColorSeparation() {
+        let vegetationMask = NormalizedPhotoMask(
+            width: 4,
+            height: 4,
+            pixels: Data([0, 255, 255, 0, 255, 255, 255, 255, 255, 255, 255, 255, 0, 255, 255, 0])
+        )
+        let analysis = fixture(
+            luminance: 0.57,
+            contrast: 0.66,
+            saturation: 0.19,
+            labels: ["outdoor"],
+            vegetationMask: vegetationMask,
+            vegetationStatistics: regionStatistics(
+                luminance: 0.43,
+                contrast: 0.57,
+                saturation: 0.24,
+                red: 0.43,
+                green: 0.42,
+                blue: 0.25,
+                yellowColorRatio: 0.509,
+                greenColorRatio: 0.192
+            ),
+            segmentation: SceneSegmentationDiagnostics(
+                status: .available,
+                reason: nil,
+                skyCoverage: 0,
+                groundCoverage: 0,
+                vegetationCoverage: vegetationMask.activeCoverage,
+                waterCoverage: 0,
+                architectureCoverage: 0
+            )
+        )
+        let problems = detector.detect(in: analysis)
+        let profile = PhotographyTargetProfile.measuredBaseline(
+            analysis: analysis,
+            problems: problems
+        )
+        let plan = AestheticPhotographyPlanner().makePlan(
+            analysis: analysis,
+            problems: problems,
+            targetProfile: profile
+        )
+
+        XCTAssertGreaterThan(plan.colorSeparationStrength, 0.01)
+        XCTAssertTrue(plan.emphasizedRegions.contains { $0.contains("暖黄色关系") })
+    }
+
+    func testDiagnosticExportPolicyRejectsUnavailableCandidateEvenWithStaleStage() {
+        XCTAssertNil(DiagnosticCandidateExportPolicy.resolvedStageName(
+            stateNames: ["planned", "unavailable"],
+            unavailableReasons: ["indexUnavailable"],
+            imageStageName: "C 摄影参考验证候选"
+        ))
+    }
+
+    func testDiagnosticExportPolicyRequiresExactExecutedStageName() {
+        XCTAssertEqual(
+            DiagnosticCandidateExportPolicy.resolvedStageName(
+                stateNames: ["planned", "executed"],
+                unavailableReasons: [],
+                imageStageName: "D 新版逐图自动后期（passed）"
+            ),
+            "D 新版逐图自动后期（passed）"
+        )
+        XCTAssertNil(DiagnosticCandidateExportPolicy.resolvedStageName(
+            stateNames: ["planned"],
+            unavailableReasons: [],
+            imageStageName: "D 旧预览"
+        ))
+    }
+
     private func syntheticImage(
         width: Int,
         height: Int,

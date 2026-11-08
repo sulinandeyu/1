@@ -141,6 +141,28 @@ enum PhotographyKnowledgeRuleID: String, Equatable, Hashable, Sendable {
     case measuredVisualHierarchy = "PT-AESTHETIC-001"
     case regionalColorHarmony = "PT-AESTHETIC-002"
     case atmospherePreservation = "PT-AESTHETIC-003"
+    case renderMeasureFeedback = "PT-AESTHETIC-004"
+}
+
+/// Pure export policy shared by the iOS ZIP exporter and decision-core tests.
+/// An image is exportable only when the same candidate record says that its
+/// exact stage executed. This prevents stale previews from impersonating an
+/// unavailable or rejected candidate.
+struct DiagnosticCandidateExportPolicy {
+    static func resolvedStageName(
+        stateNames: [String],
+        unavailableReasons: [String],
+        imageStageName: String?
+    ) -> String? {
+        guard
+            stateNames.contains("executed"),
+            !stateNames.contains("unavailable"),
+            unavailableReasons.isEmpty,
+            let imageStageName,
+            !imageStageName.isEmpty
+        else { return nil }
+        return imageStageName
+    }
 }
 
 /// Metadata-only representation for future licensed reference pairs. It does

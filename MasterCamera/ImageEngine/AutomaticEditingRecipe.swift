@@ -679,33 +679,33 @@ struct ManualPhotographyParameters: Equatable, Sendable {
     /// It is not an aesthetic preset and is only enabled for diagnostic imports.
     static let rendererVerification: ManualPhotographyParameters = {
         var measuredColorExpression = ProfessionalHSLAdjustment.neutral
-        measuredColorExpression.orangeSaturation = 0.045
-        measuredColorExpression.yellowSaturation = 0.12
-        measuredColorExpression.yellowLuminance = 0.025
-        measuredColorExpression.greenSaturation = -0.055
-        measuredColorExpression.greenLuminance = -0.012
+        measuredColorExpression.orangeSaturation = 0.035
+        measuredColorExpression.yellowSaturation = 0.085
+        measuredColorExpression.yellowLuminance = 0.018
+        measuredColorExpression.greenSaturation = -0.03
+        measuredColorExpression.greenLuminance = -0.006
         return ManualPhotographyParameters(
-        identifier: "manual-spatial-color-expression-v2",
-        exposureEV: -0.035,
-        highlightAmount: 0.68,
+        identifier: "manual-spatial-color-expression-v3",
+        exposureEV: -0.015,
+        highlightAmount: 0.74,
         shadowAmount: 0.08,
-        contrast: 1.055,
-        blackPoint: 0.011,
-        whitePoint: 0.975,
-        saturation: 0.99,
-        vibrance: 0.035,
-        toneCurveAmount: 0.24,
+        contrast: 1.025,
+        blackPoint: 0.005,
+        whitePoint: 0.988,
+        saturation: 0.995,
+        vibrance: 0.03,
+        toneCurveAmount: 0.15,
         toneCurveStyle: .softHighlights,
-        localContrastAmount: 0.075,
-        skyExposureEV: -0.075,
-        skyHighlightAmount: 0.62,
-        skySaturation: 0.985,
-        shadowZoneExposureEV: 0.025,
-        highlightZoneExposureEV: -0.11,
-        luminanceMaskStrength: 0.64,
+        localContrastAmount: 0.045,
+        skyExposureEV: -0.05,
+        skyHighlightAmount: 0.69,
+        skySaturation: 0.99,
+        shadowZoneExposureEV: 0.035,
+        highlightZoneExposureEV: -0.075,
+        luminanceMaskStrength: 0.55,
         hsl: measuredColorExpression,
-        noiseReductionAmount: 0.008,
-        sharpeningAmount: 0.045
+        noiseReductionAmount: 0.01,
+        sharpeningAmount: 0.03
         )
     }()
 }

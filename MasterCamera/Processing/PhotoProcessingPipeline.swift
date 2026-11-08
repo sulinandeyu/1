@@ -660,58 +660,149 @@ final class PhotoProcessingPipeline {
                 enableMeasuredAestheticPlanning: true
             )
             phase = "rendering"
-            let data = try renderer.renderAutomaticEdit(
+            let initialData = try renderer.renderAutomaticEdit(
                 from: originalData,
                 recipe: decision.recipe,
                 analysis: analysis
             )
-            renderedData = data
+            renderedData = initialData
             phase = "qualityEvaluation"
-            let regionalExecution = renderer.regionalExecutionDetails(
+            let initialRegionalExecution = renderer.regionalExecutionDetails(
                 for: decision.recipe,
                 analysis: analysis
             )
-            let quality = try qualityService.check(
+            let initialQuality = try qualityService.check(
                 originalData: originalData,
-                editedData: data,
+                editedData: initialData,
                 sourceAnalysis: analysis,
                 expectedRegions: decision.treatmentPlan.regionalTreatments.map(\.region),
-                regionalExecutionDetails: regionalExecution
+                regionalExecutionDetails: initialRegionalExecution
             )
-            let impacts = try qualityService.measureRegionImpacts(
+            let initialImpacts = try qualityService.measureRegionImpacts(
                 originalData: originalData,
-                editedData: data,
+                editedData: initialData,
                 analysis: analysis
             )
-            let attainment = AdaptiveTargetAttainmentScorer().score(
+            let initialAttainment = AdaptiveTargetAttainmentScorer().score(
                 target: decision.adaptiveTarget,
                 source: analysis,
-                edited: quality.measuredAnalysis
+                edited: initialQuality.measuredAnalysis
+            )
+            var selectedData = initialData
+            var selectedRecipe = decision.recipe
+            var selectedQuality = initialQuality
+            var selectedImpacts = initialImpacts
+            var selectedAttainment = initialAttainment
+            var selectedIteration = 0
+            var feedbackTrace = "未触发：首轮渲染已在目标容差内或无可安全修正残差"
+
+            if let feedbackRecipe = measuredAestheticFeedbackRecipe(
+                from: decision.recipe,
+                target: decision.adaptiveTarget,
+                plan: decision.aestheticPlan,
+                rendered: initialQuality.measuredAnalysis,
+                regionImpacts: initialImpacts
+            ) {
+                phase = "feedbackRendering"
+                do {
+                    let feedbackData = try renderer.renderAutomaticEdit(
+                        from: originalData,
+                        recipe: feedbackRecipe,
+                        analysis: analysis
+                    )
+                    let feedbackRegionalExecution = renderer.regionalExecutionDetails(
+                        for: feedbackRecipe,
+                        analysis: analysis
+                    )
+                    let feedbackQuality = try qualityService.check(
+                        originalData: originalData,
+                        editedData: feedbackData,
+                        sourceAnalysis: analysis,
+                        expectedRegions: decision.treatmentPlan.regionalTreatments.map(\.region),
+                        regionalExecutionDetails: feedbackRegionalExecution
+                    )
+                    let feedbackImpacts = try qualityService.measureRegionImpacts(
+                        originalData: originalData,
+                        editedData: feedbackData,
+                        analysis: analysis
+                    )
+                    let feedbackAttainment = AdaptiveTargetAttainmentScorer().score(
+                        target: decision.adaptiveTarget,
+                        source: analysis,
+                        edited: feedbackQuality.measuredAnalysis
+                    )
+                    if shouldSelectMeasuredAestheticFeedback(
+                        initialQuality: initialQuality,
+                        initialAttainment: initialAttainment,
+                        feedbackQuality: feedbackQuality,
+                        feedbackAttainment: feedbackAttainment
+                    ) {
+                        selectedData = feedbackData
+                        selectedRecipe = feedbackRecipe
+                        selectedQuality = feedbackQuality
+                        selectedImpacts = feedbackImpacts
+                        selectedAttainment = feedbackAttainment
+                        selectedIteration = 1
+                        renderedData = feedbackData
+                        feedbackTrace = String(
+                            format: "采用一次有限反馈：目标达成 %.1f%%→%.1f%%，质检 %@→%@",
+                            initialAttainment * 100,
+                            feedbackAttainment * 100,
+                            initialQuality.status.rawValue,
+                            feedbackQuality.status.rawValue
+                        )
+                    } else {
+                        feedbackTrace = String(
+                            format: "拒绝反馈候选：目标达成 %.1f%%→%.1f%%，质检 %@→%@；保留首轮真实渲染",
+                            initialAttainment * 100,
+                            feedbackAttainment * 100,
+                            initialQuality.status.rawValue,
+                            feedbackQuality.status.rawValue
+                        )
+                    }
+                } catch {
+                    feedbackTrace = "反馈渲染/复测失败，保留已完成首轮结果：\(error.localizedDescription)"
+                }
+            }
+            phase = "completed"
+            let regionalExecution = renderer.regionalExecutionDetails(
+                for: selectedRecipe,
+                analysis: analysis
             )
             let aestheticProxy = PhotographyAestheticProgressScorer().score(
                 source: analysis,
-                regionImpacts: impacts
+                regionImpacts: selectedImpacts
             )
             let parameters = decision.parameterEvidence.map { evidence in
-                "\(evidence.key.rawValue)=\(String(format: "%.4f", evidence.actualValue)){input=\(evidence.inputEvidence);target=\(evidence.target);rules=\(evidence.knowledgeRuleIDs.map(\.rawValue).joined(separator: ","));status=\(evidence.decisionStatus.rawValue)}"
+                var executedEvidence = evidence.refreshingActualValue(from: selectedRecipe)
+                if selectedIteration > 0 {
+                    executedEvidence = executedEvidence.appendingKnowledgeRules([.renderMeasureFeedback])
+                }
+                return "\(executedEvidence.key.rawValue)=\(String(format: "%.4f", executedEvidence.actualValue)){input=\(executedEvidence.inputEvidence);target=\(executedEvidence.target);rules=\(executedEvidence.knowledgeRuleIDs.map(\.rawValue).joined(separator: ","));status=\(executedEvidence.decisionStatus.rawValue)}"
             }.joined(separator: ";")
             let duration = Self.milliseconds(ProcessInfo.processInfo.systemUptime - start)
-            let passedTechnicalQuality = quality.status != .failed
+            let passedTechnicalQuality = selectedQuality.status != .failed
             let details = [
                 "[D] 状态=measuredAestheticDiagnostic；不读取摄影参考，不替换 B",
-                "[D] renderStatus=completed；technicalQualityStatus=\(quality.status.rawValue)；eligibleToReplaceB=false",
+                "[D] renderStatus=completed；technicalQualityStatus=\(selectedQuality.status.rawValue)；eligibleToReplaceB=false",
                 "[D] 视觉理解=\(analysis.visualSceneUnderstanding.traceSummary)",
                 "[D] 摄影问题=\(problems.problems.map { $0.kind.rawValue }.joined(separator: ","))",
                 "[D] 审美目标=\(decision.aestheticPlan?.traceSummary ?? "未生成")",
                 "[D] 动态参数=\(parameters)",
+                String(format: "[D] 同定义复测=源亮度 %.4f/反差 %.4f/饱和 %.4f；首轮 %.4f/%.4f/%.4f；最终 %.4f/%.4f/%.4f；反馈次数=%d",
+                       analysis.averageLuminance, analysis.contrastRange, analysis.averageSaturation,
+                       initialQuality.measuredAnalysis.averageLuminance, initialQuality.measuredAnalysis.contrastRange, initialQuality.measuredAnalysis.averageSaturation,
+                       selectedQuality.measuredAnalysis.averageLuminance, selectedQuality.measuredAnalysis.contrastRange, selectedQuality.measuredAnalysis.averageSaturation,
+                       selectedIteration),
+                "[D] 有限反馈=\(feedbackTrace)",
                 "[D] 区域执行=\(regionalExecution.joined(separator: " | "))",
-                "[D] 技术质检=\(quality.status.rawValue)；问题=[\(quality.issues.map(\.rawValue).joined(separator: ","))]；目标达成=\(String(format: "%.1f", attainment * 100))%；主体代理=\(String(format: "%.1f", aestheticProxy.subjectPriority * 100))%；协调代理=\(String(format: "%.1f", aestheticProxy.regionalHarmony * 100))%；不是审美结论",
+                "[D] 技术质检=\(selectedQuality.status.rawValue)；问题=[\(selectedQuality.issues.map(\.rawValue).joined(separator: ","))]；目标达成=\(String(format: "%.1f", selectedAttainment * 100))%；主体代理=\(String(format: "%.1f", aestheticProxy.subjectPriority * 100))%；协调代理=\(String(format: "%.1f", aestheticProxy.regionalHarmony * 100))%；不是审美结论",
                 "[D] 耗时=\(duration)ms；人工偏好=待评价"
             ]
             return IsolatedDiagnosticCandidateResult(
                 preview: ProcessingStagePreview(
-                    name: "D 新版逐图自动后期（\(quality.status.rawValue)）",
-                    imageData: data
+                    name: "D 新版逐图自动后期（\(selectedQuality.status.rawValue)）",
+                    imageData: selectedData
                 ),
                 details: details,
                 stage: ProcessingStageRecord(
@@ -767,6 +858,86 @@ final class PhotoProcessingPipeline {
         }
     }
 
+    /// PT-AESTHETIC-004: at most one D-only correction is derived from pixels
+    /// remeasured by the same `PhotoAnalyzer` definitions used for the target.
+    /// It never changes B and never treats a technical score as an aesthetic
+    /// verdict.
+    private func measuredAestheticFeedbackRecipe(
+        from original: AutomaticEditingRecipe,
+        target: AdaptivePhotographyTarget,
+        plan: AestheticPhotographyPlan?,
+        rendered: PhotoAnalysis,
+        regionImpacts: [PhotographyRegionImpact]
+    ) -> AutomaticEditingRecipe? {
+        var recipe = original
+        var changed = false
+
+        if rendered.averageLuminance > target.luminanceMaximum + 0.006 {
+            let residual = rendered.averageLuminance - target.luminanceMaximum
+            recipe.exposureEV -= (residual * 0.30).clamped(to: 0...0.055)
+            recipe.brightness -= (residual * 0.07).clamped(to: 0...0.012)
+            changed = true
+        } else if rendered.averageLuminance < target.luminanceMinimum - 0.006 {
+            let residual = target.luminanceMinimum - rendered.averageLuminance
+            recipe.exposureEV += (residual * 0.30).clamped(to: 0...0.055)
+            recipe.brightness += (residual * 0.07).clamped(to: 0...0.012)
+            changed = true
+        }
+
+        let contrastResidual = target.contrast - rendered.contrastRange
+        if abs(contrastResidual) > 0.025 {
+            recipe.contrast += (contrastResidual * 0.07).clamped(to: -0.018...0.018)
+            if contrastResidual > 0 {
+                recipe.toneCurveAmount += (contrastResidual * 0.18).clamped(to: 0...0.055)
+                recipe.localContrastAmount += (contrastResidual * 0.10).clamped(to: 0...0.025)
+            } else {
+                recipe.toneCurveAmount = max(0, recipe.toneCurveAmount - min(0.045, abs(contrastResidual) * 0.12))
+                recipe.localContrastAmount = max(0, recipe.localContrastAmount - min(0.02, abs(contrastResidual) * 0.08))
+            }
+            changed = true
+        }
+
+        let saturationResidual = target.saturation - rendered.averageSaturation
+        if abs(saturationResidual) > 0.025 {
+            if saturationResidual > 0 {
+                recipe.vibrance += (saturationResidual * 0.16).clamped(to: 0...0.025)
+            } else {
+                recipe.saturation += (saturationResidual * 0.08).clamped(to: -0.018...0)
+            }
+            changed = true
+        }
+
+        if let plan, plan.colorSeparationStrength > 0.004,
+           let vegetationImpact = regionImpacts.first(where: { $0.region == .vegetation }) {
+            let desiredColorDelta = 0.005 + plan.colorSeparationStrength * 0.24
+            let colorResidual = desiredColorDelta - vegetationImpact.colorDelta
+            if colorResidual > 0.0025 {
+                recipe.hsl.yellowSaturation += (colorResidual * 1.4).clamped(to: 0...0.022)
+                recipe.hsl.yellowLuminance += (colorResidual * 0.45).clamped(to: 0...0.008)
+                changed = true
+            }
+        }
+
+        let refined = recipe.clamped()
+        return changed && refined != original ? refined : nil
+    }
+
+    private func shouldSelectMeasuredAestheticFeedback(
+        initialQuality: QualityCheckResult,
+        initialAttainment: Float,
+        feedbackQuality: QualityCheckResult,
+        feedbackAttainment: Float
+    ) -> Bool {
+        guard feedbackQuality.status != .failed else { return false }
+        if initialQuality.status == .failed { return true }
+        if feedbackQuality.status.isBetter(than: initialQuality.status) { return true }
+        if feedbackQuality.status == initialQuality.status,
+           feedbackAttainment > initialAttainment + 0.006 {
+            return true
+        }
+        return false
+    }
+
     /// M bypasses all automatic decisions and proves whether declared controls
     /// reach the same full-resolution pixel renderer and encoder used by B/D.
     private func evaluateManualCandidate(
@@ -798,6 +969,22 @@ final class PhotoProcessingPipeline {
                 expectedRegions: [],
                 regionalExecutionDetails: regionalExecution
             )
+            let impacts = try qualityService.measureRegionImpacts(
+                originalData: originalData,
+                editedData: data,
+                analysis: analysis
+            )
+            let impactTrace = impacts.map {
+                String(
+                    format: "%@{coverage=%.3f,luma=%+.4f,color=%.4f,contrast=%+.4f,changed=%.3f}",
+                    $0.region.rawValue,
+                    $0.maskCoverage,
+                    $0.luminanceDelta,
+                    $0.colorDelta,
+                    $0.contrastDelta,
+                    $0.changedPixelRatio
+                )
+            }.joined(separator: " | ")
             let duration = Self.milliseconds(ProcessInfo.processInfo.systemUptime - start)
             return IsolatedDiagnosticCandidateResult(
                 preview: ProcessingStagePreview(
@@ -810,6 +997,11 @@ final class PhotoProcessingPipeline {
                     "[M] 声明参数=\(recipe.traceSummary)",
                     "[M] 执行模块=\(renderer.executedModuleNames(for: recipe, analysis: analysis).joined(separator: " → "))",
                     "[M] 技术质检=\(quality.status.rawValue)；问题=[\(quality.issues.map(\.rawValue).joined(separator: ","))]；RGB_MAE=\(String(format: "%.4f", quality.processingImpact.normalizedMeanAbsoluteRGBDifference))",
+                    String(format: "[M] 失败阈值证据=tooHarsh: contrastRange %.4f / 上限 0.9000；neutralLuminanceLoss: coverage %.4f / 启用阈值 0.0150，luminanceShift %+.4f / 下限 -0.0650",
+                           quality.measuredAnalysis.contrastRange,
+                           quality.colorIntegrity.neutralCoverage,
+                           quality.colorIntegrity.neutralLuminanceShift),
+                    "[M] 区域实测=\(impactTrace.isEmpty ? "无可靠区域蒙版" : impactTrace)",
                     "[M] 单参数方向另见 M 探针预览；Core Image/iPhone 视觉正确性仍需真机确认"
                 ],
                 stage: ProcessingStageRecord(

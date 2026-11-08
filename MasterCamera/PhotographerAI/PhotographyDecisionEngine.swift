@@ -1330,9 +1330,19 @@ struct AestheticPhotographyPlanner {
             0,
             targetProfile.localContrastTarget - analysis.contrastRange
         )
+        let reliableRegionContrastDeficit = [
+            analysis.groundStatistics,
+            analysis.vegetationStatistics,
+            analysis.architectureStatistics
+        ]
+            .compactMap { $0 }
+            .map { max(0, min(0.66, analysis.contrastRange * 0.88) - $0.contrastRange) }
+            .max() ?? 0
         let noiseProtection = max(0.22, 1 - analysis.noiseEstimate * 2.8)
         let localContrastTarget = bounded(
-            analysis.contrastRange + contrastResidual * 0.46 * noiseProtection,
+            analysis.contrastRange
+                + max(contrastResidual * 0.46, reliableRegionContrastDeficit * 0.5)
+                    * noiseProtection,
             analysis.contrastRange...(analysis.contrastRange + 0.08)
         )
 
@@ -1341,12 +1351,25 @@ struct AestheticPhotographyPlanner {
         let channelWarmth = analysis.redAverage - analysis.blueAverage
         let colorHeadroom = max(0, 0.10 - abs(channelWarmth))
         let portraitProtection = analysis.containsPersonEvidence ? Float(0.45) : 1
-        let colorSeparation = hasMixedLightEvidence
-            ? bounded(
-                analysis.mixedLightScore * colorHeadroom * portraitProtection,
-                0...0.035
-            )
+        let mixedLightSeparation = hasMixedLightEvidence
+            ? analysis.mixedLightScore * colorHeadroom
             : 0
+        let regionalColorEvidence: Float = {
+            guard
+                analysis.vegetationMask?.qualityAssessment.isUsable == true,
+                let vegetation = analysis.vegetationStatistics
+            else { return 0 }
+            let yellowPresence = bounded(vegetation.yellowColorRatio / 0.35, 0...1)
+            let greenPresence = bounded(vegetation.greenColorRatio / 0.25, 0...1)
+            let saturationHeadroom = bounded((0.48 - vegetation.averageSaturation) / 0.48, 0...1)
+            let coexistence = min(yellowPresence, greenPresence) * 0.55
+            let dominantAccent = yellowPresence * max(0, 1 - greenPresence * 0.35) * 0.35
+            return max(coexistence, dominantAccent) * saturationHeadroom * 0.16
+        }()
+        let colorSeparation = bounded(
+            max(mixedLightSeparation, regionalColorEvidence) * portraitProtection,
+            0...0.06
+        )
         let shadowCool = bounded(
             max(0, channelWarmth) * 0.10 * colorSeparation,
             0...0.018
@@ -1685,16 +1708,26 @@ struct AdaptivePhotographyParameterSolver {
             let yellowEvidence = vegetation.yellowColorRatio
             let yellowSaturationHeadroom = max(0, 0.34 - vegetation.averageSaturation)
             let yellowStrength = bounded(yellowEvidence / 0.22, 0...1)
+            let plannedColorSeparation = bounded(
+                (aestheticPlan?.colorSeparationStrength ?? 0) / 0.06,
+                0...1
+            )
             recipe.hsl.yellowSaturation = bounded(
-                yellowSaturationHeadroom * 0.28 * yellowStrength,
-                0...0.075
+                yellowSaturationHeadroom
+                    * (0.28 + plannedColorSeparation * 0.52)
+                    * yellowStrength,
+                0...0.095
             )
             recipe.hsl.yellowLuminance = bounded(
-                max(0, analysis.averageLuminance - vegetation.averageLuminance) * 0.08 * yellowStrength,
-                0...0.03
+                max(0, analysis.averageLuminance - vegetation.averageLuminance)
+                    * (0.08 + plannedColorSeparation * 0.12)
+                    * yellowStrength,
+                0...0.045
             )
+            let measuredYellowDominance = max(0, vegetation.yellowColorRatio - vegetation.greenColorRatio)
             recipe.hsl.greenSaturation = bounded(
-                (0.27 - vegetation.averageSaturation) * 0.14,
+                (0.27 - vegetation.averageSaturation) * 0.14
+                    - measuredYellowDominance * plannedColorSeparation * 0.045,
                 -0.045...0.035
             )
             recipe.hsl.greenLuminance = bounded(

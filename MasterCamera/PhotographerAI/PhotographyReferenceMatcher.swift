@@ -351,6 +351,45 @@ struct PhotographyTargetProfile: Equatable, Sendable {
             analysis: analysis,
             problems: problems
         )
+        // The production B target deliberately remains unchanged. D uses this
+        // source-relative target so a bright image with a large white sky is not
+        // compared against a generic mid-grey destination. Every correction is
+        // derived from recoverable endpoint evidence in the current photo.
+        let recoverableHighlights = max(0, analysis.highlightRatio - analysis.whiteRatio)
+        let recoverableShadows = max(0, analysis.shadowRatio - analysis.blackRatio)
+        let whitePressure = max(0, analysis.whiteRatio - 0.04)
+        let blackPressure = max(0, analysis.blackRatio - 0.035)
+        let noiseHeadroom = max(0.25, 1 - analysis.noiseEstimate * 2.5)
+        let measuredLuminanceShift = (
+            recoverableShadows * 0.08 * noiseHeadroom
+                - recoverableHighlights * 0.22
+                - whitePressure * 0.12
+                + blackPressure * 0.05
+        ).clamped(to: -0.075...0.055)
+        let measuredLuminance = (analysis.averageLuminance + measuredLuminanceShift)
+            .clamped(to: 0.26...0.7)
+        let measuredHalfWidth = (0.042 + baseline.atmosphereProtection * 0.018)
+            .clamped(to: 0.038...0.06)
+        let measuredTarget = AdaptivePhotographyTarget(
+            luminance: measuredLuminance,
+            luminanceMinimum: (measuredLuminance - measuredHalfWidth).clamped(to: 0.2...0.68),
+            luminanceMaximum: (measuredLuminance + measuredHalfWidth).clamped(to: 0.3...0.76),
+            contrast: baseline.contrast,
+            shadowRatio: baseline.shadowRatio,
+            highlightRatio: baseline.highlightRatio,
+            saturation: baseline.saturation,
+            atmosphereProtection: baseline.atmosphereProtection,
+            rationale: String(
+                format: "D 使用同一测量定义的源图相对目标：亮度 %.3f%+.3f→%.3f；可恢复高光 %.3f、可恢复阴影 %.3f、白位压力 %.3f、噪声余量 %.3f。",
+                analysis.averageLuminance,
+                measuredLuminanceShift,
+                measuredLuminance,
+                recoverableHighlights,
+                recoverableShadows,
+                whitePressure,
+                noiseHeadroom
+            )
+        )
         let subjectDelta = analysis.nonPersonPrimarySubjectStatistics.map {
             $0.averageLuminance - analysis.averageLuminance
         }
@@ -360,12 +399,12 @@ struct PhotographyTargetProfile: Equatable, Sendable {
         }
         return PhotographyTargetProfile(
             baselineTarget: baseline,
-            resolvedTarget: baseline,
+            resolvedTarget: measuredTarget,
             referenceMatch: .unavailable("D 路径不读取摄影参考；只使用当前照片测量。"),
             referenceInfluence: 0,
-            localContrastTarget: baseline.contrast,
+            localContrastTarget: measuredTarget.contrast,
             subjectBackgroundDeltaTarget: subjectDelta,
-            rationale: ["由当前照片的亮度、动态范围、颜色、噪声和可靠区域关系生成，不使用场景预设或摄影参考参数。"],
+            rationale: [measuredTarget.rationale, "目标与渲染后复测共用 PhotoAnalyzer 指标，不使用场景预设或摄影参考参数。"],
             preservedProperties: protections
         )
     }

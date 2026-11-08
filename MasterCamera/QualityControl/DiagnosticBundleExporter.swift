@@ -43,14 +43,10 @@ final class DiagnosticBundleExporter {
         let comparisonPrefixes = ["A ", "B ", "C ", "D ", "M 人工参数真实渲染"]
         for identifier in ["C", "D", "M"] {
             let candidate = photo.diagnosticCandidates.first { $0.identifier == identifier }
-            let preview = candidate.flatMap { evidence in
-                evidence.imageStageName.flatMap { stageName in
-                    photo.processingStagePreviews.first { $0.name == stageName }
-                }
-            } ?? photo.processingStagePreviews.first { preview in
-                if identifier == "M" { return preview.name.hasPrefix("M 人工参数真实渲染") }
-                return preview.name.hasPrefix("\(identifier) ")
-            }
+            let preview = Self.resolvedPreview(
+                for: candidate,
+                in: photo.processingStagePreviews
+            )
             if let preview {
                 add(
                     "images/\(identifier)_\(identifier == "D" ? "automatic_diagnostic" : identifier == "M" ? "manual_render" : "reference_candidate").jpg",
@@ -151,6 +147,24 @@ final class DiagnosticBundleExporter {
         try? FileManager.default.removeItem(at: destination)
         try NativeZipArchiveWriter.write(entries: entries, to: destination)
         return destination
+    }
+
+    /// An exported candidate image must be the exact full-resolution stage that
+    /// produced an `executed` candidate record. Prefix matching is intentionally
+    /// forbidden: it previously allowed a stale low-resolution C preview to be
+    /// exported even while the current C record was `indexUnavailable`.
+    static func resolvedPreview(
+        for candidate: DiagnosticCandidateEvidence?,
+        in previews: [ProcessingStagePreview]
+    ) -> ProcessingStagePreview? {
+        guard let candidate else { return nil }
+        guard let stageName = DiagnosticCandidateExportPolicy.resolvedStageName(
+            stateNames: candidate.states.map(\.rawValue),
+            unavailableReasons: candidate.unavailable,
+            imageStageName: candidate.imageStageName
+        ) else { return nil }
+
+        return previews.first { $0.name == stageName }
     }
 
     private func sceneAnalysisObject(photo: CapturedPhoto, sourceHash: String) -> [String: Any] {
