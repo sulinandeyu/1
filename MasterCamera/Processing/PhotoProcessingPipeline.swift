@@ -436,7 +436,7 @@ final class PhotoProcessingPipeline {
         var planned = lines.filter { line in plannedKeywords.contains { line.contains($0) } }
         var executed = lines.filter { line in executedKeywords.contains { line.contains($0) } }
         var rejected = lines.filter { line in rejectedKeywords.contains { line.contains($0) } }
-        var fallback = lines.filter { line in fallbackKeywords.contains { line.localizedCaseInsensitiveContains($0) } }
+        let fallback = lines.filter { line in fallbackKeywords.contains { line.localizedCaseInsensitiveContains($0) } }
         var unavailable = lines.filter {
             $0.contains("indexUnavailable") || $0.contains("不可用") || $0.contains("未启用")
         }
@@ -809,7 +809,7 @@ final class PhotoProcessingPipeline {
                     name: "D 新版逐图自动后期",
                     durationMilliseconds: duration,
                     executed: true,
-                    detail: "渲染完成 · 技术质检 \(passedTechnicalQuality ? "通过/警告" : "失败")（\(quality.status.rawValue)）· 仅诊断 · 未替换 B"
+                    detail: "渲染完成 · 技术质检 \(passedTechnicalQuality ? "通过/警告" : "失败")（\(selectedQuality.status.rawValue)）· 仅诊断 · 未替换 B"
                 )
             )
         } catch {
