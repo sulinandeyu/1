@@ -2222,11 +2222,6 @@ final class SceneAdaptationTests: XCTestCase {
             contrast: 0.831,
             saturation: 0.168,
             labels: ["outdoor"],
-            shadowRatio: 0.055,
-            highlightRatio: 0.253,
-            blackRatio: 0.01,
-            whiteRatio: 0.04,
-            noiseEstimate: 0.04,
             vegetationMask: vegetationMask,
             vegetationStatistics: regionStatistics(
                 luminance: 0.43,
@@ -2238,6 +2233,11 @@ final class SceneAdaptationTests: XCTestCase {
                 yellowColorRatio: 0.509,
                 greenColorRatio: 0.192
             ),
+            shadowRatio: 0.055,
+            highlightRatio: 0.253,
+            blackRatio: 0.01,
+            whiteRatio: 0.04,
+            noiseEstimate: 0.04,
             segmentation: SceneSegmentationDiagnostics(
                 status: .available,
                 reason: nil,
@@ -2253,7 +2253,13 @@ final class SceneAdaptationTests: XCTestCase {
             problems: detector.detect(in: source)
         )
 
-        XCTAssertEqual(hypotheses.map(\.kind), [.spatialEmphasis, .restrainedDepth])
+        XCTAssertEqual(
+            hypotheses.map { $0.kind.rawValue },
+            [
+                AestheticTargetHypothesisKind.spatialEmphasis.rawValue,
+                AestheticTargetHypothesisKind.restrainedDepth.rawValue
+            ]
+        )
         XCTAssertGreaterThan(
             abs(
                 hypotheses[0].profile.resolvedTarget.luminance
