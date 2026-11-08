@@ -4,7 +4,7 @@
 |---|---|---|---|---|
 | PT-TONE-001 | `PhotoAnalyzer.pixelStatistics`、`AdaptivePhotographyTargetGenerator`、`AdaptivePhotographyParameterSolver` | `CoreImageRenderer` 曝光、高光阴影、黑点、曲线 | 端点裁切与氛围保护 | 决策测试已有；iPhone 视觉待验收 |
 | PT-TONE-002 | `noiseEstimate`、shadow/black ratio | 阴影恢复、亮度蒙版、降噪 | 夜景/高噪声减弱 | 决策测试已有 |
-| PT-COLOR-001 | `NeutralColorStatistics`、`PhotoProblemDetector` | `CITemperatureAndTint` 源白点→目标白点 | 覆盖率、混合光、人物保护 | 本阶段接入；真机待验收 |
+| PT-COLOR-001 | `NeutralColorStatistics`、`PhotoProblemDetector` | `CITemperatureAndTint` 动态温度/色调调整映射 | 覆盖率、混合光、人物保护 | macOS 像素方向测试已加入；iPhone 视觉待验收 |
 | PT-COLOR-003 | `PhotoAnalyzer` sRGB 测量 | 扩展线性 sRGB 工作空间、sRGB 输出、编码域 HSL | 禁止滑块单位直传 | 静态确认；真机导出待验收 |
 | PT-LOCAL-001 | `NormalizedPhotoMask.qualityAssessment` | `LocalAdjustmentProcessor`、`SkyAdjustmentProcessor` | 空/宽/碎片蒙版跳过 | 自动测试已有；Vision 真机待验收 |
 | PT-LOCAL-002 | 亮度区间残差 | `LuminanceZoneProcessor` | 不冒充语义局部精修 | 自动测试已有 |
@@ -30,7 +30,7 @@
 ## 已证实差距
 
 1. 旧白平衡诊断使用全图 RGB 均值，不能区分照明色偏与主体固有颜色。
-2. `CITemperatureAndTint` 已修正为 Apple 定义的“实测源白点→中性目标白点”；源白点仍是 sRGB 低分辨率近似估计，不能宣称具备专业 RAW 域 AWB。
+2. `CITemperatureAndTint` 的输入仍遵守 Apple 的 `neutral` / `targetNeutral` API 语义；项目中的 `temperatureShift` / `tintShift` 是求解器输出的校正方向，不冒充 RAW 域绝对色温。正负方向由真实 Core Image 像素测试约束，仍需 iPhone 视觉验收。
 3. 局部蒙版有可靠度检查，但 Vision/Core Image 只能在 Apple 运行环境完成真实端到端验证。
 4. 候选评价已有技术指标，专业审美仍需经过授权案例和人工偏好校准。
 5. 内置 DETR panoptic 模型此前只输出五组环境蒙版；本阶段复用同一模型增加类级人物、车辆、动物、食物/果实、工作区、人工光源和道路证据，但它仍不具备摄影意图或实例关系理解。

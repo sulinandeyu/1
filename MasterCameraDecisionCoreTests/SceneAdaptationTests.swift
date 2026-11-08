@@ -1903,22 +1903,47 @@ final class SceneAdaptationTests: XCTestCase {
         XCTAssertEqual(sample.g, sample.b, accuracy: 1.0 / 255.0)
     }
 
-    func testWhiteBalanceTemperatureDirectionsAreOpposedWithoutNeutralGreenCast() throws {
+    func testWhiteBalanceTemperatureDirectionsMatchSolverSemanticsWithoutGreenCast() throws {
         let neutral = constantImage(width: 16, height: 16, value: 0.55)
-        let coolCorrection = try meanRGB(CoreImageParameterKernel.whiteBalance(
+        let positiveAdjustment = try meanRGB(CoreImageParameterKernel.whiteBalance(
             neutral,
             temperatureShift: 350,
             tintShift: 0
         ))
-        let warmCorrection = try meanRGB(CoreImageParameterKernel.whiteBalance(
+        let negativeAdjustment = try meanRGB(CoreImageParameterKernel.whiteBalance(
             neutral,
             temperatureShift: -350,
             tintShift: 0
         ))
 
-        XCTAssertLessThan(coolCorrection.r - coolCorrection.b, warmCorrection.r - warmCorrection.b)
-        XCTAssertLessThan(abs(coolCorrection.g - ((coolCorrection.r + coolCorrection.b) / 2)), 0.12)
-        XCTAssertLessThan(abs(warmCorrection.g - ((warmCorrection.r + warmCorrection.b) / 2)), 0.12)
+        // The solver emits positive values to warm a measured cool cast and
+        // negative values to cool a measured warm cast.
+        XCTAssertGreaterThan(
+            positiveAdjustment.r - positiveAdjustment.b,
+            negativeAdjustment.r - negativeAdjustment.b
+        )
+        XCTAssertLessThan(abs(positiveAdjustment.g - ((positiveAdjustment.r + positiveAdjustment.b) / 2)), 0.12)
+        XCTAssertLessThan(abs(negativeAdjustment.g - ((negativeAdjustment.r + negativeAdjustment.b) / 2)), 0.12)
+    }
+
+    func testWhiteBalancePositiveTintCorrectsMeasuredGreenBias() throws {
+        let neutral = constantImage(width: 16, height: 16, value: 0.55)
+        let positiveAdjustment = try meanRGB(CoreImageParameterKernel.whiteBalance(
+            neutral,
+            temperatureShift: 0,
+            tintShift: 8
+        ))
+        let negativeAdjustment = try meanRGB(CoreImageParameterKernel.whiteBalance(
+            neutral,
+            temperatureShift: 0,
+            tintShift: -8
+        ))
+        let positiveGreenBias = positiveAdjustment.g
+            - ((positiveAdjustment.r + positiveAdjustment.b) / 2)
+        let negativeGreenBias = negativeAdjustment.g
+            - ((negativeAdjustment.r + negativeAdjustment.b) / 2)
+
+        XCTAssertLessThan(positiveGreenBias, negativeGreenBias)
     }
 
     func testOrangeHSLDoesNotActLikeGlobalSaturation() throws {
