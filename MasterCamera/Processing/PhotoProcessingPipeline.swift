@@ -298,6 +298,19 @@ final class PhotoProcessingPipeline {
             AppLogger.imageEngine.error("处理阶段预览生成失败：\(error.localizedDescription)")
         }
 
+        let diagnosticCandidates = photo.isDiagnosticImport
+            ? makeDiagnosticCandidateEvidence(
+                finalDecision: finalDecision,
+                finalRecipe: finalEdit.recipe,
+                finalAnalysis: finalEdit.analysis,
+                finalQualityCheck: finalEdit.qualityCheck,
+                finalFallbackReason: finalEdit.fallbackReason,
+                referenceValidation: referenceValidation,
+                measuredAestheticValidation: measuredAestheticValidation,
+                manualValidation: manualValidation
+            )
+            : []
+
         // 8. 返回可预览的原片与成片；用户确认后由 PhotoLibraryManager 保存。
         return CapturedPhoto(
             originalImageData: photo.originalImageData,
@@ -311,7 +324,158 @@ final class PhotoProcessingPipeline {
             qualityCheck: finalEdit.qualityCheck,
             processingDiagnostics: diagnosticsResult?.diagnostics,
             differenceImageData: diagnosticsResult?.differenceImageData,
-            processingStagePreviews: stagePreviews
+            processingStagePreviews: stagePreviews,
+            diagnosticCandidates: diagnosticCandidates
+        )
+    }
+
+    private func makeDiagnosticCandidateEvidence(
+        finalDecision: PhotographyDecision,
+        finalRecipe: AutomaticEditingRecipe,
+        finalAnalysis: PhotoAnalysis?,
+        finalQualityCheck: QualityCheckResult,
+        finalFallbackReason: String?,
+        referenceValidation: ReferenceValidationCandidateResult?,
+        measuredAestheticValidation: IsolatedDiagnosticCandidateResult?,
+        manualValidation: IsolatedDiagnosticCandidateResult?
+    ) -> [DiagnosticCandidateEvidence] {
+        let parameterPlan = finalDecision.parameterEvidence.map { item in
+            let rules = item.knowledgeRuleIDs.map(\.rawValue).joined(separator: ",")
+            return "\(item.key.rawValue){input=\(item.inputEvidence);target=\(item.target);value=\(item.actualValue);region=\(item.affectedRegion.rawValue);status=\(item.decisionStatus.rawValue);rules=\(rules)}"
+        }
+        let bRegionalExecution = renderer.regionalExecutionDetails(
+            for: finalRecipe,
+            analysis: finalAnalysis
+        )
+        var bStates: [DiagnosticCandidateState] = [.planned, .executed]
+        var bFallback: [String] = []
+        if finalQualityCheck.fallbackApplied || finalFallbackReason != nil {
+            bStates.append(.fallback)
+            bFallback.append(finalFallbackReason ?? "质量检查应用了安全修正")
+        }
+        let a = DiagnosticCandidateEvidence(
+            identifier: "A",
+            displayName: "原图",
+            states: [.executed],
+            imageStageName: "A 原始照片",
+            planned: [],
+            executed: ["未经像素后期；作为同源输入与比较基准"],
+            rejected: [],
+            fallback: [],
+            unavailable: [],
+            qualityStatus: "source",
+            durationMilliseconds: nil
+        )
+        let b = DiagnosticCandidateEvidence(
+            identifier: "B",
+            displayName: "正式算法实际成片",
+            states: bStates,
+            imageStageName: "B 当前正式算法成片",
+            planned: [
+                "target=\(finalDecision.adaptiveTarget.summaryText)",
+                "recipe=\(finalRecipe.traceSummary)"
+            ] + parameterPlan,
+            executed: [
+                "modules=\(renderer.executedModuleNames(for: finalRecipe, analysis: finalAnalysis).joined(separator: " -> "))"
+            ] + bRegionalExecution,
+            rejected: [],
+            fallback: bFallback,
+            unavailable: [],
+            qualityStatus: finalQualityCheck.status.rawValue,
+            durationMilliseconds: nil
+        )
+        return [
+            a,
+            b,
+            evidence(
+                identifier: "C",
+                displayName: "摄影参考校准候选",
+                preview: referenceValidation?.preview,
+                details: referenceValidation?.details,
+                stage: referenceValidation?.stage,
+                nilReason: "摄影参考候选未启用或许可过滤索引不可用"
+            ),
+            evidence(
+                identifier: "D",
+                displayName: "逐图自动后期诊断候选",
+                preview: measuredAestheticValidation?.preview,
+                details: measuredAestheticValidation?.details,
+                stage: measuredAestheticValidation?.stage,
+                nilReason: "D 诊断路径未启用"
+            ),
+            evidence(
+                identifier: "M",
+                displayName: "人工参数渲染验证",
+                preview: manualValidation?.preview,
+                details: manualValidation?.details,
+                stage: manualValidation?.stage,
+                nilReason: "M 诊断路径未启用"
+            )
+        ]
+    }
+
+    private func evidence(
+        identifier: String,
+        displayName: String,
+        preview: ProcessingStagePreview?,
+        details: [String]?,
+        stage: ProcessingStageRecord?,
+        nilReason: String
+    ) -> DiagnosticCandidateEvidence {
+        let lines = details ?? []
+        let plannedKeywords = ["视觉理解", "摄影问题", "审美目标", "动态参数", "声明参数", "目标=", "参数=", "局部计划"]
+        let executedKeywords = ["renderStatus=completed", "区域执行", "执行模块", "技术质检", "耗时="]
+        let rejectedKeywords = [
+            "technicalQualityStatus=failed",
+            "qualityEvaluationFailed",
+            "renderFailed",
+            "未标记通过",
+            "质检执行失败"
+        ]
+        let fallbackKeywords = ["降级", "fallback", "安全回退"]
+        var planned = lines.filter { line in plannedKeywords.contains { line.contains($0) } }
+        var executed = lines.filter { line in executedKeywords.contains { line.contains($0) } }
+        var rejected = lines.filter { line in rejectedKeywords.contains { line.contains($0) } }
+        var fallback = lines.filter { line in fallbackKeywords.contains { line.localizedCaseInsensitiveContains($0) } }
+        var unavailable = lines.filter {
+            $0.contains("indexUnavailable") || $0.contains("不可用") || $0.contains("未启用")
+        }
+        var states: [DiagnosticCandidateState] = []
+
+        if !planned.isEmpty || stage != nil { states.append(.planned) }
+        if preview != nil { states.append(.executed) }
+        if !rejected.isEmpty {
+            states.append(.rejected)
+        }
+        if !fallback.isEmpty { states.append(.fallback) }
+        if preview == nil, unavailable.isEmpty, rejected.isEmpty {
+            unavailable = [nilReason]
+        }
+        if !unavailable.isEmpty { states.append(.unavailable) }
+        if planned.isEmpty, let stage {
+            planned = [stage.detail]
+        }
+        if executed.isEmpty, preview != nil {
+            executed = ["全分辨率诊断图片已生成：\(preview?.name ?? displayName)"]
+        }
+        if preview == nil, !lines.isEmpty, unavailable.isEmpty, rejected.isEmpty {
+            rejected = lines
+            states.append(.rejected)
+        }
+
+        let qualityLine = lines.first { $0.contains("technicalQualityStatus=") || $0.contains("质检=") }
+        return DiagnosticCandidateEvidence(
+            identifier: identifier,
+            displayName: displayName,
+            states: Array(Set(states)).sorted { $0.rawValue < $1.rawValue },
+            imageStageName: preview?.name,
+            planned: planned,
+            executed: executed,
+            rejected: rejected,
+            fallback: fallback,
+            unavailable: unavailable,
+            qualityStatus: qualityLine,
+            durationMilliseconds: stage?.durationMilliseconds
         )
     }
 
@@ -713,7 +877,7 @@ final class PhotoProcessingPipeline {
                 result = String(format: "亮度跨度 %.3f→%.3f，细节 %.3f→%.3f", source.contrastRange, edited.contrastRange, source.detailScore, edited.detailScore)
             case .temperature, .tint, .shadowColor, .midtoneColor, .highlightColor:
                 result = String(format: "RGB %.3f/%.3f/%.3f→%.3f/%.3f/%.3f", source.redAverage, source.greenAverage, source.blueAverage, edited.redAverage, edited.greenAverage, edited.blueAverage)
-            case .hue, .saturation, .vibrance, .orangeHSL, .greenHSL, .blueHSL, .localColor:
+            case .hue, .saturation, .vibrance, .orangeHSL, .yellowHSL, .greenHSL, .blueHSL, .localColor:
                 result = String(format: "平均饱和度 %.3f→%.3f", source.averageSaturation, edited.averageSaturation)
             case .noiseReduction, .sharpening:
                 result = String(format: "噪声代理 %.3f→%.3f，细节 %.3f→%.3f", source.noiseEstimate, edited.noiseEstimate, source.detailScore, edited.detailScore)

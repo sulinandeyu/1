@@ -25,10 +25,12 @@ struct SemanticObjectRegion: Equatable, Sendable {
     var traceSummary: String {
         let measured = statistics.map {
             String(
-                format: "luma=%.3f contrast=%.3f saturation=%.3f",
+                format: "luma=%.3f contrast=%.3f saturation=%.3f yellow=%.3f green=%.3f",
                 $0.averageLuminance,
                 $0.contrastRange,
-                $0.averageSaturation
+                $0.averageSaturation,
+                $0.yellowColorRatio,
+                $0.greenColorRatio
             )
         } ?? "statistics=unavailable"
         return String(
@@ -459,6 +461,11 @@ struct PhotoRegionStatistics: Equatable, Sendable {
     let greenAverage: Float
     let blueAverage: Float
     let averageSaturation: Float
+    /// Measured warm-yellow pixel share inside this mask. This is colour
+    /// evidence only; it does not claim that the pixels are leaves or objects.
+    let yellowColorRatio: Float
+    /// Measured green-dominant pixel share inside this mask.
+    let greenColorRatio: Float
     let shadowRatio: Float
     let highlightRatio: Float
 
@@ -484,6 +491,8 @@ struct PhotoRegionStatistics: Equatable, Sendable {
         var greenTotal: Float = 0
         var blueTotal: Float = 0
         var saturationTotal: Float = 0
+        var yellowCount = 0
+        var greenDominantCount = 0
         var shadowCount = 0
         var highlightCount = 0
 
@@ -504,7 +513,23 @@ struct PhotoRegionStatistics: Equatable, Sendable {
                 redTotal += red
                 greenTotal += green
                 blueTotal += blue
-                saturationTotal += maximum > 0 ? (maximum - minimum) / maximum : 0
+                let saturation = maximum > 0 ? (maximum - minimum) / maximum : 0
+                saturationTotal += saturation
+                // Broad HSV-like gates deliberately measure colour presence,
+                // not semantic identity. They are evaluated only within the
+                // supplied, quality-gated region mask.
+                if saturation >= 0.16,
+                   red >= blue + 0.06,
+                   green >= blue + 0.045,
+                   abs(red - green) <= 0.28,
+                   red >= 0.24 {
+                    yellowCount += 1
+                }
+                if saturation >= 0.14,
+                   green >= red + 0.025,
+                   green >= blue + 0.025 {
+                    greenDominantCount += 1
+                }
                 luminances.append(value)
                 if value < 0.18 { shadowCount += 1 }
                 if value > 0.85 { highlightCount += 1 }
@@ -523,6 +548,8 @@ struct PhotoRegionStatistics: Equatable, Sendable {
             greenAverage: greenTotal / count,
             blueAverage: blueTotal / count,
             averageSaturation: saturationTotal / count,
+            yellowColorRatio: Float(yellowCount) / count,
+            greenColorRatio: Float(greenDominantCount) / count,
             shadowRatio: Float(shadowCount) / count,
             highlightRatio: Float(highlightCount) / count
         )
@@ -728,21 +755,36 @@ struct SubjectPriorityProfile: Equatable, Sendable {
     static func make(from analysis: PhotoAnalysis) -> SubjectPriorityProfile {
         let hasProtectedPerson = analysis.containsPersonEvidence
             && analysis.personMask?.qualityAssessment.isUsable == true
+        let reliableEnvironmentCoverage = [
+            analysis.skyMask,
+            analysis.groundMask,
+            analysis.vegetationMask,
+            analysis.architectureMask
+        ].compactMap { mask -> Float? in
+            guard mask?.qualityAssessment.isUsable == true else { return nil }
+            return mask?.activeCoverage
+        }.reduce(0, +).clamped(to: 0...1)
+        let broadEnvironmentalComposition = reliableEnvironmentCoverage >= 0.52
         let semanticPrimary = analysis.semanticObjectRegions
             .filter {
                 $0.confidence >= 0.58
                     && $0.mask.qualityAssessment.isUsable
                     && $0.role != .pathOrRoad
                     && $0.role != .artificialLight
+                    && (!broadEnvironmentalComposition
+                        || [.person, .animal, .foodOrFruit].contains($0.role)
+                        || $0.coverage >= 0.2)
             }
             .max { left, right in
                 let leftScore = left.confidence * max(0.25, 1 - left.coverage)
                 let rightScore = right.confidence * max(0.25, 1 - right.coverage)
                 return leftScore < rightScore
             }
+        let allowGenericSaliency = !broadEnvironmentalComposition
         let confidence: Float = hasProtectedPerson
             ? 0.92
-            : (semanticPrimary?.confidence ?? analysis.salientSubjectPriorityConfidence)
+            : (semanticPrimary?.confidence
+                ?? (allowGenericSaliency ? analysis.salientSubjectPriorityConfidence : 0))
         let primary = hasProtectedPerson
             ? analysis.personMask
             : (semanticPrimary?.mask ?? (confidence >= 0.54 ? analysis.salientSubjectMask : nil))
@@ -802,7 +844,9 @@ struct SubjectPriorityProfile: Equatable, Sendable {
             confidence: confidence,
             typeDescription: type,
             evidence: primary == nil
-                ? "显著性覆盖或区域分离证据不足，明确进入整图协调模式。"
+                ? (broadEnvironmentalComposition
+                    ? "可靠环境区域覆盖较广，类级小物体不足以证明摄影主体，进入整图协调模式。"
+                    : "显著性覆盖或区域分离证据不足，明确进入整图协调模式。")
                 : (semanticPrimary == nil
                     ? "Vision 显著性、覆盖范围、区域亮度/色彩分离与细节共同达到执行阈值。"
                     : "Core ML 类级语义蒙版通过覆盖率与边界门控；它不代表实例身份或摄影意图。")
@@ -865,8 +909,22 @@ struct VisualSceneUnderstandingResult: Equatable, Sendable {
         let recognizedRegions = analysis.semanticObjectRegions.filter {
             $0.mask.qualityAssessment.isUsable && $0.confidence >= 0.5
         }
+        let broadEnvironmentalComposition = [
+            analysis.skyMask,
+            analysis.groundMask,
+            analysis.vegetationMask,
+            analysis.architectureMask
+        ].compactMap { mask -> Float? in
+            guard mask?.qualityAssessment.isUsable == true else { return nil }
+            return mask?.activeCoverage
+        }.reduce(0, +).clamped(to: 0...1) >= 0.52
         let preferredRole = recognizedRegions
             .filter { $0.role != .pathOrRoad && $0.role != .artificialLight }
+            .filter {
+                !broadEnvironmentalComposition
+                    || [.person, .animal, .foodOrFruit].contains($0.role)
+                    || $0.coverage >= 0.2
+            }
             .max { left, right in
                 semanticPriority(left, analysis: analysis) < semanticPriority(right, analysis: analysis)
             }
@@ -932,6 +990,12 @@ struct VisualSceneUnderstandingResult: Equatable, Sendable {
         }
         if subjectConfidence < 0.58 {
             unknowns.append("主要视觉对象身份/边界不确定")
+        }
+        if broadEnvironmentalComposition,
+           recognizedRegions.contains(where: {
+               ![.person, .animal, .foodOrFruit].contains($0.role) && $0.coverage < 0.2
+           }) {
+            unknowns.append("类级小物体不能单独证明摄影主体；采用全图与区域关系")
         }
         if analysis.neutralColorStatistics?.isReliable != true {
             unknowns.append("光源绝对白平衡不确定")

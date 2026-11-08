@@ -11,6 +11,9 @@ struct PhotoPreviewView: View {
     @State private var selectedStageID: String?
     @State private var isPressingOriginal = false
     @State private var showsDebugSummary = false
+    @State private var isExportingDiagnostics = false
+    @State private var diagnosticArchive: DiagnosticArchiveShareItem?
+    @State private var diagnosticExportError: String?
 
     var body: some View {
         ZStack {
@@ -54,9 +57,12 @@ struct PhotoPreviewView: View {
                     VStack(spacing: 1) {
                         Text("小苏相机")
                             .font(.system(size: 16, weight: .bold, design: .rounded))
-                        Text(selectedStageID == nil ? selectedVersion.title : "处理阶段")
+                        Text(currentDisplayTitle)
                             .font(.system(size: 10, weight: .medium))
                             .foregroundStyle(.white.opacity(0.62))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
+                            .frame(maxWidth: 150)
                     }
 
                     HStack(spacing: 10) {
@@ -141,6 +147,17 @@ struct PhotoPreviewView: View {
             .padding(.top, 8)
             .padding(.bottom, 12)
         }
+        .sheet(item: $diagnosticArchive) { item in
+            DiagnosticShareSheet(activityItems: [item.url])
+        }
+        .alert("诊断导出失败", isPresented: Binding(
+            get: { diagnosticExportError != nil },
+            set: { if !$0 { diagnosticExportError = nil } }
+        )) {
+            Button("好", role: .cancel) {}
+        } message: {
+            Text(diagnosticExportError ?? "未知错误")
+        }
     }
 
     private var versionSelector: some View {
@@ -156,7 +173,7 @@ struct PhotoPreviewView: View {
                         Image(systemName: version.iconName)
                             .font(.system(size: 12, weight: .semibold))
 
-                        Text(version.title)
+                        Text(version.title(isDiagnosticImport: photo.isDiagnosticImport))
                             .font(.system(size: 13, weight: .bold))
                             .lineLimit(1)
                     }
@@ -171,7 +188,7 @@ struct PhotoPreviewView: View {
                     )
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("查看\(version.title)")
+                .accessibilityLabel("查看\(version.title(isDiagnosticImport: photo.isDiagnosticImport))")
                 .accessibilityValue(
                     selectedVersion == version && selectedStageID == nil ? "已选择" : ""
                 )
@@ -211,16 +228,44 @@ struct PhotoPreviewView: View {
 
     private var compareHint: String {
         if let selectedStageID {
-            return "正在查看处理阶段：\(selectedStageID)；长按仍可查看原图"
+            return "正在查看：\(selectedStageID)；这不是顶部 B 正式成片，长按可查看 A 原图"
         }
 
         switch selectedVersion {
         case .edited:
-            return "长按照片可临时查看原图"
+            return photo.isDiagnosticImport
+                ? "当前为 B 正式算法成片；长按可临时查看 A 原图"
+                : "长按照片可临时查看原图"
         case .original:
             return "已保留未经处理的原图"
         case .difference:
-            return "差异图已放大 5 倍；越亮代表像素变化越明显"
+            return "A 原图与 B 正式成片的差异已放大 5 倍；不代表 D 或 M"
+        }
+    }
+
+    private var currentDisplayTitle: String {
+        if let selectedStageID {
+            return selectedStageID
+        }
+        return selectedVersion.title(isDiagnosticImport: photo.isDiagnosticImport)
+    }
+
+    private func exportDiagnosticBundle() {
+        guard !isExportingDiagnostics else { return }
+        isExportingDiagnostics = true
+        diagnosticExportError = nil
+        let capturedPhoto = photo
+        DispatchQueue.global(qos: .userInitiated).async {
+            let result = Result { try DiagnosticBundleExporter().makeArchive(for: capturedPhoto) }
+            DispatchQueue.main.async {
+                isExportingDiagnostics = false
+                switch result {
+                case let .success(url):
+                    diagnosticArchive = DiagnosticArchiveShareItem(url: url)
+                case let .failure(error):
+                    diagnosticExportError = error.localizedDescription
+                }
+            }
         }
     }
 
@@ -246,6 +291,29 @@ struct PhotoPreviewView: View {
         } else {
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 12) {
+                    if photo.isDiagnosticImport {
+                        Button(action: exportDiagnosticBundle) {
+                            HStack(spacing: 8) {
+                                if isExportingDiagnostics {
+                                    ProgressView()
+                                        .progressViewStyle(.circular)
+                                        .tint(.black)
+                                } else {
+                                    Image(systemName: "archivebox")
+                                }
+                                Text(isExportingDiagnostics ? "正在生成诊断 ZIP…" : "一键导出 A/B/D/M 诊断 ZIP")
+                                    .font(.caption.weight(.semibold))
+                            }
+                            .foregroundStyle(.black)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 10)
+                            .background(.white, in: RoundedRectangle(cornerRadius: 10))
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(isExportingDiagnostics)
+                        .accessibilityLabel("一键导出 A、B、D、M 诊断证据 ZIP")
+                    }
+
                     if !photo.processingStagePreviews.isEmpty {
                         stagePreviewStrip
                     }
@@ -375,14 +443,14 @@ private enum PhotoVersion: String, CaseIterable, Identifiable {
         rawValue
     }
 
-    var title: String {
+    func title(isDiagnosticImport: Bool) -> String {
         switch self {
         case .original:
-            return "原图"
+            return isDiagnosticImport ? "A 原图" : "原图"
         case .edited:
-            return "AI 成片"
+            return isDiagnosticImport ? "B 正式成片" : "AI 成片"
         case .difference:
-            return "差异"
+            return isDiagnosticImport ? "A↔B 差异" : "差异"
         }
     }
 
@@ -396,5 +464,20 @@ private enum PhotoVersion: String, CaseIterable, Identifiable {
             return "circle.lefthalf.filled"
         }
     }
+}
+
+private struct DiagnosticArchiveShareItem: Identifiable {
+    let id = UUID()
+    let url: URL
+}
+
+private struct DiagnosticShareSheet: UIViewControllerRepresentable {
+    let activityItems: [Any]
+
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        UIActivityViewController(activityItems: activityItems, applicationActivities: nil)
+    }
+
+    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
 }
 

@@ -41,6 +41,7 @@
 		B00000000000000000000002 /* SkyAdjustmentProcessor.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000102 /* SkyAdjustmentProcessor.swift */; };
 		B00000000000000000000003 /* DETRResnet50SemanticSegmentationF16P6.mlpackage in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000103 /* DETRResnet50SemanticSegmentationF16P6.mlpackage */; };
 		C00000000000000000000001 /* ImageProcessingDiagnostics.swift in Sources */ = {isa = PBXBuildFile; fileRef = C00000000000000000000101 /* ImageProcessingDiagnostics.swift */; };
+		C00000000000000000000002 /* DiagnosticBundleExporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = C00000000000000000000102 /* DiagnosticBundleExporter.swift */; };
 		D00000000000000000000001 /* CinematicImagingEngines.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00000000000000000000101 /* CinematicImagingEngines.swift */; };
 		E00000000000000000000001 /* PhotographyReferenceMatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = E00000000000000000000101 /* PhotographyReferenceMatcher.swift */; };
 /* End PBXBuildFile section */
@@ -82,6 +83,7 @@
 		B00000000000000000000102 /* SkyAdjustmentProcessor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkyAdjustmentProcessor.swift; sourceTree = "<group>"; };
 		B00000000000000000000103 /* DETRResnet50SemanticSegmentationF16P6.mlpackage */ = {isa = PBXFileReference; lastKnownFileType = folder.mlpackage; path = DETRResnet50SemanticSegmentationF16P6.mlpackage; sourceTree = "<group>"; };
 		C00000000000000000000101 /* ImageProcessingDiagnostics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageProcessingDiagnostics.swift; sourceTree = "<group>"; };
+		C00000000000000000000102 /* DiagnosticBundleExporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiagnosticBundleExporter.swift; sourceTree = "<group>"; };
 		D00000000000000000000101 /* CinematicImagingEngines.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CinematicImagingEngines.swift; sourceTree = "<group>"; };
 		E00000000000000000000101 /* PhotographyReferenceMatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotographyReferenceMatcher.swift; sourceTree = "<group>"; };
 		E00000000000000000000102 /* PhotographyReferenceIndex.v1.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = PhotographyReferenceIndex.v1.json; sourceTree = "<group>"; };
@@ -243,6 +245,7 @@
 				A00000000000000000000036 /* QualityCheckResult.swift */,
 				A00000000000000000000037 /* QualityCheckService.swift */,
 				C00000000000000000000101 /* ImageProcessingDiagnostics.swift */,
+				C00000000000000000000102 /* DiagnosticBundleExporter.swift */,
 			);
 			path = QualityControl;
 			sourceTree = "<group>";
@@ -379,6 +382,7 @@
 				B00000000000000000000002 /* SkyAdjustmentProcessor.swift in Sources */,
 				B00000000000000000000003 /* DETRResnet50SemanticSegmentationF16P6.mlpackage in Sources */,
 				C00000000000000000000001 /* ImageProcessingDiagnostics.swift in Sources */,
+				C00000000000000000000002 /* DiagnosticBundleExporter.swift in Sources */,
 				D00000000000000000000001 /* CinematicImagingEngines.swift in Sources */,
 				E00000000000000000000001 /* PhotographyReferenceMatcher.swift in Sources */,
 				A0000000000000000000000C /* PhotoLibraryManager.swift in Sources */,

@@ -215,6 +215,7 @@ enum PhotographyParameterKey: String, Equatable, Hashable, Sendable {
     case sharpening
     case luminanceMask
     case orangeHSL
+    case yellowHSL
     case greenHSL
     case blueHSL
 }
@@ -313,12 +314,19 @@ struct PhotographyParameterEvidence: Equatable, Sendable {
         case .localExposure: return recipe.subjectExposureEV
         case .localHighlights: return abs(recipe.highlightZoneExposureEV)
         case .localShadows: return recipe.shadowZoneExposureEV
-        case .localColor: return max(abs(recipe.hsl.greenSaturation), abs(recipe.hsl.blueSaturation))
+        case .localColor:
+            return [
+                abs(recipe.hsl.orangeSaturation),
+                abs(recipe.hsl.yellowSaturation),
+                abs(recipe.hsl.greenSaturation),
+                abs(recipe.hsl.blueSaturation)
+            ].max() ?? 0
         case .localTexture: return recipe.localContrastAmount
         case .noiseReduction: return recipe.noiseReductionAmount
         case .sharpening: return recipe.sharpeningAmount
         case .luminanceMask: return recipe.luminanceMaskStrength
         case .orangeHSL: return recipe.hsl.orangeSaturation
+        case .yellowHSL: return recipe.hsl.yellowSaturation
         case .greenHSL: return recipe.hsl.greenSaturation
         case .blueHSL: return recipe.hsl.blueSaturation
         }

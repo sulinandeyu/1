@@ -14,9 +14,9 @@
 | PT-REF-001 | `PhotographyReferenceMatcher`：当前图影调/色彩/中性色 + 语义辅助 + 许可门控 | 不产生像素参数，只返回适用性、置信度和不可迁移项 | 生产许可关闭、低置信度回退、语义不直接绑定参数 | Windows 30 查询已运行；iPhone 待验证 |
 | PT-REF-002 | `PhotographyReferenceTargetGenerator` + `AdaptivePhotographyParameterSolver(targetProfile:)` | 继续复用现有 Core Image 配方与局部处理 | 校准权重有界；不复制白平衡/HSL/曲线/直方图 | Swift 测试已写；Windows 无 Swift，远程/Apple 环境待执行 |
 | PT-REF-003 | `PhotoProcessingPipeline.evaluateReferenceCandidate` | 诊断导入生成 A/B/C，C 单独 Core Image 渲染与质检 | C 不替换 B；正式拍照不运行；失败明确记录 | 静态接入完成；iPhone 真机待执行 |
-| PT-UNDERSTANDING-001 | `PhotoAnalysis.visualSceneUnderstanding`、`SkySegmentationService.semanticObjectMasks` | 不直接改像素；向规划器提供带来源与未知项的结构化证据 | 类级蒙版不冒充实例识别；显著性不冒充对象身份 | Windows 静态接入完成；远程 Swift/iOS 编译与真机蒙版待验证 |
+| PT-UNDERSTANDING-001 | `PhotoAnalysis.visualSceneUnderstanding`、`SubjectPriorityProfile`、`SkySegmentationService.semanticObjectMasks` | 不直接改像素；向规划器提供带来源与未知项的结构化证据；广覆盖环境构图不由低覆盖非固有主体类级区域劫持 | 类级蒙版不冒充实例识别；显著性不冒充对象身份；人物/动物/食物仍优先保护 | Build 27 真机已证实车辆类级区域曾错误取得主体优先；通用环境覆盖门控已修改，待新远程编译与真机复验 |
 | PT-AESTHETIC-001 | `AestheticPhotographyPlanner` | 通过现有 `AdaptivePhotographyParameterSolver` 和主体/亮度蒙版执行视觉层级目标 | C 诊断路径专用；噪声、人物和蒙版质量限制 | 契约测试待远程 Apple 环境执行；iPhone 审美待盲测 |
-| PT-AESTHETIC-002 | `AestheticPhotographyPlanner` + 动态求解器 HSL/Color Grading | 现有 Core Image HSL、色彩分级、皮肤保护链 | 无可靠区域/混合光证据时为 0；禁止复制参考参数 | 代码接入；肤色与中性色真机验证待执行 |
+| PT-AESTHETIC-002 | `PhotoRegionStatistics.yellowColorRatio/greenColorRatio`、`AestheticPhotographyPlanner` + 动态求解器 HSL/Color Grading | 现有 Core Image HSL、色彩分级、皮肤保护链；黄色 HSL 由可靠区域内颜色比例与饱和度余量求解 | 颜色比例不冒充对象身份；无可靠区域/混合光证据时为 0；禁止复制参考参数 | Build 27 录屏证实黄色 HSL 近零；实测颜色证据已接入，待自动测试、远程编译及真机复验 |
 | PT-AESTHETIC-003 | `VisualSceneUnderstandingResult`、`AdaptivePhotographyTargetGenerator` | 参数安全上限、亮度区域与高光保护 | 氛围是约束而非固定参数来源 | 代码接入；多光照真机验证待执行 |
 | PT-LEARN-001 | `LearningEnhancementPrototype` 的模型/权重清单与 manifest | 仅允许本地研究推理；不进入 Xcode target | 代码、权重、训练数据三层许可都需满足 | DeepLPF 权重因 FiveK 研究许可被阻止分发 |
 | PT-LEARN-002 | `run_deeplpf_prototype.py` 的源图相对技术安全门 | 学习输出只作为隔离 C 候选；超限时拒绝 | 技术通过不等于审美通过；人物还需蒙版内比较 | 5 张真实手机图已运行，4 张被技术门拒绝 |

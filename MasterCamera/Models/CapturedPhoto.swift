@@ -15,6 +15,7 @@ struct CapturedPhoto: Identifiable, Equatable, Sendable {
     let processingDiagnostics: ImageProcessingDiagnostics?
     let differenceImageData: Data?
     let processingStagePreviews: [ProcessingStagePreview]
+    let diagnosticCandidates: [DiagnosticCandidateEvidence]
 
     init(
         originalImageData: Data,
@@ -28,7 +29,8 @@ struct CapturedPhoto: Identifiable, Equatable, Sendable {
         qualityCheck: QualityCheckResult? = nil,
         processingDiagnostics: ImageProcessingDiagnostics? = nil,
         differenceImageData: Data? = nil,
-        processingStagePreviews: [ProcessingStagePreview] = []
+        processingStagePreviews: [ProcessingStagePreview] = [],
+        diagnosticCandidates: [DiagnosticCandidateEvidence] = []
     ) {
         self.originalImageData = originalImageData
         // A newly captured/imported photo has no AI result yet. Keeping this empty is
@@ -45,6 +47,7 @@ struct CapturedPhoto: Identifiable, Equatable, Sendable {
         self.processingDiagnostics = processingDiagnostics
         self.differenceImageData = differenceImageData
         self.processingStagePreviews = processingStagePreviews
+        self.diagnosticCandidates = diagnosticCandidates
     }
 
     var originalImage: UIImage? {

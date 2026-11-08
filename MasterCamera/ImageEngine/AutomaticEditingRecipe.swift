@@ -612,6 +612,9 @@ struct ManualPhotographyParameters: Equatable, Sendable {
     var toneCurveAmount: Float = 0
     var toneCurveStyle: ToneCurveStyle = .neutral
     var localContrastAmount: Float = 0
+    var skyExposureEV: Float = 0
+    var skyHighlightAmount: Float = 1
+    var skySaturation: Float = 1
     var shadowZoneExposureEV: Float = 0
     var highlightZoneExposureEV: Float = 0
     var luminanceMaskStrength: Float = 0
@@ -641,9 +644,9 @@ struct ManualPhotographyParameters: Equatable, Sendable {
         recipe.vignetteIntensity = 0
         recipe.subjectExposureEV = 0
         recipe.faceExposureEV = 0
-        recipe.skyExposureEV = 0
-        recipe.skyHighlightAmount = 1
-        recipe.skySaturation = 1
+        recipe.skyExposureEV = skyExposureEV
+        recipe.skyHighlightAmount = skyHighlightAmount
+        recipe.skySaturation = skySaturation
         recipe.grainAmount = 0
         recipe.bloomIntensity = 0
         recipe.halationIntensity = 0
@@ -674,21 +677,37 @@ struct ManualPhotographyParameters: Equatable, Sendable {
 
     /// A deliberately declared control combination for renderer verification.
     /// It is not an aesthetic preset and is only enabled for diagnostic imports.
-    static let rendererVerification = ManualPhotographyParameters(
-        identifier: "manual-render-verification-v1",
-        highlightAmount: 0.74,
-        shadowAmount: 0.18,
-        contrast: 1.025,
-        blackPoint: 0.006,
-        whitePoint: 0.985,
-        toneCurveAmount: 0.16,
+    static let rendererVerification: ManualPhotographyParameters = {
+        var measuredColorExpression = ProfessionalHSLAdjustment.neutral
+        measuredColorExpression.orangeSaturation = 0.045
+        measuredColorExpression.yellowSaturation = 0.12
+        measuredColorExpression.yellowLuminance = 0.025
+        measuredColorExpression.greenSaturation = -0.055
+        measuredColorExpression.greenLuminance = -0.012
+        return ManualPhotographyParameters(
+        identifier: "manual-spatial-color-expression-v2",
+        exposureEV: -0.035,
+        highlightAmount: 0.68,
+        shadowAmount: 0.08,
+        contrast: 1.055,
+        blackPoint: 0.011,
+        whitePoint: 0.975,
+        saturation: 0.99,
+        vibrance: 0.035,
+        toneCurveAmount: 0.24,
         toneCurveStyle: .softHighlights,
-        localContrastAmount: 0.035,
-        shadowZoneExposureEV: 0.07,
-        highlightZoneExposureEV: -0.08,
-        luminanceMaskStrength: 0.48,
-        sharpeningAmount: 0.035
-    )
+        localContrastAmount: 0.075,
+        skyExposureEV: -0.075,
+        skyHighlightAmount: 0.62,
+        skySaturation: 0.985,
+        shadowZoneExposureEV: 0.025,
+        highlightZoneExposureEV: -0.11,
+        luminanceMaskStrength: 0.64,
+        hsl: measuredColorExpression,
+        noiseReductionAmount: 0.008,
+        sharpeningAmount: 0.045
+        )
+    }()
 }
 
 /// V6 的统一专业配方名称；保留旧名称以兼容现有相机与诊断数据。

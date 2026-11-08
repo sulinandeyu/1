@@ -62,6 +62,31 @@ struct ProcessingStagePreview: Identifiable, Equatable, Sendable {
     }
 }
 
+/// Structured evidence for one diagnostic output.  Keeping lifecycle states in
+/// separate arrays prevents a planned parameter from being presented as an
+/// executed pixel operation in exported evidence.
+enum DiagnosticCandidateState: String, Codable, Equatable, Hashable, Sendable {
+    case planned
+    case executed
+    case rejected
+    case fallback
+    case unavailable
+}
+
+struct DiagnosticCandidateEvidence: Codable, Equatable, Sendable {
+    let identifier: String
+    let displayName: String
+    let states: [DiagnosticCandidateState]
+    let imageStageName: String?
+    let planned: [String]
+    let executed: [String]
+    let rejected: [String]
+    let fallback: [String]
+    let unavailable: [String]
+    let qualityStatus: String?
+    let durationMilliseconds: Int?
+}
+
 struct ImageDiagnosticsResult: Sendable {
     let diagnostics: ImageProcessingDiagnostics
     let differenceImageData: Data?

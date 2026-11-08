@@ -1794,6 +1794,9 @@ final class SceneAdaptationTests: XCTestCase {
         XCTAssertEqual(recipe.luminanceMaskStrength, 0.7, accuracy: 0.0001)
         XCTAssertEqual(recipe.saturation, 1, accuracy: 0.0001)
         XCTAssertEqual(recipe.hsl, .neutral)
+        XCTAssertEqual(recipe.skyExposureEV, 0, accuracy: 0.0001)
+        XCTAssertEqual(recipe.skyHighlightAmount, 1, accuracy: 0.0001)
+        XCTAssertEqual(recipe.skySaturation, 1, accuracy: 0.0001)
         XCTAssertEqual(recipe.grainAmount, 0, accuracy: 0.0001)
     }
 
@@ -2035,6 +2038,108 @@ final class SceneAdaptationTests: XCTestCase {
             darkDecision.parameterEvidence.map(\.actualValue),
             brightDecision.parameterEvidence.map(\.actualValue)
         )
+    }
+
+    func testBroadEnvironmentDoesNotLetSmallVehicleClassMaskBecomePhotographicSubject() {
+        func mask(active: Int) -> NormalizedPhotoMask {
+            NormalizedPhotoMask(
+                width: 8,
+                height: 8,
+                pixels: Data((0..<64).map { $0 < active ? UInt8(255) : UInt8(0) })
+            )
+        }
+        let vehicleMask = mask(active: 8)
+        let vehicle = SemanticObjectRegion(
+            role: .vehicle,
+            mask: vehicleMask,
+            confidence: 0.89,
+            statistics: regionStatistics(
+                luminance: 0.52,
+                contrast: 0.5,
+                saturation: 0.18,
+                red: 0.5,
+                green: 0.5,
+                blue: 0.49
+            )
+        )
+        let analysis = fixture(
+            luminance: 0.58,
+            contrast: 0.55,
+            saturation: 0.2,
+            labels: ["outdoor", "road", "plant"],
+            skyMask: mask(active: 7),
+            groundMask: mask(active: 21),
+            vegetationMask: mask(active: 27),
+            semanticObjectRegions: [vehicle],
+            segmentation: SceneSegmentationDiagnostics(
+                status: .available,
+                reason: nil,
+                skyCoverage: 7.0 / 64.0,
+                groundCoverage: 21.0 / 64.0,
+                vegetationCoverage: 27.0 / 64.0,
+                waterCoverage: 0,
+                architectureCoverage: 0
+            )
+        )
+
+        XCTAssertEqual(analysis.subjectPriorityProfile.mode, .globalHarmony)
+        XCTAssertFalse(analysis.visualSceneUnderstanding.primarySubjectDescription.contains("vehicle"))
+        XCTAssertTrue(analysis.visualSceneUnderstanding.unknowns.contains {
+            $0.contains("类级小物体")
+        })
+    }
+
+    func testMeasuredYellowEvidenceChangesDYellowHSLWithoutScenePreset() {
+        let vegetationMask = NormalizedPhotoMask(
+            width: 4,
+            height: 4,
+            pixels: Data([0, 255, 255, 0, 255, 255, 255, 255, 255, 255, 255, 255, 0, 255, 255, 0])
+        )
+        func analysis(yellowRatio: Float) -> PhotoAnalysis {
+            fixture(
+                luminance: 0.52,
+                contrast: 0.48,
+                saturation: 0.21,
+                labels: ["outdoor"],
+                vegetationMask: vegetationMask,
+                vegetationStatistics: regionStatistics(
+                    luminance: 0.39,
+                    contrast: 0.46,
+                    saturation: 0.2,
+                    red: 0.42,
+                    green: 0.4,
+                    blue: 0.25,
+                    yellowColorRatio: yellowRatio,
+                    greenColorRatio: 0.34
+                ),
+                segmentation: SceneSegmentationDiagnostics(
+                    status: .available,
+                    reason: nil,
+                    skyCoverage: 0,
+                    groundCoverage: 0,
+                    vegetationCoverage: vegetationMask.activeCoverage,
+                    waterCoverage: 0,
+                    architectureCoverage: 0
+                )
+            )
+        }
+        let noYellow = analysis(yellowRatio: 0)
+        let measuredYellow = analysis(yellowRatio: 0.18)
+        let noYellowDecision = engine.makeDecision(
+            for: noYellow,
+            problems: detector.detect(in: noYellow),
+            enableMeasuredAestheticPlanning: true
+        )
+        let measuredDecision = engine.makeDecision(
+            for: measuredYellow,
+            problems: detector.detect(in: measuredYellow),
+            enableMeasuredAestheticPlanning: true
+        )
+
+        XCTAssertEqual(noYellowDecision.recipe.hsl.yellowSaturation, 0, accuracy: 0.0001)
+        XCTAssertGreaterThan(measuredDecision.recipe.hsl.yellowSaturation, 0.02)
+        let evidenceValue = measuredDecision.parameterEvidence.first { $0.key == .yellowHSL }?.actualValue
+        XCTAssertEqual(evidenceValue ?? -1, measuredDecision.recipe.hsl.yellowSaturation, accuracy: 0.0001)
     }
 
     private func syntheticImage(
@@ -2345,6 +2450,8 @@ final class SceneAdaptationTests: XCTestCase {
         red: Float,
         green: Float,
         blue: Float,
+        yellowColorRatio: Float = 0,
+        greenColorRatio: Float = 0,
         shadowRatio: Float = 0.02,
         highlightRatio: Float = 0.06
     ) -> PhotoRegionStatistics {
@@ -2355,6 +2462,8 @@ final class SceneAdaptationTests: XCTestCase {
             greenAverage: green,
             blueAverage: blue,
             averageSaturation: saturation,
+            yellowColorRatio: yellowColorRatio,
+            greenColorRatio: greenColorRatio,
             shadowRatio: shadowRatio,
             highlightRatio: highlightRatio
         )

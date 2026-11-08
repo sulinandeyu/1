@@ -158,3 +158,13 @@
 - 已补齐诊断导出：相册保存保留 A/B，并按存在情况分别导出 C/D/M，文件名带明确版本标识。
 - 授权收口：`PhotographyReferenceIndex.v1.json` 的 `productionUseAllowed=false`，因此已从 iOS App Resources 移除；Package 内仍可用于非分发的验证测试。合规内部构建中 C 会明确不可用，不能用 D 或固定参数伪装 C。
 - Windows 限制：本机没有 Swift/Xcode/Core Image 运行时；上述 Swift/Core Image 测试必须由远程 macOS `swift test` 实际执行，结果将在工作流完成后补记。
+
+# 2026-11-08：Build 27 真机证据与诊断导出（进行中）
+
+- 已读取 `Build27_真机测试` 全部三张图片和完整录屏，并与 `PhotoPreviewView`、`PhotoProcessingPipeline`、D/M 渲染链交叉验证。
+- 已确认顶部“AI 成片”为 B；D 仅在阶段预览，技术质检通过但未替换 B；C 因许可/索引门控不可用。
+- 已新增结构化 A/B/C/D/M 状态证据和原生 ZIP32 一键导出实现；包含实际图片、探针、蒙版、参数、质检、性能和设备版本信息，等待远程 iOS 编译验证。
+- 已修复广覆盖环境构图被低覆盖类级物体劫持主体优先的问题；新增可靠区域黄色/绿色比例测量和测量驱动黄色 HSL 求解，不绑定秋季场景。
+- 已加强仅用于诊断的 M 渲染表达验证；不改变普通拍照 B。
+- 实际证据与根因详见 `docs/BUILD27_REAL_DEVICE_DIAGNOSIS.md`。
+- 下一步：完成 Swift 编译问题修复、远程 iOS Build 与自动测试；通过后只汇报构建计划，不上传 TestFlight。

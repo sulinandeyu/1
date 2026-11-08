@@ -1364,6 +1364,13 @@ struct AestheticPhotographyPlanner {
            (analysis.groundMask?.activeCoverage ?? 0) > 0.08 {
             emphasized.append("地面/道路空间引导")
         }
+        if let vegetation = analysis.vegetationStatistics,
+           analysis.vegetationMask?.qualityAssessment.isUsable == true,
+           vegetation.yellowColorRatio >= 0.035 {
+            emphasized.append(
+                String(format: "植被区域内实测暖黄色关系（占比 %.1f%%，不推断物体身份）", vegetation.yellowColorRatio * 100)
+            )
+        }
         var subdued: [String] = []
         if analysis.architectureMask?.qualityAssessment.isUsable == true,
            analysis.subjectPriorityProfile.mode == .primarySubject,
@@ -1381,6 +1388,9 @@ struct AestheticPhotographyPlanner {
         let rationale = [
             "视觉理解：\(understanding.primarySubjectDescription)，置信度 \(String(format: "%.1f", understanding.subjectConfidence * 100))%。",
             String(format: "原图亮度 %.3f、反差 %.3f、阴影 %.3f、高光 %.3f、噪声 %.3f。", analysis.averageLuminance, analysis.contrastRange, analysis.shadowRatio, analysis.highlightRatio, analysis.noiseEstimate),
+            analysis.vegetationStatistics.map {
+                String(format: "可靠植被区域：黄色比例 %.3f、绿色比例 %.3f、饱和度 %.3f。", $0.yellowColorRatio, $0.greenColorRatio, $0.averageSaturation)
+            } ?? "无可靠植被区域颜色统计。",
             "参考特征只校准目标关系，影响 \(String(format: "%.1f", targetProfile.referenceInfluence * 100))%；不复制曲线、HSL 或白平衡。"
         ]
         let planningConfidence = targetProfile.referenceApplied
@@ -1672,6 +1682,17 @@ struct AdaptivePhotographyParameterSolver {
             )
         }
         if let vegetation = analysis.vegetationStatistics {
+            let yellowEvidence = vegetation.yellowColorRatio
+            let yellowSaturationHeadroom = max(0, 0.34 - vegetation.averageSaturation)
+            let yellowStrength = bounded(yellowEvidence / 0.22, 0...1)
+            recipe.hsl.yellowSaturation = bounded(
+                yellowSaturationHeadroom * 0.28 * yellowStrength,
+                0...0.075
+            )
+            recipe.hsl.yellowLuminance = bounded(
+                max(0, analysis.averageLuminance - vegetation.averageLuminance) * 0.08 * yellowStrength,
+                0...0.03
+            )
             recipe.hsl.greenSaturation = bounded(
                 (0.27 - vegetation.averageSaturation) * 0.14,
                 -0.045...0.035
@@ -1834,6 +1855,7 @@ struct AdaptivePhotographyParameterSolver {
             (.sharpening, "补充真实边缘清晰度", String(format: "细节分数 %.3f", analysis.detailScore), "与噪声反向联动", 0, 0.22, "细节清晰且无白边", "噪声或人物照片降低上限"),
             (.luminanceMask, "分开处理高光与阴影", String(format: "可恢复阴影 %.3f / 高光 %.3f", max(0, analysis.shadowRatio - analysis.blackRatio), max(0, analysis.highlightRatio - analysis.whiteRatio)), "强度随两端问题增加", 0, 1, "不依赖统一曝光解决局部问题", "区域分割失败时仍可安全使用亮度蒙版"),
             (.orangeHSL, "只在可靠非人物主体中调整橙色关系", analysis.salientSubjectStatistics.map { String(format: "主体饱和度 %.3f", $0.averageSaturation) } ?? "无可靠主体统计", "按主体颜色余量求值", -0.18, 0.18, "果实等暖色主体与环境分离", "人物或主体不可靠时为 0"),
+            (.yellowHSL, "按可靠区域内实测黄色比例协调暖黄色", analysis.vegetationStatistics.map { String(format: "植被区域黄色比例 %.3f / 饱和度 %.3f", $0.yellowColorRatio, $0.averageSaturation) } ?? "无可靠植被区域统计", "只在黄色证据和饱和度余量同时存在时求值", -0.18, 0.18, "黄色与周围环境形成自然分离", "不识别物体身份；无可靠区域或无黄色证据时为 0"),
             (.greenHSL, "协调植被颜色层次", analysis.vegetationStatistics.map { String(format: "植被饱和度 %.3f", $0.averageSaturation) } ?? "无可靠植被统计", "接近自然植被色彩范围", -0.2, 0.2, "绿色有层次且不荧光", "无可靠植被统计时为 0"),
             (.blueHSL, "协调可靠天空颜色", analysis.skyStatistics.map { String(format: "天空饱和度 %.3f", $0.averageSaturation) } ?? "无可靠天空统计", "阴天不得增加蓝色，晴空按余量求值", -0.2, 0.16, "天空自然且不青蓝化", "无可靠天空统计时为 0")
         ]
@@ -1843,6 +1865,7 @@ struct AdaptivePhotographyParameterSolver {
             switch item.0 {
             case .localExposure: region = .subject
             case .orangeHSL: region = .subject
+            case .yellowHSL: region = .vegetation
             case .greenHSL: region = .vegetation
             case .blueHSL: region = .sky
             default: region = .global
@@ -1918,7 +1941,7 @@ struct AdaptivePhotographyParameterSolver {
             return [.neutralEvidenceWhiteBalance, .mixedLightPreservation, .colorSpaceIntegrity, .skinIsNotNeutralReference]
         case .hue, .saturation, .vibrance, .shadowColor, .midtoneColor, .highlightColor:
             return [.colorSpaceIntegrity]
-        case .localExposure, .localColor, .localTexture, .orangeHSL, .greenHSL, .blueHSL:
+        case .localExposure, .localColor, .localTexture, .orangeHSL, .yellowHSL, .greenHSL, .blueHSL:
             return [.reliableSemanticMask, .saliencyIsNotIdentity]
         case .localHighlights, .localShadows, .luminanceMask:
             return [.luminanceMaskFallback, .noiseAwareShadowRecovery]
@@ -1935,7 +1958,7 @@ struct AdaptivePhotographyParameterSolver {
         analysis: PhotoAnalysis
     ) -> PhotographyParameterDecisionStatus {
         if analysis.containsPersonEvidence,
-           [.orangeHSL, .localExposure, .localColor].contains(key),
+           [.orangeHSL, .yellowHSL, .localExposure, .localColor].contains(key),
            analysis.personMask?.isValid != true {
             return .disabledBySafety
         }
@@ -1947,7 +1970,7 @@ struct AdaptivePhotographyParameterSolver {
              .shadowColor, .midtoneColor, .highlightColor, .localExposure,
              .localHighlights, .localShadows, .localColor, .localTexture,
              .noiseReduction, .sharpening, .luminanceMask, .orangeHSL,
-             .greenHSL, .blueHSL, .exposure:
+             .yellowHSL, .greenHSL, .blueHSL, .exposure:
             neutral = key == .contrast ? 1 : 0
         }
         return abs(value - neutral) > 0.0005 ? .planned : .notNeeded
