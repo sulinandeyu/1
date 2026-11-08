@@ -194,4 +194,6 @@
 - 已分离 `technicalQualityStatus`、`targetQualityStatus`、`humanAestheticStatus`；目标达成率不再冒充审美成功率。D/E1/E2 会导出最终实际配方、同定义复测和有限反馈状态。
 - 已将 M 调整为 v4 安全表达探针：不放宽 `tooHarsh` 阈值，取消黑点并降低曲线、局部对比、HSL 和锐化；仍不进入正式算法。
 - 已扩展 ZIP、相册导出和人工偏好工具以区分 A/B/C/D/E1/E2/M；C 继续受许可门控。
-- 当前验证状态：Windows 同源像素复核已完成；Windows 无 Swift/Xcode/Core Image，远程 Swift 测试与 iOS Simulator 构建待执行；E1/E2/M v4 真机图片和人工盲测尚未执行。未经用户确认不得上传 Build 30。
+- 独立诊断分支：`codex/build29-aesthetic-target-experiments-20261108`。实现提交 `7c9f73fab367264a4ba8237469036c9e6649c5d6`；测试编译修复提交 `6db9eb46bb929b10b5fc579425099a4b31fc4d6e`。
+- 远程验证：iOS Build #75（run `42504888696`）成功，77 项 Swift 测试 0 失败，iOS Simulator `BUILD SUCCEEDED`。Build #74 的失败为测试源码参数顺序和断言类型推断，未暴露摄影核心运行错误。
+- 当前验证状态：Windows 同源像素复核、远程 Swift 测试和 Simulator 编译已完成；E1/E2/M v4 的 iPhone Core Image 全分辨率成片与人工盲测尚未执行，不能宣称优于 B。未经用户确认不得上传 Build 30。

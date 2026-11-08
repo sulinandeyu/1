@@ -90,6 +90,8 @@ M v3 的主要失败证据是全图 5–95% 跨度 `0.9523`；植被和建筑跨
 ## 5. 验证状态
 
 - Windows：Build 28/29 同源 A/B/D/M 像素、区域、中性色和 C 导出契约已实际复核。
-- Swift 单元测试：本地 Windows 无 Swift，待现有远程 iOS Build。
+- Swift 单元测试：远程 iOS Build #75（run `42504888696`）已在提交 `6db9eb46bb929b10b5fc579425099a4b31fc4d6e` 上执行，77 项测试、0 失败。
+- iOS Simulator：同一远程构建已完成 `BUILD SUCCEEDED`；Build #74 的首次失败仅来自新增测试参数顺序和枚举断言类型推断，已在 `6db9eb46` 修复。
 - Core Image E1/E2/M v4 实际像素：待远程测试与后续 iPhone 诊断，不得写为已通过。
 - 人工审美：待盲测，当前没有候选可被宣称优于 B。
+- 发布状态：诊断整改仅在独立分支 `codex/build29-aesthetic-target-experiments-20261108`，没有修改正式 B、没有上传 TestFlight、没有合并正式分支。
