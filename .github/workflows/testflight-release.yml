@@ -338,7 +338,11 @@ jobs:
           build_id = build["id"]
 
           def groups_for_build(identifier):
-              return api(f"/v1/builds/{identifier}/betaGroups?limit=200").get("data", [])
+              return query("betaGroups", {
+                  "filter[builds]": identifier,
+                  "filter[isInternalGroup]": "true",
+                  "limit": "200",
+              }).get("data", [])
 
           groups = groups_for_build(build_id)
           if not groups:
@@ -349,11 +353,7 @@ jobs:
                   "limit": "10",
               }).get("data", [])
               source_groups = groups_for_build(previous[0]["id"]) if previous else []
-              internal_groups = []
-              for linkage in source_groups:
-                  group = api(f"/v1/betaGroups/{linkage['id']}").get("data", {})
-                  if group.get("attributes", {}).get("isInternalGroup") is True:
-                      internal_groups.append(group)
+              internal_groups = source_groups
 
               if not internal_groups:
                   candidates = query("betaGroups", {"filter[app]": app_id, "limit": "200"}).get("data", [])
