@@ -360,6 +360,28 @@ jobs:
 
           detail = api(f"/v1/builds/{build_id}/buildBetaDetail").get("data", {})
           internal_state = detail.get("attributes", {}).get("internalBuildState", "UNKNOWN")
+          if internal_state == "MISSING_EXPORT_COMPLIANCE":
+              api(
+                  f"/v1/builds/{build_id}",
+                  method="PATCH",
+                  payload={
+                      "data": {
+                          "type": "builds",
+                          "id": build_id,
+                          "attributes": {"usesNonExemptEncryption": False},
+                      }
+                  },
+              )
+              print(f"Build {BUILD_NUMBER} marked usesNonExemptEncryption=false")
+              for attempt in range(20):
+                  time.sleep(15)
+                  detail = api(f"/v1/builds/{build_id}/buildBetaDetail").get("data", {})
+                  internal_state = detail.get("attributes", {}).get("internalBuildState", "UNKNOWN")
+                  print(f"Build {BUILD_NUMBER} internalBuildState={internal_state} complianceAttempt={attempt + 1}")
+                  if internal_state in {"READY_FOR_BETA_TESTING", "IN_BETA_TESTING"}:
+                      break
+                  if internal_state in {"PROCESSING_EXCEPTION", "EXPIRED"}:
+                      break
           print(f"Build {BUILD_NUMBER} final processingState=VALID")
           print(f"Build {BUILD_NUMBER} internalBuildState={internal_state}")
           print(f"Build {BUILD_NUMBER} internalGroupCount={len(groups)}")
