@@ -354,68 +354,116 @@ private enum NativeZipArchiveWriter {
     }
 
     static func write(entries: [DiagnosticExportEntry], to url: URL) throws {
-        var archive = Data()
+        guard entries.count <= Int(UInt16.max) else {
+            throw DiagnosticBundleExportError.archiveTooLarge
+        }
+
+        let partialURL = url.appendingPathExtension("partial")
+        try? FileManager.default.removeItem(at: partialURL)
+        guard FileManager.default.createFile(atPath: partialURL.path, contents: nil) else {
+            throw CocoaError(.fileWriteUnknown)
+        }
+
+        let handle: FileHandle
+        do {
+            handle = try FileHandle(forWritingTo: partialURL)
+        } catch {
+            try? FileManager.default.removeItem(at: partialURL)
+            throw error
+        }
+
+        var outputOffset: UInt64 = 0
         var centralRecords: [CentralRecord] = []
         let dos = dosTimestamp(Date())
 
-        for entry in entries {
-            guard entry.data.count <= Int(UInt32.max), archive.count <= Int(UInt32.max) else {
+        func writeChunk(_ data: Data) throws {
+            let nextOffset = outputOffset + UInt64(data.count)
+            guard nextOffset <= UInt64(UInt32.max) else {
                 throw DiagnosticBundleExportError.archiveTooLarge
             }
-            let name = Data(entry.path.utf8)
-            let crc = CRC32.checksum(entry.data)
-            let size = UInt32(entry.data.count)
-            let offset = UInt32(archive.count)
-            archive.appendLE(UInt32(0x04034b50))
-            archive.appendLE(UInt16(20))
-            archive.appendLE(UInt16(0x0800))
-            archive.appendLE(UInt16(0))
-            archive.appendLE(dos.time)
-            archive.appendLE(dos.date)
-            archive.appendLE(crc)
-            archive.appendLE(size)
-            archive.appendLE(size)
-            archive.appendLE(UInt16(name.count))
-            archive.appendLE(UInt16(0))
-            archive.append(name)
-            archive.append(entry.data)
-            centralRecords.append(CentralRecord(name: name, crc32: crc, size: size, offset: offset))
+            try handle.write(contentsOf: data)
+            outputOffset = nextOffset
         }
 
-        guard archive.count <= Int(UInt32.max), centralRecords.count <= Int(UInt16.max) else {
-            throw DiagnosticBundleExportError.archiveTooLarge
+        do {
+            for entry in entries {
+                guard entry.data.count <= Int(UInt32.max) else {
+                    throw DiagnosticBundleExportError.archiveTooLarge
+                }
+                let name = Data(entry.path.utf8)
+                guard name.count <= Int(UInt16.max), outputOffset <= UInt64(UInt32.max) else {
+                    throw DiagnosticBundleExportError.archiveTooLarge
+                }
+                let crc = CRC32.checksum(entry.data)
+                let size = UInt32(entry.data.count)
+                let offset = UInt32(outputOffset)
+                var header = Data()
+                header.appendLE(UInt32(0x04034b50))
+                header.appendLE(UInt16(20))
+                header.appendLE(UInt16(0x0800))
+                header.appendLE(UInt16(0))
+                header.appendLE(dos.time)
+                header.appendLE(dos.date)
+                header.appendLE(crc)
+                header.appendLE(size)
+                header.appendLE(size)
+                header.appendLE(UInt16(name.count))
+                header.appendLE(UInt16(0))
+                header.append(name)
+                try writeChunk(header)
+                try writeChunk(entry.data)
+                centralRecords.append(CentralRecord(name: name, crc32: crc, size: size, offset: offset))
+            }
+
+            let centralOffset64 = outputOffset
+            guard centralOffset64 <= UInt64(UInt32.max) else {
+                throw DiagnosticBundleExportError.archiveTooLarge
+            }
+            for record in centralRecords {
+                var centralHeader = Data()
+                centralHeader.appendLE(UInt32(0x02014b50))
+                centralHeader.appendLE(UInt16(20))
+                centralHeader.appendLE(UInt16(20))
+                centralHeader.appendLE(UInt16(0x0800))
+                centralHeader.appendLE(UInt16(0))
+                centralHeader.appendLE(dos.time)
+                centralHeader.appendLE(dos.date)
+                centralHeader.appendLE(record.crc32)
+                centralHeader.appendLE(record.size)
+                centralHeader.appendLE(record.size)
+                centralHeader.appendLE(UInt16(record.name.count))
+                centralHeader.appendLE(UInt16(0))
+                centralHeader.appendLE(UInt16(0))
+                centralHeader.appendLE(UInt16(0))
+                centralHeader.appendLE(UInt16(0))
+                centralHeader.appendLE(UInt32(0))
+                centralHeader.appendLE(record.offset)
+                centralHeader.append(record.name)
+                try writeChunk(centralHeader)
+            }
+            let centralSize64 = outputOffset - centralOffset64
+            guard centralSize64 <= UInt64(UInt32.max) else {
+                throw DiagnosticBundleExportError.archiveTooLarge
+            }
+            var endRecord = Data()
+            endRecord.appendLE(UInt32(0x06054b50))
+            endRecord.appendLE(UInt16(0))
+            endRecord.appendLE(UInt16(0))
+            endRecord.appendLE(UInt16(centralRecords.count))
+            endRecord.appendLE(UInt16(centralRecords.count))
+            endRecord.appendLE(UInt32(centralSize64))
+            endRecord.appendLE(UInt32(centralOffset64))
+            endRecord.appendLE(UInt16(0))
+            try writeChunk(endRecord)
+            try handle.synchronize()
+            try handle.close()
+            try? FileManager.default.removeItem(at: url)
+            try FileManager.default.moveItem(at: partialURL, to: url)
+        } catch {
+            try? handle.close()
+            try? FileManager.default.removeItem(at: partialURL)
+            throw error
         }
-        let centralOffset = UInt32(archive.count)
-        for record in centralRecords {
-            archive.appendLE(UInt32(0x02014b50))
-            archive.appendLE(UInt16(20))
-            archive.appendLE(UInt16(20))
-            archive.appendLE(UInt16(0x0800))
-            archive.appendLE(UInt16(0))
-            archive.appendLE(dos.time)
-            archive.appendLE(dos.date)
-            archive.appendLE(record.crc32)
-            archive.appendLE(record.size)
-            archive.appendLE(record.size)
-            archive.appendLE(UInt16(record.name.count))
-            archive.appendLE(UInt16(0))
-            archive.appendLE(UInt16(0))
-            archive.appendLE(UInt16(0))
-            archive.appendLE(UInt16(0))
-            archive.appendLE(UInt32(0))
-            archive.appendLE(record.offset)
-            archive.append(record.name)
-        }
-        let centralSize = UInt32(archive.count) - centralOffset
-        archive.appendLE(UInt32(0x06054b50))
-        archive.appendLE(UInt16(0))
-        archive.appendLE(UInt16(0))
-        archive.appendLE(UInt16(centralRecords.count))
-        archive.appendLE(UInt16(centralRecords.count))
-        archive.appendLE(centralSize)
-        archive.appendLE(centralOffset)
-        archive.appendLE(UInt16(0))
-        try archive.write(to: url, options: .atomic)
     }
 
     private static func dosTimestamp(_ date: Date) -> (time: UInt16, date: UInt16) {
