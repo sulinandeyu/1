@@ -300,7 +300,7 @@ final class CoreImageRenderer {
                 maximumLongEdge: 640,
                 enableAutomaticRegionalAdjustments: false
             )
-            ProcessingStagePreview(
+            return ProcessingStagePreview(
                 name: name,
                 imageData: try evaluationJPEG(from: result.finalImage)
             )
