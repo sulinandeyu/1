@@ -29,6 +29,7 @@
 | PT-TRAIN-003 | `photo_quality_metrics.py` + 人物/肤色训练约束 + `prepare_blind_comparison.py` | Lab 中性色、线性亮度、人物/肤色/纹理、裁切、饱和、光晕和局部对比拒绝；随机 B/C2 盲测 | 技术通过不等于审美通过；人物蒙版不可靠时不得伪造结论 | 12 项 Python 测试（最终以实际测试输出为准）；DeepLPF 5/5 被新安全门拒绝；人工评价仍为 0 |
 | PT-TONE-001/003、PT-COLOR-001/003、PT-LOCAL-001/002 | `ManualPhotographyParameters`、`CoreImageRenderer.renderManualEdit`、单控制探针 | M 路径使用与 B/D 相同的完整分辨率 Core Image、色彩空间和 JPEG 编码链；曝光、高光、阴影、黑点、白平衡、HSL、亮度范围分别生成诊断探针 | 仅诊断导入；显式人工值不进入正式算法，也不代表审美方案 | Windows 静态接入完成；Swift 编译、参数方向和组合效果待远程 Apple 环境/真机验证 |
 | PT-UNDERSTANDING-001、PT-AESTHETIC-001/002/003/004 | `PhotographyTargetProfile.measuredBaseline`、`enableMeasuredAestheticPlanning`、`evaluateMeasuredAestheticCandidate` | D 路径不读取摄影参考；源图相对目标、动态参数、完整分辨率渲染与一次有限复测构成可追踪闭环 | 仅诊断导入，不替换 B；技术代理不冒充审美结论 | Build 28 旧 D 已真机渲染但与 B 过近；新闭环待远程 Apple 环境及 iPhone ZIP 复验 |
+| PT-INVERSE-001/002/003 | `PhotographyInverseSolver/inverse_solver.py`：SIFT/RANSAC 配准、有效区域、当前参数边界、全局后局部优化 | Windows 忠实复刻已公开的扩展线性 sRGB、EV、黑点、多段曲线、HSL 和蒙版混合；输出全分辨率 R 与误差 | T 像素不得混合到 R；扩展边界仅诊断；Apple 私有滤镜数学不冒充已复刻 | 秋季街道同源内点率 99.5%；当前边界 R 与 T 全图 RGB MAE 0.1104，扩展缺口探针 0.0694；Core Image 像素一致性与人工审美仍待验收 |
 
 ## 已证实差距
 

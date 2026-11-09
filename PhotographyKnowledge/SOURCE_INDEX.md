@@ -32,7 +32,7 @@
 
 | ID | 来源 | 本项目采用的信息 |
 |---|---|---|
-| TUTORIAL-LOCAL-01 | `D:\MasterCamera\网上教程`（11 张网络教程截图，原发布链接与授权未核验） | 仅提炼“先判断原图问题、再建立主体/环境影调与颜色关系”的研发需求。禁止打包进 App、禁止训练、禁止上传第三方服务、禁止复制固定滑块/滤镜比例。逐图记录见 `docs/PHOTOGRAPHY_TUTORIAL_ANALYSIS.md`。 |
+| TUTORIAL-LOCAL-01 | `D:\MasterCamera\网上教程`（当前 28 张网络教程截图，原发布链接与授权未核验） | 仅作本地研发与审美方向分析。秋季街道包含经 SHA-256 确认的 A/T 副本及同一抖音号公开的 iPhone 原生编辑参数截图；参数只作来源旁证，不直接映射到 Core Image。禁止打包 App、训练、上传第三方或复制为固定预设。逐图记录与反求结果见 `docs/PHOTOGRAPHY_TUTORIAL_ANALYSIS.md`、`docs/PHOTOGRAPHY_PARAMETER_INVERSE_SOLVING.md`。 |
 
 ## 公开研究论文
 

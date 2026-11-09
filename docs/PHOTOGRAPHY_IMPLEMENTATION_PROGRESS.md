@@ -197,3 +197,11 @@
 - 独立诊断分支：`codex/build29-aesthetic-target-experiments-20261108`。实现提交 `7c9f73fab367264a4ba8237469036c9e6649c5d6`；测试编译修复提交 `6db9eb46bb929b10b5fc579425099a4b31fc4d6e`。
 - 远程验证：iOS Build #75（run `42504888696`）成功，77 项 Swift 测试 0 失败，iOS Simulator `BUILD SUCCEEDED`。Build #74 的失败为测试源码参数顺序和断言类型推断，未暴露摄影核心运行错误。
 - 当前验证状态：Windows 同源像素复核、远程 Swift 测试和 Simulator 编译已完成；E1/E2/M v4 的 iPhone Core Image 全分辨率成片与人工盲测尚未执行，不能宣称优于 B。未经用户确认不得上传 Build 30。
+# 2026-11-09 — 专业摄影参数逆向求解
+
+- 新增 `PhotographyInverseSolver` Windows 隔离实验工具；真实执行 A/T 配准、当前渲染词汇的全局反求、可靠蒙版局部反求、全分辨率输出和区域误差。
+- 秋季街道 A/T 同源验证通过：4,066 内点、99.53% 内点率、中位误差 0.147 px；底部水印区不参与拟合。
+- 当前 App 边界 R2 全图 RGB MAE 0.1104，道路亮度 0.2003 对目标 0.0638，多项参数撞限；判定当前边界未通过已知目标实验。
+- 隔离扩展边界探针 RGB MAE 0.0694，道路亮度 0.0685；证明主要缺口是区域中间调/曝光范围与局部影调表达，不能作为生产参数。
+- 未修改正式 B、拍照、保存或候选；未执行 Core Image/iPhone 验收；未上传 Build 31。
+- 下一步从 `docs/PHOTOGRAPHY_PARAMETER_INVERSE_SOLVING.md` 第 8 节继续：先做 Apple 像素一致性和诊断 M 的区域曲线表达验证，再决定是否修改自动规划。

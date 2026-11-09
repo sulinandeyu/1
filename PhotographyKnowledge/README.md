@@ -18,6 +18,7 @@
 - [人物真实性保护](PORTRAIT_PROTECTION.md)
 - [质量评价与人工偏好](QUALITY_AND_PREFERENCE.md)
 - [逐图视觉理解与摄影审美规划](AESTHETIC_PLANNING.md)
+- [专业摄影参数逆向求解](INVERSE_PARAMETER_SOLVING.md)
 - [摄影技术与代码映射](CODE_MAPPING.md)
 - [授权参考案例结构](REFERENCES_SCHEMA.md)
 - [真实失败照片回归清单](REGRESSION_CASES.md)
@@ -37,6 +38,7 @@
 - `PT-REF-002` 参考目标有限校准（来源：`ADOBE-TONE-01/02`、`ADOBE-MASK-01`、`PAPER-IQA-01`）：参考仅能以小权重调整亮度、动态范围、阴影、高光、饱和度和局部关系目标，禁止复制白平衡、HSL、曲线或直方图。输入必须包含当前照片测量和 `PT-REF-001` 结果。副作用是变化可能较小；验证方法为参数证据、Core Image 回执、质检与人工盲测。
 - `PT-REF-003` 验证路径隔离（来源：`PAPER-IQA-01/02`，以及本项目数据授权边界）：A 原图、B 当前正式算法、C 参考校准候选只在诊断导入启用，C 不替换 B。副作用是诊断处理时间和内存增加；验证方法为预览名称、处理阶段日志和正式拍照未执行记录。
 - `PT-UNDERSTANDING-001`、`PT-AESTHETIC-001/002/003` 见 [逐图视觉理解与摄影审美规划](AESTHETIC_PLANNING.md)：它们分别约束语义证据边界、视觉层级、区域颜色协调与摄影氛围保护。
+- `PT-INVERSE-001/002/003` 见 [专业摄影参数逆向求解](INVERSE_PARAMETER_SOLVING.md)：仅用于同源 A/T 的研发验证，分别约束配准、渲染器内反求以及表达能力/安全范围分离；反求参数不得变成场景预设。
 
 ## 学习型增强准入规则
 
