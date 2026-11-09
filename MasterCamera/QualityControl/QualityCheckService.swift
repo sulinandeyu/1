@@ -247,7 +247,7 @@ final class QualityCheckService {
             (.person, analysis.personMask),
             (.subject, analysis.salientSubjectMask)
         ]
-        return regions.compactMap { region, optionalMask in
+        return regions.compactMap { region, optionalMask -> PhotographyRegionImpact? in
             guard let mask = optionalMask, mask.isValid else { return nil }
             let exclusions: [NormalizedPhotoMask]
             switch region {
