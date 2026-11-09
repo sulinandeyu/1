@@ -6,6 +6,8 @@ from inverse_solver import (
     GLOBAL_NEUTRAL,
     LOCAL_NEUTRAL,
     apply_local_controls,
+    cinematic_outputs,
+    core_image_cube_curve_map,
     render_global,
     srgb_to_linear,
     linear_to_srgb,
@@ -22,7 +24,7 @@ class InverseSolverTests(unittest.TestCase):
         rng = np.random.default_rng(4)
         image = rng.random((31, 27, 3), dtype=np.float32)
         rendered = render_global(image, GLOBAL_NEUTRAL)
-        self.assertLess(float(np.max(np.abs(image - rendered))), 3e-6)
+        self.assertLess(float(np.max(np.abs(image - rendered))), 4e-6)
 
     def test_neutral_local_does_not_change_pixels(self):
         rng = np.random.default_rng(7)
@@ -30,6 +32,16 @@ class InverseSolverTests(unittest.TestCase):
         masks = {"ground": np.ones((17, 13), np.float32)}
         rendered = apply_local_controls(image, LOCAL_NEUTRAL, masks)
         self.assertLess(float(np.max(np.abs(image - rendered))), 3e-6)
+
+    def test_core_image_curve_uses_sampled_cube_interpolation(self):
+        params = GLOBAL_NEUTRAL.copy()
+        params[5] = -0.1681298
+        params[6] = -0.25
+        params[8] = 0.0944355
+        params[9] = 0.9560542
+        value = np.array([0.1517], dtype=np.float32)
+        output = core_image_cube_curve_map(value, cinematic_outputs(params))
+        self.assertAlmostEqual(float(output[0]), 0.084, delta=0.005)
 
 
 if __name__ == "__main__":

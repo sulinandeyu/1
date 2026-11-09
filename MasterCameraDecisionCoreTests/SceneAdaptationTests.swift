@@ -1879,10 +1879,10 @@ final class SceneAdaptationTests: XCTestCase {
         XCTAssertEqual(production.contrast, 1.14, accuracy: 0.0001)
         XCTAssertEqual(production.lowerMidtoneLift, -0.08, accuracy: 0.0001)
         XCTAssertEqual(production.midtoneBias, -0.08, accuracy: 0.0001)
-        XCTAssertEqual(research.exposureEV, -0.5280169, accuracy: 0.0001)
-        XCTAssertEqual(research.contrast, 1.2017435, accuracy: 0.0001)
-        XCTAssertEqual(research.lowerMidtoneLift, -0.1681298, accuracy: 0.0001)
-        XCTAssertEqual(research.midtoneBias, -0.25, accuracy: 0.0001)
+        XCTAssertEqual(research.exposureEV, -1.0368538, accuracy: 0.0001)
+        XCTAssertEqual(research.contrast, 1.2649534, accuracy: 0.0001)
+        XCTAssertEqual(research.lowerMidtoneLift, -0.1326854, accuracy: 0.0001)
+        XCTAssertEqual(research.midtoneBias, 0.1999361, accuracy: 0.0001)
         XCTAssertEqual(ManualPhotographyParameters.inverseR3Verification.renderingBoundary, .inverseResearch)
     }
 
@@ -1907,8 +1907,8 @@ final class SceneAdaptationTests: XCTestCase {
             semanticMask: mask,
             adjustment: ManualRegionalToneAdjustment(
                 region: .ground,
-                exposureEV: -0.6,
-                midtoneBias: -0.10,
+                exposureEV: -0.85,
+                midtoneBias: -0.18,
                 luminanceLowerBound: 0.2,
                 luminanceUpperBound: 0.8,
                 luminanceFeather: 0.04
@@ -1930,21 +1930,21 @@ final class SceneAdaptationTests: XCTestCase {
         let exposed = CoreImageParameterKernel.exposure(source, ev: recipe.exposureEV)
         assertRGB8(
             try rgba8(exposed),
-            expected: [[25, 53, 108], [80, 108, 135], [178, 88, 28], [153, 144, 32], [32, 118, 54], [170, 170, 170]],
+            expected: [[20, 44, 91], [68, 91, 115], [152, 74, 22], [130, 122, 26], [26, 100, 45], [145, 145, 145]],
             tolerance: 2,
             stage: "linear-sRGB exposure"
         )
         let blackAdjusted = CoreImageParameterKernel.blackPoint(exposed, amount: recipe.blackPoint)
         assertRGB8(
             try rgba8(blackAdjusted),
-            expected: [[10, 47, 106], [77, 106, 134], [178, 85, 15], [152, 143, 22], [22, 116, 48], [169, 169, 169]],
+            expected: [[0, 0, 81], [50, 81, 108], [148, 59, 0], [124, 116, 0], [0, 91, 0], [140, 140, 140]],
             tolerance: 3,
             stage: "black point"
         )
         let curved = CinematicToneMappingEngine().apply(to: blackAdjusted, recipe: recipe)
         assertRGB8(
             try rgba8(curved),
-            expected: [[1, 43, 82], [79, 82, 85], [133, 80, 3], [101, 91, 7], [7, 83, 44], [124, 124, 124]],
+            expected: [[0, 0, 78], [47, 78, 82], [123, 59, 0], [84, 83, 0], [0, 80, 0], [100, 100, 100]],
             tolerance: 4,
             stage: "seven-anchor curve"
         )
@@ -1960,7 +1960,7 @@ final class SceneAdaptationTests: XCTestCase {
         // above must remain tightly aligned with the Windows implementation.
         assertRGB8(
             try rgba8(hsl),
-            expected: [[0, 0, 22], [9, 22, 34], [134, 20, 0], [135, 85, 0], [35, 73, 0], [107, 107, 107]],
+            expected: [[0, 0, 0], [0, 16, 31], [115, 3, 0], [117, 85, 0], [56, 81, 0], [75, 75, 75]],
             tolerance: 18,
             stage: "private color controls plus HSL"
         )

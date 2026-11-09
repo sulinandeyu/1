@@ -150,6 +150,24 @@ def smooth_curve_map(value: np.ndarray, outputs: np.ndarray) -> np.ndarray:
     return np.where(value <= 0, outputs[0], np.where(value >= 1, outputs[-1], mapped))
 
 
+def core_image_cube_curve_map(value: np.ndarray, outputs: np.ndarray, dimension: int = 32) -> np.ndarray:
+    """Match the app's 32³ CIColorCube sampling and linear LUT interpolation.
+
+    The Swift renderer evaluates its smooth seven-anchor curve only at the cube
+    lattice. Core Image then interpolates between those lattice samples; applying
+    the analytic smooth curve directly is measurably different for steep R3
+    midtones and previously understated the Apple result by as much as 20/255.
+    """
+    value = np.clip(value, 0, 1).astype(np.float32)
+    grid = np.linspace(0, 1, dimension, dtype=np.float32)
+    samples = smooth_curve_map(grid, outputs)
+    scaled = value * np.float32(dimension - 1)
+    lower = np.floor(scaled).astype(np.int32)
+    upper = np.minimum(lower + 1, dimension - 1)
+    fraction = scaled - lower
+    return (samples[lower] * (1.0 - fraction) + samples[upper] * fraction).astype(np.float32)
+
+
 def cinematic_outputs(params: np.ndarray, strength: float = 1.0) -> np.ndarray:
     _, _, _, _, shadow_roll, lower, middle, upper, highlight_roll, white, *_ = params
     target = INPUT_ANCHORS.copy()
@@ -204,25 +222,29 @@ def render_global(encoded_rgb: np.ndarray, params: np.ndarray) -> np.ndarray:
     )
     if uses_cinematic_curve:
         outputs = cinematic_outputs(params, strength=1.0)
-        linear = smooth_curve_map(np.clip(linear, 0, 1), outputs)
+        linear = core_image_cube_curve_map(np.clip(linear, 0, 1), outputs)
     linear = apply_color_controls(linear, float(brightness), float(contrast), float(params[10]))
-    encoded = linear_to_srgb(linear)
-    return np.clip(apply_hsl(encoded, params), 0, 1).astype(np.float32)
+    # CIColorCube executes in the CIContext's extended-linear-sRGB working
+    # space. HSL therefore sees linear working values, not encoded sRGB.
+    linear = apply_hsl(linear, params)
+    return np.clip(linear_to_srgb(linear), 0, 1).astype(np.float32)
 
 
 def apply_local_controls(encoded: np.ndarray, params: np.ndarray, masks: dict[str, np.ndarray]) -> np.ndarray:
-    output = encoded.astype(np.float32).copy()
+    # The app composites all local candidates and masks in extended-linear-sRGB.
+    # Keep one linear working buffer so sequential regional edits do not blend
+    # encoded sRGB values.
+    output = srgb_to_linear(encoded.astype(np.float32))
     for index, region in enumerate(LOCAL_REGIONS):
         mask = masks.get(region)
         if mask is None or float(mask.max()) <= 0:
             continue
         ev, contrast, saturation = params[index * 3:index * 3 + 3]
-        adjusted_linear = srgb_to_linear(output) * np.float32(2.0 ** float(ev))
+        adjusted_linear = output * np.float32(2.0 ** float(ev))
         adjusted_linear = apply_color_controls(adjusted_linear, 0.0, float(contrast), float(saturation))
-        adjusted = linear_to_srgb(adjusted_linear)
         alpha = np.clip(mask[..., None], 0, 1).astype(np.float32)
-        output = adjusted * alpha + output * (1.0 - alpha)
-    return np.clip(output, 0, 1)
+        output = adjusted_linear * alpha + output * (1.0 - alpha)
+    return np.clip(linear_to_srgb(output), 0, 1)
 
 
 def register_pair(source_bgr: np.ndarray, target_bgr: np.ndarray) -> tuple[np.ndarray, np.ndarray, RegistrationEvidence]:

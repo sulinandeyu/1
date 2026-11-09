@@ -692,6 +692,7 @@ struct ManualRegionalToneAdjustment: Equatable, Sendable {
 struct ManualPhotographyParameters: Equatable, Sendable {
     let identifier: String
     var renderingBoundary: ManualRenderingBoundary = .productSafe
+    var cinematicIntensity: CinematicIntensity = .natural
     var exposureEV: Float = 0
     var highlightAmount: Float = 1
     var shadowAmount: Float = 0
@@ -728,7 +729,7 @@ struct ManualPhotographyParameters: Equatable, Sendable {
         // renderer probe: every pixel-affecting value not exposed above must be
         // reset explicitly so a future change to `naturalEnhancement` cannot
         // contaminate a one-control-at-a-time measurement.
-        recipe.cinematicIntensity = .natural
+        recipe.cinematicIntensity = cinematicIntensity
         recipe.cinematicToneStyle = .natural
         recipe.shadowRollOff = 0
         recipe.lowerMidtoneLift = 0
@@ -783,17 +784,17 @@ struct ManualPhotographyParameters: Equatable, Sendable {
 
         // Diagnostic-only boundary. These values are intentionally not used by
         // `AutomaticEditingRecipe.clamped()` and therefore cannot broaden B/D.
-        recipe.exposureEV = requested.exposureEV.clamped(to: -0.65...0.45)
-        recipe.brightness = requested.brightness.clamped(to: -0.1...0.1)
-        recipe.contrast = requested.contrast.clamped(to: 0.82...1.25)
-        recipe.blackPoint = requested.blackPoint.clamped(to: 0...0.08)
-        recipe.shadowRollOff = requested.shadowRollOff.clamped(to: -0.12...0.35)
-        recipe.lowerMidtoneLift = requested.lowerMidtoneLift.clamped(to: -0.22...0.2)
+        recipe.exposureEV = requested.exposureEV.clamped(to: -1.2...0.6)
+        recipe.brightness = requested.brightness.clamped(to: -0.15...0.12)
+        recipe.contrast = requested.contrast.clamped(to: 0.8...1.35)
+        recipe.blackPoint = requested.blackPoint.clamped(to: 0...0.1)
+        recipe.shadowRollOff = requested.shadowRollOff.clamped(to: -0.12...1)
+        recipe.lowerMidtoneLift = requested.lowerMidtoneLift.clamped(to: -0.25...0.25)
         recipe.midtoneBias = requested.midtoneBias.clamped(to: -0.28...0.2)
-        recipe.upperMidtoneSeparation = requested.upperMidtoneSeparation.clamped(to: -0.2...0.2)
-        recipe.highlightRollOff = requested.highlightRollOff.clamped(to: 0...0.55)
-        recipe.whitePoint = requested.whitePoint.clamped(to: 0.72...1)
-        recipe.saturation = requested.saturation.clamped(to: 0.82...1.2)
+        recipe.upperMidtoneSeparation = requested.upperMidtoneSeparation.clamped(to: -0.2...0.25)
+        recipe.highlightRollOff = requested.highlightRollOff.clamped(to: 0...1)
+        recipe.whitePoint = requested.whitePoint.clamped(to: 0.7...1)
+        recipe.saturation = requested.saturation.clamped(to: 0.75...1.35)
         recipe.hsl = requested.hsl.diagnosticRendererClamped()
         return recipe
     }
@@ -836,50 +837,51 @@ struct ManualPhotographyParameters: Equatable, Sendable {
     /// from B/D and exists only to compare Windows R3-W with Core Image R3-I.
     static let inverseR3Verification: ManualPhotographyParameters = {
         var fittedHSL = ProfessionalHSLAdjustment.neutral
-        fittedHSL.orangeHue = 0.0203227
-        fittedHSL.orangeLuminance = 0.1630581
-        fittedHSL.yellowHue = -0.0381788
-        fittedHSL.yellowLuminance = 0.2472106
-        fittedHSL.greenHue = -0.0797553
-        fittedHSL.greenLuminance = 0.1772954
+        fittedHSL.orangeHue = 0.0065561
+        fittedHSL.orangeLuminance = 0.1872270
+        fittedHSL.yellowHue = -0.0646570
+        fittedHSL.yellowLuminance = 0.1355930
+        fittedHSL.greenHue = -0.0799945
+        fittedHSL.greenLuminance = 0.0731797
         return ManualPhotographyParameters(
-            identifier: "inverse-r3-core-image-expression-v1",
+            identifier: "inverse-r3-core-image-expression-v2-ci-faithful",
             renderingBoundary: .inverseResearch,
-            exposureEV: -0.5280169,
-            brightness: 0.0085838,
-            contrast: 1.2017435,
-            blackPoint: 0.0068519,
-            whitePoint: 0.9560542,
-            shadowRollOff: 0.0000029,
-            lowerMidtoneLift: -0.1681298,
-            midtoneBias: -0.25,
-            highlightRollOff: 0.0944355,
-            saturation: 1.0021614,
+            cinematicIntensity: .dramatic,
+            exposureEV: -1.0368538,
+            brightness: 0.0419268,
+            contrast: 1.2649534,
+            blackPoint: 0.0259743,
+            whitePoint: 0.8880557,
+            shadowRollOff: 0.0000050,
+            lowerMidtoneLift: -0.1326854,
+            midtoneBias: 0.1999361,
+            highlightRollOff: 0.5948973,
+            saturation: 0.9272287,
             hsl: fittedHSL,
             regionalToneAdjustments: [
                 ManualRegionalToneAdjustment(
                     region: .ground,
                     exposureEV: -1,
-                    contrast: 1.0146524,
-                    saturation: 0.8839573
+                    contrast: 0.9945908,
+                    saturation: 0.9641539
                 ),
                 ManualRegionalToneAdjustment(
                     region: .vegetation,
-                    exposureEV: 0.3059486,
-                    contrast: 0.9872683,
-                    saturation: 1.0162803
+                    exposureEV: 0.3359365,
+                    contrast: 0.9753266,
+                    saturation: 1.0161514
                 ),
                 ManualRegionalToneAdjustment(
                     region: .sky,
-                    exposureEV: 0.1021978,
+                    exposureEV: 0.0547196,
                     contrast: 0.99999,
-                    saturation: 1.2160783
+                    saturation: 0.7523905
                 ),
                 ManualRegionalToneAdjustment(
                     region: .architecture,
-                    exposureEV: -0.2727453,
-                    contrast: 0.9949390,
-                    saturation: 0.9022062
+                    exposureEV: -0.4869779,
+                    contrast: 0.9928082,
+                    saturation: 0.8514957
                 )
             ]
         )

@@ -32,11 +32,14 @@ The tool reproduces the public mathematics visible in the Swift source:
 - extended-linear sRGB working values and sRGB output;
 - `CIExposureAdjust`'s EV scale;
 - the declared black-point polynomial;
-- the seven-anchor tone mapper and its smoothstep interpolation;
+- the seven-anchor tone mapper sampled into the same 32³ cube and Core Image's
+  linear lattice interpolation;
 - the continuous HSL hue weights used by `ProfessionalHSLProcessor`;
 - mask feathering, regional exposure/contrast/saturation and alpha blending.
 
-`CIColorControls`, `CIHighlightShadowAdjust`, `CITemperatureAndTint`, and
+HSL and local blending run in the same extended-linear-sRGB working domain as
+the app, with sRGB encoding only at output. `CIColorControls`,
+`CIHighlightShadowAdjust`, `CITemperatureAndTint`, and
 `CIToneCurve` are Apple implementations whose full transfer functions are not
 available on Windows. The inverse experiment therefore keeps highlight/shadow
 and white balance neutral and labels colour-controls parity as provisional.
