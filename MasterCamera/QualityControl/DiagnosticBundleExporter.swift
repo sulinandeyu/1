@@ -111,8 +111,8 @@ final class DiagnosticBundleExporter {
             "coreImageCandidate": r3ImageFile,
             "parameterIdentifier": ManualPhotographyParameters.inverseR3Verification.identifier,
             "candidateStates": r3Candidate?.states.map(\.rawValue) ?? ["unavailable"],
-            "technicalQualityStatus": r3Candidate?.technicalQualityStatus ?? "notRun",
-            "humanAestheticStatus": "awaiting_real_device_review"
+            "technicalQualityStatus": r3Candidate?.qualityStatus ?? "notRun",
+            "humanAestheticStatus": r3Candidate?.humanAestheticStatus ?? "notEvaluated"
         ]
         add(
             "evidence/R3_VALIDATION_STATUS.json",
