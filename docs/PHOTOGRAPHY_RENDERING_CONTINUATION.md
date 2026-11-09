@@ -1,12 +1,12 @@
 # 小苏相机专业调色渲染续接记录
 
-更新时间：2026-11-09（Asia/Shanghai）
+更新时间：2026-11-09（Asia/Shanghai，Build 31 真机整改远程验证完成）
 
 ## 当前状态
 
 - 当前分支：`codex/build31-r3-safety-auto-d-20261109`
 - 已验证及发布源码提交：`30ee33400b286b94c4e4bec9aa31a506bcb7c40e`
-- 当前进度提交：`30ee3340`
+- 当前整改提交：`27d4ce684d7fc33b0e61a2c460ede4e85576398b`
 - 正式 B：未修改；新增能力仅用于诊断 M / 反求 R3-I。
 - TestFlight：小苏相机 `1.0 (Build 31)` 已上传，App Store Connect 状态为 `VALID` / `READY_FOR_BETA_TESTING`，现有内部测试组可安装。
 
@@ -44,10 +44,15 @@
    - `PT-QA-003`：M/R3 首轮真实渲染失败后，按实际问题进行一次有界安全修正、重渲染和重质检；不修改质检阈值，只有状态或问题数量改善才采用。
    - 高反差源图的 D 目标不再被无条件压平到 `0.66`；增强区域处理使用中间亮度范围、阴影/高光保护及至少 `0.16` 羽化。
 22. Windows 已生成同源 A/B/D/M/T 接触表和完整区域指标：`output/build31_real_diagnosis/A_B_D_M_T_contact_sheet.jpg`、`build31_full_resolution_metrics.json`。这些是真机 Build 31 结果复核，不是新 Swift/Core Image 输出；新 D 与安全 R3 仍需远程编译和下一次真机成片验收。
+23. 远程 iOS Build #88（run `42620430980`，HEAD `c24989e3`）首次验证本轮整改，暴露新增测试自身的 Swift 参数顺序、`throws` 和类型推断编译问题；生产源码已经完成编译，但测试未运行。测试代码已按真实类型修复，没有删除断言。
+24. 远程 iOS Build #89（run `42637431505`，HEAD `17826041`）执行 83 项测试，82 项通过。唯一失败为 `testMeasuredDGeneratesProtectedEnhancedRegionalToneFromCurrentPixels`：可靠植被区域中实测黄色饱和调整只有 `0.039438`，未达到测试要求 `> 0.05`。该失败与真机反馈的 D 色彩表达过弱一致，因此没有降低断言。
+25. `PT-AESTHETIC-007` 已补充当前可靠植被蒙版内黄色相对绿色占比的有界分离证据。增益仍同时受当前饱和度余量、逐图色彩目标和 `0.14` 上限约束；不读取“秋季”“道路”等场景名称，不是固定模板。
+26. 远程 iOS Build #90（run `42638843350`，HEAD `27d4ce684d7fc33b0e61a2c460ede4e85576398b`）：83/83 Swift 测试通过、0 失败；Windows/Core Image 共享阶段一致性测试、人物保护、正式 B 隔离、动态区域目标和 R3 安全修正合同均通过；iOS Simulator App 构建成功。
+27. 已新增 `docs/BUILD31_REAL_RENDERING_DIAGNOSIS.md`，固化 Build 31 同源全分辨率 A/B/D/M/T 指标、M/R3-I 失败区域、D 过弱根因、真实代码调用链和未完成验收边界。
 
-## 正在进行
+## 当前阶段结论
 
-- Build 31 真机证据已完成根因复核。当前正在对 `codex/build31-r3-safety-auto-d-20261109` 执行静态检查、知识规则映射和远程 Apple 编译/测试；本轮禁止上传 Build 32，正式 B 未修改。
+- Build 31 真机证据、代码整改和远程 Apple 编译测试已完成。分支为 `codex/build31-r3-safety-auto-d-20261109`，验证提交为 `27d4ce68`。正式 B 未修改，本轮未上传 Build 32。
 
 ## 尚未完成 / 真机验收项
 
@@ -58,8 +63,8 @@
 
 ## 下一步
 
-1. 完成当前分支远程 Swift 测试、Core Image 像素测试和 iOS Simulator 构建；若失败，只修复真实编译/测试问题并重跑。
-2. 核实 B 输出路径没有读取 `AdaptiveRegionalTonePlan`，并复核 D 的执行回执与实际计划一致。
-3. 测试通过后等待用户决定是否准备下一内部诊断版；未经确认不上传 Build 32。
-4. 下一真机版需导出旧 D、新 D、安全 R3 及对应参数/区域质检，再完成秋季街道和跨场景/人物人工验收。
+1. 等待用户决定是否准备下一内部诊断版；未经确认不上传 Build 32。
+2. 下一真机版需导出旧 D、新 D、安全 R3 及对应参数/区域质检，再完成秋季街道和跨场景/人物人工验收。
+3. 安全 R3 必须实际消除 `tooHarsh`、`neutralLuminanceLoss` 和 `localMaskBoundaryArtifact`，不能仅凭参数合同或自动测试判定通过。
+4. 新 D 必须通过真实成片证明增强区域算子带来协调而有意义的变化；技术通过与人工摄影审美继续分开记录。
 
