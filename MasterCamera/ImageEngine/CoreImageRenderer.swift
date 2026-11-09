@@ -241,7 +241,25 @@ final class CoreImageRenderer {
         AppLogger.imageEngine.info(
             "人工参数 M 开始：id=\(parameters.identifier, privacy: .public) recipe=\(recipe.traceSummary, privacy: .public)"
         )
-        return try renderAutomaticEdit(from: data, recipe: recipe, analysis: analysis)
+        let result = try processImage(
+            data: data,
+            recipe: recipe,
+            analysis: analysis,
+            enableAutomaticRegionalAdjustments: false,
+            manualRegionalToneAdjustments: parameters.regionalToneAdjustments
+        )
+        guard let renderedJPEG = context.jpegRepresentation(
+            of: result.finalImage,
+            colorSpace: outputColorSpace,
+            options: [:]
+        ) else {
+            throw ImageRenderingError.renderFailed
+        }
+        try validateEncodedGeometry(renderedJPEG, expectedCanvas: result.canvas)
+        return metadataPreservingJPEG(
+            renderedData: renderedJPEG,
+            originalData: data
+        ) ?? renderedJPEG
     }
 
     /// One-control-at-a-time previews make parameter direction and interaction
@@ -275,13 +293,16 @@ final class CoreImageRenderer {
             ))
         ]
         return try probes.map { name, parameters in
+            let result = try processImage(
+                data: data,
+                recipe: parameters.makeRecipe(),
+                analysis: analysis,
+                maximumLongEdge: 640,
+                enableAutomaticRegionalAdjustments: false
+            )
             ProcessingStagePreview(
                 name: name,
-                imageData: try renderEvaluationPreview(
-                    from: data,
-                    recipe: parameters.makeRecipe(),
-                    analysis: analysis
-                )
+                imageData: try evaluationJPEG(from: result.finalImage)
             )
         }
     }
@@ -290,7 +311,9 @@ final class CoreImageRenderer {
         data: Data,
         recipe: AutomaticEditingRecipe,
         analysis: PhotoAnalysis?,
-        maximumLongEdge: CGFloat? = nil
+        maximumLongEdge: CGFloat? = nil,
+        enableAutomaticRegionalAdjustments: Bool = true,
+        manualRegionalToneAdjustments: [ManualRegionalToneAdjustment] = []
     ) throws -> (finalImage: CIImage, canvas: CGRect, stages: [(String, CIImage)], timings: [TimeInterval]) {
         guard let decoded = CIImage(data: data, options: [.applyOrientationProperty: true]) else {
             throw ImageRenderingError.invalidImageData
@@ -318,9 +341,18 @@ final class CoreImageRenderer {
         let colorTime = ProcessInfo.processInfo.systemUptime - start
 
         start = ProcessInfo.processInfo.systemUptime
-        let relit = localAdjustmentProcessor.applyLocalizedRelighting(to: graded, analysis: analysis, recipe: recipe)
-        let sky = skyAdjustmentProcessor.applySkyTreatment(to: relit, analysis: analysis, recipe: recipe)
-        let separated = cinematicSpatialDepthProcessor.apply(to: sky, analysis: analysis, recipe: recipe)
+        let relit = enableAutomaticRegionalAdjustments
+            ? localAdjustmentProcessor.applyLocalizedRelighting(to: graded, analysis: analysis, recipe: recipe)
+            : graded
+        let sky = enableAutomaticRegionalAdjustments
+            ? skyAdjustmentProcessor.applySkyTreatment(to: relit, analysis: analysis, recipe: recipe)
+            : relit
+        let manualRegional = localAdjustmentProcessor.applyManualRegionalTone(
+            to: sky,
+            analysis: analysis,
+            adjustments: manualRegionalToneAdjustments
+        )
+        let separated = cinematicSpatialDepthProcessor.apply(to: manualRegional, analysis: analysis, recipe: recipe)
         let local = try checkedCanvas(applyLocalContrast(to: separated, recipe: recipe), canvas: canvas, stage: "局部空间与材质")
         let spatialTime = ProcessInfo.processInfo.systemUptime - start
 
@@ -512,7 +544,8 @@ final class CoreImageRenderer {
 
     func executedModuleNames(
         for recipe: AutomaticEditingRecipe,
-        analysis: PhotoAnalysis?
+        analysis: PhotoAnalysis?,
+        manualRegionalAdjustments: [ManualRegionalToneAdjustment] = []
     ) -> [String] {
         var modules = ["方向/色彩空间", "曝光", "高光阴影"]
         if recipe.blackPoint > 0.001 { modules.append("黑位") }
@@ -525,8 +558,15 @@ final class CoreImageRenderer {
         if recipe.luminanceMaskStrength > 0.001 { modules.append("亮度蒙版高光/阴影") }
         if recipe.colorGradeIntensity > 0.001 { modules.append("阴影/中间调/高光色彩协调") }
         if recipe.subjectExposureEV > 0.001 || recipe.faceExposureEV > 0.001 { modules.append("主体/人脸补光") }
-        modules.append(contentsOf: regionalExecutionDetails(for: recipe, analysis: analysis)
-            .filter { $0.contains("已执行") })
+        if manualRegionalAdjustments.isEmpty {
+            modules.append(contentsOf: regionalExecutionDetails(for: recipe, analysis: analysis)
+                .filter { $0.contains("已执行") })
+        } else {
+            modules.append(contentsOf: manualRegionalExecutionDetails(
+                analysis: analysis,
+                adjustments: manualRegionalAdjustments
+            ).filter { $0.contains("已执行") })
+        }
         if recipe.backgroundSeparation > 0.001,
            analysis?.personMask != nil || analysis?.salientSubjectMask != nil {
             modules.append("主体/背景空间层次")
@@ -549,6 +589,16 @@ final class CoreImageRenderer {
         localAdjustmentProcessor.regionalExecutionDetails(
             analysis: analysis,
             recipe: recipe
+        )
+    }
+
+    func manualRegionalExecutionDetails(
+        analysis: PhotoAnalysis?,
+        adjustments: [ManualRegionalToneAdjustment]
+    ) -> [String] {
+        localAdjustmentProcessor.manualRegionalExecutionDetails(
+            analysis: analysis,
+            adjustments: adjustments
         )
     }
 

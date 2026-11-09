@@ -1230,9 +1230,9 @@ final class PhotoProcessingPipeline {
                 analysis: analysis
             )
             renderedData = data
-            let regionalExecution = renderer.regionalExecutionDetails(
-                for: recipe,
-                analysis: analysis
+            let regionalExecution = renderer.manualRegionalExecutionDetails(
+                analysis: analysis,
+                adjustments: parameters.regionalToneAdjustments
             )
             let quality = try qualityService.check(
                 originalData: originalData,
@@ -1269,7 +1269,8 @@ final class PhotoProcessingPipeline {
                     "[M] targetQualityStatus=manual_expression_probe_not_automatic_target",
                     "[M] humanAestheticStatus=awaiting_blind_review",
                     "[M] 声明参数=\(recipe.traceSummary)",
-                    "[M] 执行模块=\(renderer.executedModuleNames(for: recipe, analysis: analysis).joined(separator: " → "))",
+                    "[M] 执行模块=\(renderer.executedModuleNames(for: recipe, analysis: analysis, manualRegionalAdjustments: parameters.regionalToneAdjustments).joined(separator: " → "))",
+                    "[M] 区域影调回执=\(regionalExecution.joined(separator: "；"))",
                     "[M] 技术质检=\(quality.status.rawValue)；问题=[\(quality.issues.map(\.rawValue).joined(separator: ","))]；RGB_MAE=\(String(format: "%.4f", quality.processingImpact.normalizedMeanAbsoluteRGBDifference))",
                     String(format: "[M] 失败阈值证据=tooHarsh: contrastRange %.4f / 上限 0.9000；neutralLuminanceLoss: coverage %.4f / 启用阈值 0.0150，luminanceShift %+.4f / 下限 -0.0650",
                            quality.measuredAnalysis.contrastRange,

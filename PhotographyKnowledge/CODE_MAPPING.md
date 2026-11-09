@@ -30,6 +30,7 @@
 | PT-TONE-001/003、PT-COLOR-001/003、PT-LOCAL-001/002 | `ManualPhotographyParameters`、`CoreImageRenderer.renderManualEdit`、单控制探针 | M 路径使用与 B/D 相同的完整分辨率 Core Image、色彩空间和 JPEG 编码链；曝光、高光、阴影、黑点、白平衡、HSL、亮度范围分别生成诊断探针 | 仅诊断导入；显式人工值不进入正式算法，也不代表审美方案 | Windows 静态接入完成；Swift 编译、参数方向和组合效果待远程 Apple 环境/真机验证 |
 | PT-UNDERSTANDING-001、PT-AESTHETIC-001/002/003/004 | `PhotographyTargetProfile.measuredBaseline`、`enableMeasuredAestheticPlanning`、`evaluateMeasuredAestheticCandidate` | D 路径不读取摄影参考；源图相对目标、动态参数、完整分辨率渲染与一次有限复测构成可追踪闭环 | 仅诊断导入，不替换 B；技术代理不冒充审美结论 | Build 28 旧 D 已真机渲染但与 B 过近；新闭环待远程 Apple 环境及 iPhone ZIP 复验 |
 | PT-INVERSE-001/002/003 | `PhotographyInverseSolver/inverse_solver.py`：SIFT/RANSAC 配准、有效区域、当前参数边界、全局后局部优化 | Windows 忠实复刻已公开的扩展线性 sRGB、EV、黑点、多段曲线、HSL 和蒙版混合；输出全分辨率 R 与误差 | T 像素不得混合到 R；扩展边界仅诊断；Apple 私有滤镜数学不冒充已复刻 | 秋季街道同源内点率 99.5%；当前边界 R 与 T 全图 RGB MAE 0.1104，扩展缺口探针 0.0694；Core Image 像素一致性与人工审美仍待验收 |
+| PT-INVERSE-004 | `ManualPhotographyParameters.inverseR3Verification`、`ManualRegionalToneAdjustment`、`DiagnosticRegionalToneProcessor` | M 专用显式全局/区域曲线、曝光、高光阴影、黑白点、HSL、亮度范围蒙版；`QualityCheckService.measureRegionImpacts` 输出区域暗部/高光/细节证据 | B/D 边界不变；关闭 M 自动区域处理；私有滤镜偏差单独标注；无可靠蒙版跳过 | Windows 3 项逆向求解单元测试通过；真实 Core Image 阶段像素测试、Simulator 编译与 R3-I 样片待远程 Apple 环境验证 |
 
 ## 已证实差距
 

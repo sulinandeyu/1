@@ -255,7 +255,12 @@ final class DiagnosticBundleExporter {
                     "luminanceDelta": impact.luminanceDelta,
                     "colorDelta": impact.colorDelta,
                     "contrastDelta": impact.contrastDelta,
-                    "changedPixelRatio": impact.changedPixelRatio
+                    "changedPixelRatio": impact.changedPixelRatio,
+                    "sourceShadowRatio": impact.sourceShadowRatio,
+                    "editedShadowRatio": impact.editedShadowRatio,
+                    "sourceHighlightRatio": impact.sourceHighlightRatio,
+                    "editedHighlightRatio": impact.editedHighlightRatio,
+                    "detailEnergyRatio": impact.detailEnergyRatio
                 ]
             }
             object["candidateEvaluations"] = diagnostics.candidateEvaluations.map { evaluation in

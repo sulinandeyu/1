@@ -1865,6 +1865,107 @@ final class SceneAdaptationTests: XCTestCase {
         XCTAssertEqual(recipe.skySaturation, 1, accuracy: 0.0001)
     }
 
+    func testInverseResearchBoundaryDoesNotBroadenProductionRecipe() {
+        let production = ManualPhotographyParameters(
+            identifier: "product-boundary",
+            exposureEV: -0.53,
+            contrast: 1.20,
+            lowerMidtoneLift: -0.17,
+            midtoneBias: -0.25
+        ).makeRecipe()
+        let research = ManualPhotographyParameters.inverseR3Verification.makeRecipe()
+
+        XCTAssertEqual(production.exposureEV, -0.35, accuracy: 0.0001)
+        XCTAssertEqual(production.contrast, 1.14, accuracy: 0.0001)
+        XCTAssertEqual(production.lowerMidtoneLift, -0.08, accuracy: 0.0001)
+        XCTAssertEqual(production.midtoneBias, -0.08, accuracy: 0.0001)
+        XCTAssertEqual(research.exposureEV, -0.5280169, accuracy: 0.0001)
+        XCTAssertEqual(research.contrast, 1.2017435, accuracy: 0.0001)
+        XCTAssertEqual(research.lowerMidtoneLift, -0.1681298, accuracy: 0.0001)
+        XCTAssertEqual(research.midtoneBias, -0.25, accuracy: 0.0001)
+        XCTAssertEqual(ManualPhotographyParameters.inverseR3Verification.renderingBoundary, .inverseResearch)
+    }
+
+    func testDiagnosticRegionalToneNeutralDoesNotAlterPixels() throws {
+        let source = syntheticImage(width: 4, height: 1, pixels: [
+            (20, 20, 20), (90, 90, 90), (170, 110, 35), (230, 230, 230)
+        ])
+        let mask = constantImage(width: 4, height: 1, value: 1)
+        let output = DiagnosticRegionalToneProcessor().apply(
+            to: source,
+            semanticMask: mask,
+            adjustment: ManualRegionalToneAdjustment(region: .ground)
+        )
+        XCTAssertEqual(try rgba8(output), try rgba8(source))
+    }
+
+    func testDiagnosticRegionalToneRespectsMaskAndLuminanceProtection() throws {
+        let source = splitGrayImage(width: 64, height: 16, dark: 0.05, bright: 0.50)
+        let mask = constantImage(width: 64, height: 16, value: 1)
+        let output = DiagnosticRegionalToneProcessor().apply(
+            to: source,
+            semanticMask: mask,
+            adjustment: ManualRegionalToneAdjustment(
+                region: .ground,
+                exposureEV: -0.6,
+                midtoneBias: -0.10,
+                luminanceLowerBound: 0.2,
+                luminanceUpperBound: 0.8,
+                luminanceFeather: 0.04
+            )
+        )
+        let original = try samplePair(source, width: 64, height: 16)
+        let edited = try samplePair(output, width: 64, height: 16)
+
+        XCTAssertEqual(edited.left, original.left, accuracy: 2.0 / 255.0)
+        XCTAssertLessThan(edited.right, original.right - 0.08)
+    }
+
+    func testWindowsR3AndCoreImageSharedStagesStayWithinDeclaredTolerance() throws {
+        let source = syntheticImage(width: 6, height: 1, pixels: [
+            (32, 64, 128), (96, 128, 160), (210, 105, 35),
+            (180, 170, 40), (40, 140, 65), (200, 200, 200)
+        ])
+        let recipe = ManualPhotographyParameters.inverseR3Verification.makeRecipe()
+        let exposed = CoreImageParameterKernel.exposure(source, ev: recipe.exposureEV)
+        assertRGB8(
+            try rgba8(exposed),
+            expected: [[25, 53, 108], [80, 108, 135], [178, 88, 28], [153, 144, 32], [32, 118, 54], [170, 170, 170]],
+            tolerance: 2,
+            stage: "linear-sRGB exposure"
+        )
+        let blackAdjusted = CoreImageParameterKernel.blackPoint(exposed, amount: recipe.blackPoint)
+        assertRGB8(
+            try rgba8(blackAdjusted),
+            expected: [[10, 47, 106], [77, 106, 134], [178, 85, 15], [152, 143, 22], [22, 116, 48], [169, 169, 169]],
+            tolerance: 3,
+            stage: "black point"
+        )
+        let curved = CinematicToneMappingEngine().apply(to: blackAdjusted, recipe: recipe)
+        assertRGB8(
+            try rgba8(curved),
+            expected: [[1, 43, 82], [79, 82, 85], [133, 80, 3], [101, 91, 7], [7, 83, 44], [124, 124, 124]],
+            tolerance: 4,
+            stage: "seven-anchor curve"
+        )
+        let controlled = CoreImageParameterKernel.colorControls(
+            curved,
+            brightness: recipe.brightness,
+            contrast: recipe.contrast,
+            saturation: recipe.saturation
+        )
+        let hsl = ProfessionalHSLProcessor().apply(to: controlled, adjustment: recipe.hsl)
+        // CIColorControls is Apple-private. This wider tolerance is intentional
+        // and its measured maximum is printed by `assertRGB8`; the other stages
+        // above must remain tightly aligned with the Windows implementation.
+        assertRGB8(
+            try rgba8(hsl),
+            expected: [[0, 0, 22], [9, 22, 34], [134, 20, 0], [135, 85, 0], [35, 73, 0], [107, 107, 107]],
+            tolerance: 18,
+            stage: "private color controls plus HSL"
+        )
+    }
+
     func testExposurePixelDirectionIsCorrect() throws {
         let source = constantImage(width: 8, height: 8, value: 0.32)
         let original = try meanRGB(source)
@@ -2473,6 +2574,42 @@ final class SceneAdaptationTests: XCTestCase {
             )
         }
         return bytes
+    }
+
+    private func assertRGB8(
+        _ rgba: [UInt8],
+        expected: [[Int]],
+        tolerance: Int,
+        stage: String,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        XCTAssertEqual(
+            rgba.count / 4,
+            expected.count,
+            "\(stage): unexpected pixel count",
+            file: file,
+            line: line
+        )
+        guard rgba.count / 4 == expected.count else { return }
+
+        var actual: [[Int]] = []
+        var maximumDelta = 0
+        for pixelIndex in expected.indices {
+            let offset = pixelIndex * 4
+            let rgb = [Int(rgba[offset]), Int(rgba[offset + 1]), Int(rgba[offset + 2])]
+            actual.append(rgb)
+            for channel in 0..<3 {
+                maximumDelta = max(maximumDelta, abs(rgb[channel] - expected[pixelIndex][channel]))
+            }
+        }
+        XCTAssertLessThanOrEqual(
+            maximumDelta,
+            tolerance,
+            "\(stage): max RGB8 delta \(maximumDelta), actual=\(actual), expected=\(expected)",
+            file: file,
+            line: line
+        )
     }
 
     private func rgbSample(_ image: CIImage, x: Int, y: Int) throws -> (r: Float, g: Float, b: Float) {

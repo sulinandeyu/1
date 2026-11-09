@@ -18,6 +18,8 @@ Package.resolved
 # Local environment
 .env
 .env.*
+__pycache__/
+*.pyc
 
 # Private local photo-validation inputs and generated metrics
 TestPhotos/

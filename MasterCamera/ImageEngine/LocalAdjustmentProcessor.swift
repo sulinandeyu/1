@@ -4,6 +4,8 @@ import CoreImage.CIFilterBuiltins
 import Foundation
 
 final class LocalAdjustmentProcessor {
+    private let diagnosticRegionalToneProcessor = DiagnosticRegionalToneProcessor()
+
     func applyLocalizedRelighting(
         to image: CIImage,
         analysis: PhotoAnalysis?,
@@ -139,6 +141,119 @@ final class LocalAdjustmentProcessor {
                 )
             ]
         return semanticDetails + [skyExecutionDetail(analysis: analysis, recipe: recipe)]
+    }
+
+    /// Explicit M/inverse-research adjustments. Automatic regional decisions are
+    /// deliberately bypassed by the caller so the rendered pixels correspond
+    /// one-to-one with these declared controls.
+    func applyManualRegionalTone(
+        to image: CIImage,
+        analysis: PhotoAnalysis?,
+        adjustments: [ManualRegionalToneAdjustment]
+    ) -> CIImage {
+        guard let analysis, !adjustments.isEmpty else { return image }
+        if analysis.faceCount > 0, analysis.personMask?.isValid != true {
+            return image
+        }
+        var output = image
+        for requested in adjustments {
+            let adjustment = requested.diagnosticClamped()
+            guard !adjustment.isNeutral else { continue }
+            let photoMask = manualMask(for: adjustment.region, analysis: analysis)
+            guard let photoMask, photoMask.isValid, photoMask.qualityAssessment.isUsable else {
+                continue
+            }
+            let excludesSubject = adjustment.region != .subject
+            guard let mask = protectedRegionMask(
+                from: photoMask,
+                analysis: analysis,
+                excludingSalientSubject: excludesSubject,
+                extent: image.extent
+            ) else { continue }
+            output = diagnosticRegionalToneProcessor.apply(
+                to: output,
+                semanticMask: mask,
+                adjustment: adjustment
+            )
+        }
+        return output.cropped(to: image.extent)
+    }
+
+    func manualRegionalExecutionDetails(
+        analysis: PhotoAnalysis?,
+        adjustments: [ManualRegionalToneAdjustment]
+    ) -> [String] {
+        guard let analysis else { return ["M 区域影调：跳过（无分析结果）"] }
+        if analysis.faceCount > 0, analysis.personMask?.isValid != true {
+            return ["M 区域影调：跳过（人物保护缺少可靠整人物蒙版）"]
+        }
+        return adjustments.map { requested in
+            let adjustment = requested.diagnosticClamped()
+            let name = manualDisplayName(for: requested.region)
+            guard !adjustment.isNeutral else { return "\(name)：跳过（M 中性参数）" }
+            guard let mask = manualMask(for: adjustment.region, analysis: analysis),
+                  mask.isValid,
+                  mask.qualityAssessment.isUsable
+            else { return "\(name)：跳过（M 蒙版无效或边界质量不足）" }
+            let exclusions = [
+                analysis.personMask,
+                adjustment.region == .subject ? nil : analysis.salientSubjectMask
+            ].compactMap { $0 }
+            let coverage = mask.activeCoverage(excluding: exclusions)
+            guard coverage >= 0.004 else {
+                return String(format: "%@：跳过（M 保护区域后覆盖率 %.2f%%）", name, coverage * 100)
+            }
+            return String(
+                format: "%@：已执行（M；覆盖率 %.2f%%；EV=%+.3f；高光=%.3f；阴影=%.3f；黑点=%.3f；曲线=%.3f/%+.3f/%+.3f/%+.3f/%.3f；白点=%.3f；对比=%.3f；饱和=%.3f；亮度范围=%.2f...%.2f feather=%.2f）",
+                name,
+                coverage * 100,
+                adjustment.exposureEV,
+                adjustment.highlightAmount,
+                adjustment.shadowAmount,
+                adjustment.blackPoint,
+                adjustment.shadowRollOff,
+                adjustment.lowerMidtoneLift,
+                adjustment.midtoneBias,
+                adjustment.upperMidtoneSeparation,
+                adjustment.highlightRollOff,
+                adjustment.whitePoint,
+                adjustment.contrast,
+                adjustment.saturation,
+                adjustment.luminanceLowerBound,
+                adjustment.luminanceUpperBound,
+                adjustment.luminanceFeather
+            )
+        }
+    }
+
+    private func manualDisplayName(for region: TreatmentRegion) -> String {
+        switch region {
+        case .global: return "全局"
+        case .subject: return "主体"
+        case .background: return "背景"
+        case .sky: return "天空"
+        case .ground: return "地面/道路"
+        case .vegetation: return "植被"
+        case .water: return "水面"
+        case .architecture: return "建筑"
+        case .person: return "人物"
+        }
+    }
+
+    private func manualMask(
+        for region: TreatmentRegion,
+        analysis: PhotoAnalysis
+    ) -> NormalizedPhotoMask? {
+        switch region {
+        case .subject: return analysis.salientSubjectMask
+        case .sky: return analysis.skyMask
+        case .ground: return analysis.groundMask
+        case .vegetation: return analysis.vegetationMask
+        case .water: return analysis.waterMask
+        case .architecture: return analysis.architectureMask
+        case .person: return analysis.personMask
+        case .global, .background: return nil
+        }
     }
 
     private func executionDetail(

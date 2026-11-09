@@ -321,6 +321,114 @@ final class ProfessionalHSLProcessor {
     }
 }
 
+/// Manual/inverse-research regional tone expression. The semantic mask still
+/// comes from the same Vision/Core ML analysis used by the app, while the
+/// adjustment is explicit diagnostic input. This processor is never called by
+/// the production B path.
+final class DiagnosticRegionalToneProcessor {
+    private let toneMapping = CinematicToneMappingEngine()
+    private let hslProcessor = ProfessionalHSLProcessor()
+    private let rangeCubeDimension = 32
+
+    func apply(
+        to image: CIImage,
+        semanticMask: CIImage,
+        adjustment requested: ManualRegionalToneAdjustment
+    ) -> CIImage {
+        let adjustment = requested.diagnosticClamped()
+        guard !adjustment.isNeutral else { return image }
+        let rangeMask = makeLuminanceRangeMask(
+            from: image,
+            lower: adjustment.luminanceLowerBound,
+            upper: adjustment.luminanceUpperBound,
+            feather: adjustment.luminanceFeather
+        )
+        let effectiveMask = semanticMask.applyingFilter(
+            "CIMultiplyCompositing",
+            parameters: [kCIInputBackgroundImageKey: rangeMask]
+        ).cropped(to: image.extent)
+
+        var adjusted = CoreImageParameterKernel.exposure(image, ev: adjustment.exposureEV)
+        adjusted = CoreImageParameterKernel.highlightShadow(
+            adjusted,
+            highlights: adjustment.highlightAmount,
+            shadows: adjustment.shadowAmount
+        )
+        adjusted = CoreImageParameterKernel.blackPoint(adjusted, amount: adjustment.blackPoint)
+
+        var curveRecipe = AutomaticEditingRecipe.naturalEnhancement
+        curveRecipe.cinematicIntensity = .dramatic
+        curveRecipe.cinematicToneStyle = .natural
+        curveRecipe.shadowRollOff = adjustment.shadowRollOff
+        curveRecipe.lowerMidtoneLift = adjustment.lowerMidtoneLift
+        curveRecipe.midtoneBias = adjustment.midtoneBias
+        curveRecipe.upperMidtoneSeparation = adjustment.upperMidtoneSeparation
+        curveRecipe.highlightRollOff = adjustment.highlightRollOff
+        curveRecipe.whitePoint = adjustment.whitePoint
+        adjusted = toneMapping.apply(to: adjusted, recipe: curveRecipe)
+        adjusted = CoreImageParameterKernel.colorControls(
+            adjusted,
+            brightness: 0,
+            contrast: adjustment.contrast,
+            saturation: adjustment.saturation
+        )
+        adjusted = hslProcessor.apply(to: adjusted, adjustment: adjustment.hsl)
+
+        return adjusted.applyingFilter("CIBlendWithMask", parameters: [
+            kCIInputBackgroundImageKey: image,
+            kCIInputMaskImageKey: effectiveMask
+        ]).cropped(to: image.extent)
+    }
+
+    private func makeLuminanceRangeMask(
+        from image: CIImage,
+        lower: Float,
+        upper: Float,
+        feather: Float
+    ) -> CIImage {
+        if lower <= 0.0001, upper >= 0.9999 {
+            return CIImage(color: CIColor(red: 1, green: 1, blue: 1, alpha: 1))
+                .cropped(to: image.extent)
+        }
+        var cube = [Float]()
+        cube.reserveCapacity(rangeCubeDimension * rangeCubeDimension * rangeCubeDimension * 4)
+        let denominator = Float(rangeCubeDimension - 1)
+        for blueIndex in 0..<rangeCubeDimension {
+            for greenIndex in 0..<rangeCubeDimension {
+                for redIndex in 0..<rangeCubeDimension {
+                    let red = Float(redIndex) / denominator
+                    let green = Float(greenIndex) / denominator
+                    let blue = Float(blueIndex) / denominator
+                    let luminance = (0.2126 * red) + (0.7152 * green) + (0.0722 * blue)
+                    let lowerWeight = smoothStep(
+                        edge0: lower - feather,
+                        edge1: lower + feather,
+                        value: luminance
+                    )
+                    let upperWeight = 1 - smoothStep(
+                        edge0: upper - feather,
+                        edge1: upper + feather,
+                        value: luminance
+                    )
+                    let weight = min(max(lowerWeight * upperWeight, 0), 1)
+                    cube.append(contentsOf: [weight, weight, weight, 1])
+                }
+            }
+        }
+        let data = cube.withUnsafeBufferPointer { Data(buffer: $0) }
+        return image.applyingFilter("CIColorCube", parameters: [
+            "inputCubeDimension": rangeCubeDimension,
+            "inputCubeData": data
+        ]).cropped(to: image.extent)
+    }
+
+    private func smoothStep(edge0: Float, edge1: Float, value: Float) -> Float {
+        guard edge1 > edge0 else { return value >= edge1 ? 1 : 0 }
+        let normalized = min(max((value - edge0) / (edge1 - edge0), 0), 1)
+        return normalized * normalized * (3 - (2 * normalized))
+    }
+}
+
 /// 以连续亮度蒙版分别处理可恢复阴影和高光，避免全局 HDR 把黑色抬灰或压暗主体。
 final class LuminanceZoneProcessor {
     func apply(to image: CIImage, recipe: AutomaticEditingRecipe) -> CIImage {

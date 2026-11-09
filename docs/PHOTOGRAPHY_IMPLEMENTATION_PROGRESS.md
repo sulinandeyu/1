@@ -205,3 +205,13 @@
 - 隔离扩展边界探针 RGB MAE 0.0694，道路亮度 0.0685；证明主要缺口是区域中间调/曝光范围与局部影调表达，不能作为生产参数。
 - 未修改正式 B、拍照、保存或候选；未执行 Core Image/iPhone 验收；未上传 Build 31。
 - 下一步从 `docs/PHOTOGRAPHY_PARAMETER_INVERSE_SOLVING.md` 第 8 节继续：先做 Apple 像素一致性和诊断 M 的区域曲线表达验证，再决定是否修改自动规划。
+
+# 2026-11-09 — 专业调色表达能力与 Core Image 验证（进行中）
+
+- 已隔离产品与研究边界：正式 `AutomaticEditingRecipe.clamped()` 和普通 B/D 不变；只有 M 的 `inverseResearch` 可读取 R3 的扩展全局边界。
+- 已补齐 M 区域表达：可靠语义蒙版内支持独立曝光、高光、阴影、黑点、七锚点中间调曲线、白点、对比、饱和度、HSL 与软边亮度范围保护。
+- 已消除 M 污染：M 不再先执行自动区域处理；单参数探针也关闭自动局部处理，因此实际像素只来自声明参数。
+- 已增加 Apple 像素门控：同一组 RGB 探针逐阶段比较 EV、黑点、七锚点曲线及 `CIColorControls + HSL`；前三项使用紧容差，Apple 私有滤镜使用独立显式容差。
+- 已增强区域安全证据：诊断输出记录区域处理前后死黑比例、高光比例、细节能量比，并使用标准区域名称连接现有蒙版光晕检查。
+- Windows 已执行：Python 3.14 下 `PhotographyInverseSolver/test_inverse_solver.py` 3/3 通过；`git diff --check` 通过。Windows 不能运行 Core Image，不能据此判定 R3-I 成功。
+- 待完成：推送独立分支触发远程 macOS `swift test` 与 iOS Simulator build；根据实际 RGB 偏差修复映射；未取得真实 Apple R3-I 前，不宣称已接近 T，也不上传 Build 31。

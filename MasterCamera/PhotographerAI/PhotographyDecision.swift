@@ -605,6 +605,11 @@ struct PhotographyRegionImpact: Equatable, Sendable {
     let colorDelta: Float
     let contrastDelta: Float
     let changedPixelRatio: Float
+    let sourceShadowRatio: Float = 0
+    let editedShadowRatio: Float = 0
+    let sourceHighlightRatio: Float = 0
+    let editedHighlightRatio: Float = 0
+    let detailEnergyRatio: Float = 1
 }
 
 struct PhotographyCandidateSelector {

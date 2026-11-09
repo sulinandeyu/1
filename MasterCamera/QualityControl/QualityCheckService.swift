@@ -265,6 +265,12 @@ final class QualityCheckService {
             var contrastDelta: Float = 0
             var contrastCount: Float = 0
             var changed: Float = 0
+            var sourceShadowPixels: Float = 0
+            var editedShadowPixels: Float = 0
+            var sourceHighlightPixels: Float = 0
+            var editedHighlightPixels: Float = 0
+            var sourceDetailEnergy: Float = 0
+            var editedDetailEnergy: Float = 0
             var count: Float = 0
             for y in 0..<height {
                 for x in 0..<width {
@@ -289,6 +295,10 @@ final class QualityCheckService {
                     let resultRGB = rgb(at: index, in: editedPixels)
                     let sourceLuminance = luminance(sourceRGB)
                     let resultLuminance = luminance(resultRGB)
+                    if sourceLuminance <= 0.025 { sourceShadowPixels += 1 }
+                    if resultLuminance <= 0.025 { editedShadowPixels += 1 }
+                    if sourceLuminance >= 0.985 { sourceHighlightPixels += 1 }
+                    if resultLuminance >= 0.985 { editedHighlightPixels += 1 }
                     luminanceDelta += resultLuminance - sourceLuminance
                     let difference = chromaDifference(sourceRGB, resultRGB)
                     colorDelta += difference
@@ -299,6 +309,8 @@ final class QualityCheckService {
                             let sourceGradient = abs(sourceLuminance - luminance(rgb(at: rightIndex, in: originalPixels)))
                             let resultGradient = abs(resultLuminance - luminance(rgb(at: rightIndex, in: editedPixels)))
                             contrastDelta += resultGradient - sourceGradient
+                            sourceDetailEnergy += sourceGradient
+                            editedDetailEnergy += resultGradient
                             contrastCount += 1
                         }
                     }
@@ -315,7 +327,14 @@ final class QualityCheckService {
                 luminanceDelta: luminanceDelta / count,
                 colorDelta: colorDelta / count,
                 contrastDelta: contrastCount > 0 ? contrastDelta / contrastCount : 0,
-                changedPixelRatio: changed / count
+                changedPixelRatio: changed / count,
+                sourceShadowRatio: sourceShadowPixels / count,
+                editedShadowRatio: editedShadowPixels / count,
+                sourceHighlightRatio: sourceHighlightPixels / count,
+                editedHighlightRatio: editedHighlightPixels / count,
+                detailEnergyRatio: sourceDetailEnergy > 0.0001
+                    ? editedDetailEnergy / sourceDetailEnergy
+                    : 1
             )
         }
     }

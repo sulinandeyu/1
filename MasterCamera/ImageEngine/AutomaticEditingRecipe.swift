@@ -80,6 +80,30 @@ struct ProfessionalHSLAdjustment: Equatable, Sendable {
             blueLuminance: blueLuminance.clamped(to: -0.08...0.08)
         )
     }
+
+    /// Wider limits used only by the inverse-solver renderer verification path.
+    /// Production recipes continue to use `clamped()` above.  Keeping this
+    /// boundary separate prevents an A/T fitting experiment from silently
+    /// becoming the normal camera safety envelope.
+    func diagnosticRendererClamped() -> ProfessionalHSLAdjustment {
+        ProfessionalHSLAdjustment(
+            orangeHue: orangeHue.clamped(to: -0.08...0.08),
+            orangeSaturation: orangeSaturation.clamped(to: -0.35...0.35),
+            orangeLuminance: orangeLuminance.clamped(to: -0.25...0.25),
+            yellowHue: yellowHue.clamped(to: -0.08...0.08),
+            yellowSaturation: yellowSaturation.clamped(to: -0.35...0.35),
+            yellowLuminance: yellowLuminance.clamped(to: -0.25...0.25),
+            greenHue: greenHue.clamped(to: -0.08...0.08),
+            greenSaturation: greenSaturation.clamped(to: -0.35...0.35),
+            greenLuminance: greenLuminance.clamped(to: -0.25...0.25),
+            cyanHue: cyanHue.clamped(to: -0.08...0.08),
+            cyanSaturation: cyanSaturation.clamped(to: -0.35...0.35),
+            cyanLuminance: cyanLuminance.clamped(to: -0.25...0.25),
+            blueHue: blueHue.clamped(to: -0.08...0.08),
+            blueSaturation: blueSaturation.clamped(to: -0.35...0.35),
+            blueLuminance: blueLuminance.clamped(to: -0.25...0.25)
+        )
+    }
 }
 
 /// A measured, mask-backed local adjustment. This is intentionally derived from
@@ -592,12 +616,82 @@ struct AutomaticEditingRecipe: Equatable, Sendable {
     }
 }
 
+enum ManualRenderingBoundary: String, Equatable, Sendable {
+    case productSafe
+    case inverseResearch
+}
+
+/// Explicit mask-backed controls for M and inverse-renderer diagnostics.  They
+/// are never constructed from a scene label and never enter the production B
+/// recipe.  A luminance interval can protect deep shadows and bright neutrals
+/// even when the semantic mask covers both.
+struct ManualRegionalToneAdjustment: Equatable, Sendable {
+    let region: TreatmentRegion
+    var exposureEV: Float = 0
+    var highlightAmount: Float = 1
+    var shadowAmount: Float = 0
+    var blackPoint: Float = 0
+    var shadowRollOff: Float = 0
+    var lowerMidtoneLift: Float = 0
+    var midtoneBias: Float = 0
+    var upperMidtoneSeparation: Float = 0
+    var highlightRollOff: Float = 0
+    var whitePoint: Float = 1
+    var contrast: Float = 1
+    var saturation: Float = 1
+    var hsl: ProfessionalHSLAdjustment = .neutral
+    var luminanceLowerBound: Float = 0
+    var luminanceUpperBound: Float = 1
+    var luminanceFeather: Float = 0.08
+
+    func diagnosticClamped() -> ManualRegionalToneAdjustment {
+        let lower = luminanceLowerBound.clamped(to: 0...0.92)
+        let upper = max(lower + 0.04, luminanceUpperBound.clamped(to: 0.08...1))
+        return ManualRegionalToneAdjustment(
+            region: region,
+            exposureEV: exposureEV.clamped(to: -1...0.5),
+            highlightAmount: highlightAmount.clamped(to: 0.2...1),
+            shadowAmount: shadowAmount.clamped(to: 0...0.55),
+            blackPoint: blackPoint.clamped(to: 0...0.08),
+            shadowRollOff: shadowRollOff.clamped(to: -0.12...0.35),
+            lowerMidtoneLift: lowerMidtoneLift.clamped(to: -0.24...0.2),
+            midtoneBias: midtoneBias.clamped(to: -0.28...0.2),
+            upperMidtoneSeparation: upperMidtoneSeparation.clamped(to: -0.2...0.2),
+            highlightRollOff: highlightRollOff.clamped(to: 0...0.55),
+            whitePoint: whitePoint.clamped(to: 0.72...1),
+            contrast: contrast.clamped(to: 0.8...1.3),
+            saturation: saturation.clamped(to: 0.7...1.3),
+            hsl: hsl.diagnosticRendererClamped(),
+            luminanceLowerBound: lower,
+            luminanceUpperBound: min(1, upper),
+            luminanceFeather: luminanceFeather.clamped(to: 0.02...0.24)
+        )
+    }
+
+    var isNeutral: Bool {
+        abs(exposureEV) <= 0.0001
+            && abs(highlightAmount - 1) <= 0.0001
+            && abs(shadowAmount) <= 0.0001
+            && abs(blackPoint) <= 0.0001
+            && abs(shadowRollOff) <= 0.0001
+            && abs(lowerMidtoneLift) <= 0.0001
+            && abs(midtoneBias) <= 0.0001
+            && abs(upperMidtoneSeparation) <= 0.0001
+            && abs(highlightRollOff) <= 0.0001
+            && abs(whitePoint - 1) <= 0.0001
+            && abs(contrast - 1) <= 0.0001
+            && abs(saturation - 1) <= 0.0001
+            && hsl == .neutral
+    }
+}
+
 /// Explicit developer-supplied controls for the diagnostic M path. These values
 /// are never selected from a scene label and are never used by the production B
 /// path. Keeping the input separate from `AutomaticEditingRecipe` makes it clear
 /// whether a pixel change came from a human control test or the automatic solver.
 struct ManualPhotographyParameters: Equatable, Sendable {
     let identifier: String
+    var renderingBoundary: ManualRenderingBoundary = .productSafe
     var exposureEV: Float = 0
     var highlightAmount: Float = 1
     var shadowAmount: Float = 0
@@ -605,6 +699,11 @@ struct ManualPhotographyParameters: Equatable, Sendable {
     var contrast: Float = 1
     var blackPoint: Float = 0
     var whitePoint: Float = 1
+    var shadowRollOff: Float = 0
+    var lowerMidtoneLift: Float = 0
+    var midtoneBias: Float = 0
+    var upperMidtoneSeparation: Float = 0
+    var highlightRollOff: Float = 0
     var temperatureShift: Float = 0
     var tintShift: Float = 0
     var saturation: Float = 1
@@ -621,6 +720,7 @@ struct ManualPhotographyParameters: Equatable, Sendable {
     var hsl: ProfessionalHSLAdjustment = .neutral
     var noiseReductionAmount: Float = 0
     var sharpeningAmount: Float = 0
+    var regionalToneAdjustments: [ManualRegionalToneAdjustment] = []
 
     func makeRecipe() -> AutomaticEditingRecipe {
         var recipe = AutomaticEditingRecipe.naturalEnhancement
@@ -659,6 +759,11 @@ struct ManualPhotographyParameters: Equatable, Sendable {
         recipe.contrast = contrast
         recipe.blackPoint = blackPoint
         recipe.whitePoint = whitePoint
+        recipe.shadowRollOff = shadowRollOff
+        recipe.lowerMidtoneLift = lowerMidtoneLift
+        recipe.midtoneBias = midtoneBias
+        recipe.upperMidtoneSeparation = upperMidtoneSeparation
+        recipe.highlightRollOff = highlightRollOff
         recipe.temperatureShift = temperatureShift
         recipe.tintShift = tintShift
         recipe.saturation = saturation
@@ -672,7 +777,25 @@ struct ManualPhotographyParameters: Equatable, Sendable {
         recipe.hsl = hsl
         recipe.noiseReductionAmount = noiseReductionAmount
         recipe.sharpeningAmount = sharpeningAmount
-        return recipe.clamped()
+        let requested = recipe
+        recipe = recipe.clamped()
+        guard renderingBoundary == .inverseResearch else { return recipe }
+
+        // Diagnostic-only boundary. These values are intentionally not used by
+        // `AutomaticEditingRecipe.clamped()` and therefore cannot broaden B/D.
+        recipe.exposureEV = requested.exposureEV.clamped(to: -0.65...0.45)
+        recipe.brightness = requested.brightness.clamped(to: -0.1...0.1)
+        recipe.contrast = requested.contrast.clamped(to: 0.82...1.25)
+        recipe.blackPoint = requested.blackPoint.clamped(to: 0...0.08)
+        recipe.shadowRollOff = requested.shadowRollOff.clamped(to: -0.12...0.35)
+        recipe.lowerMidtoneLift = requested.lowerMidtoneLift.clamped(to: -0.22...0.2)
+        recipe.midtoneBias = requested.midtoneBias.clamped(to: -0.28...0.2)
+        recipe.upperMidtoneSeparation = requested.upperMidtoneSeparation.clamped(to: -0.2...0.2)
+        recipe.highlightRollOff = requested.highlightRollOff.clamped(to: 0...0.55)
+        recipe.whitePoint = requested.whitePoint.clamped(to: 0.72...1)
+        recipe.saturation = requested.saturation.clamped(to: 0.82...1.2)
+        recipe.hsl = requested.hsl.diagnosticRendererClamped()
+        return recipe
     }
 
     /// A deliberately declared control combination for renderer verification.
@@ -706,6 +829,59 @@ struct ManualPhotographyParameters: Equatable, Sendable {
         hsl: measuredColorExpression,
         noiseReductionAmount: 0.012,
         sharpeningAmount: 0.015
+        )
+    }()
+
+    /// Exact A/T inverse-solver expression probe. It is intentionally isolated
+    /// from B/D and exists only to compare Windows R3-W with Core Image R3-I.
+    static let inverseR3Verification: ManualPhotographyParameters = {
+        var fittedHSL = ProfessionalHSLAdjustment.neutral
+        fittedHSL.orangeHue = 0.0203227
+        fittedHSL.orangeLuminance = 0.1630581
+        fittedHSL.yellowHue = -0.0381788
+        fittedHSL.yellowLuminance = 0.2472106
+        fittedHSL.greenHue = -0.0797553
+        fittedHSL.greenLuminance = 0.1772954
+        return ManualPhotographyParameters(
+            identifier: "inverse-r3-core-image-expression-v1",
+            renderingBoundary: .inverseResearch,
+            exposureEV: -0.5280169,
+            brightness: 0.0085838,
+            contrast: 1.2017435,
+            blackPoint: 0.0068519,
+            whitePoint: 0.9560542,
+            shadowRollOff: 0.0000029,
+            lowerMidtoneLift: -0.1681298,
+            midtoneBias: -0.25,
+            highlightRollOff: 0.0944355,
+            saturation: 1.0021614,
+            hsl: fittedHSL,
+            regionalToneAdjustments: [
+                ManualRegionalToneAdjustment(
+                    region: .ground,
+                    exposureEV: -1,
+                    contrast: 1.0146524,
+                    saturation: 0.8839573
+                ),
+                ManualRegionalToneAdjustment(
+                    region: .vegetation,
+                    exposureEV: 0.3059486,
+                    contrast: 0.9872683,
+                    saturation: 1.0162803
+                ),
+                ManualRegionalToneAdjustment(
+                    region: .sky,
+                    exposureEV: 0.1021978,
+                    contrast: 0.99999,
+                    saturation: 1.2160783
+                ),
+                ManualRegionalToneAdjustment(
+                    region: .architecture,
+                    exposureEV: -0.2727453,
+                    contrast: 0.9949390,
+                    saturation: 0.9022062
+                )
+            ]
         )
     }()
 }
