@@ -452,8 +452,8 @@ final class PhotoProcessingPipeline {
         nilReason: String
     ) -> DiagnosticCandidateEvidence {
         let lines = details ?? []
-        let plannedKeywords = ["视觉理解", "摄影问题", "审美目标", "动态参数", "声明参数", "目标=", "参数=", "局部计划"]
-        let executedKeywords = ["renderStatus=completed", "区域执行", "执行模块", "技术质检", "耗时=", "同定义复测", "有限反馈", "最终实际参数"]
+        let plannedKeywords = ["视觉理解", "摄影问题", "审美目标", "动态参数", "声明参数", "目标=", "参数=", "局部计划", "参数生命周期"]
+        let executedKeywords = ["renderStatus=completed", "区域执行", "执行模块", "技术质检", "耗时=", "同定义复测", "有限反馈", "最终实际参数", "参数生命周期"]
         let rejectedKeywords = [
             "technicalQualityStatus=failed",
             "qualityEvaluationFailed",
@@ -734,33 +734,46 @@ final class PhotoProcessingPipeline {
             )
             var selectedData = initialData
             var selectedRecipe = decision.recipe
+            var selectedRegionalPlan = decision.adaptiveRegionalTonePlan
             var selectedQuality = initialQuality
             var selectedImpacts = initialImpacts
             var selectedAttainment = initialAttainment
+            var selectedRegionalAttainment = regionalPlanExecutionScore(
+                plan: decision.adaptiveRegionalTonePlan,
+                impacts: initialImpacts
+            )
             var selectedIteration = 0
             var feedbackTrace = "未触发：首轮渲染已在目标容差内或无可安全修正残差"
 
-            if let feedbackRecipe = measuredAestheticFeedbackRecipe(
+            let feedbackRecipe = measuredAestheticFeedbackRecipe(
                 from: decision.recipe,
                 target: decision.adaptiveTarget,
                 plan: decision.aestheticPlan,
                 rendered: initialQuality.measuredAnalysis,
                 regionImpacts: initialImpacts
-            ) {
+            )
+            let feedbackRegionalPlan = AdaptiveRegionalToneFeedbackSolver().makeFeedback(
+                plan: decision.adaptiveRegionalTonePlan,
+                impacts: initialImpacts,
+                issues: initialQuality.issues
+            )
+            if feedbackRecipe != nil || feedbackRegionalPlan != nil {
                 phase = "feedbackRendering"
                 do {
+                    let resolvedFeedbackRecipe = feedbackRecipe ?? decision.recipe
+                    let resolvedFeedbackPlan = feedbackRegionalPlan ?? decision.adaptiveRegionalTonePlan
                     let feedbackData = try renderer.renderAutomaticEdit(
                         from: originalData,
-                        recipe: feedbackRecipe,
+                        recipe: resolvedFeedbackRecipe,
                         analysis: analysis,
-                        adaptiveRegionalTonePlan: decision.adaptiveRegionalTonePlan
+                        adaptiveRegionalTonePlan: resolvedFeedbackPlan
                     )
                     let feedbackRegionalExecution = renderer.regionalExecutionDetails(
-                        for: feedbackRecipe,
+                        for: resolvedFeedbackRecipe,
                         analysis: analysis
                     ) + renderer.adaptiveRegionalExecutionDetails(
                         analysis: analysis,
-                        plan: decision.adaptiveRegionalTonePlan
+                        plan: resolvedFeedbackPlan
                     )
                     let feedbackQuality = try qualityService.check(
                         originalData: originalData,
@@ -779,31 +792,43 @@ final class PhotoProcessingPipeline {
                         source: analysis,
                         edited: feedbackQuality.measuredAnalysis
                     )
+                    let feedbackRegionalAttainment = regionalPlanExecutionScore(
+                        plan: resolvedFeedbackPlan,
+                        impacts: feedbackImpacts
+                    )
                     if shouldSelectMeasuredAestheticFeedback(
                         initialQuality: initialQuality,
                         initialAttainment: initialAttainment,
+                        initialRegionalAttainment: selectedRegionalAttainment,
                         feedbackQuality: feedbackQuality,
-                        feedbackAttainment: feedbackAttainment
+                        feedbackAttainment: feedbackAttainment,
+                        feedbackRegionalAttainment: feedbackRegionalAttainment
                     ) {
                         selectedData = feedbackData
-                        selectedRecipe = feedbackRecipe
+                        selectedRecipe = resolvedFeedbackRecipe
+                        selectedRegionalPlan = resolvedFeedbackPlan
                         selectedQuality = feedbackQuality
                         selectedImpacts = feedbackImpacts
                         selectedAttainment = feedbackAttainment
+                        selectedRegionalAttainment = feedbackRegionalAttainment
                         selectedIteration = 1
                         renderedData = feedbackData
                         feedbackTrace = String(
-                            format: "采用一次有限反馈：目标达成 %.1f%%→%.1f%%，质检 %@→%@",
+                            format: "采用一次有限反馈：全局目标 %.1f%%→%.1f%%，区域执行 %.1f%%→%.1f%%，质检 %@→%@",
                             initialAttainment * 100,
                             feedbackAttainment * 100,
+                            regionalPlanExecutionScore(plan: decision.adaptiveRegionalTonePlan, impacts: initialImpacts) * 100,
+                            feedbackRegionalAttainment * 100,
                             initialQuality.status.rawValue,
                             feedbackQuality.status.rawValue
                         )
                     } else {
                         feedbackTrace = String(
-                            format: "拒绝反馈候选：目标达成 %.1f%%→%.1f%%，质检 %@→%@；保留首轮真实渲染",
+                            format: "拒绝反馈候选：全局目标 %.1f%%→%.1f%%，区域执行 %.1f%%→%.1f%%，质检 %@→%@；保留首轮真实渲染",
                             initialAttainment * 100,
                             feedbackAttainment * 100,
+                            regionalPlanExecutionScore(plan: decision.adaptiveRegionalTonePlan, impacts: initialImpacts) * 100,
+                            feedbackRegionalAttainment * 100,
                             initialQuality.status.rawValue,
                             feedbackQuality.status.rawValue
                         )
@@ -818,7 +843,7 @@ final class PhotoProcessingPipeline {
                 analysis: analysis
             ) + renderer.adaptiveRegionalExecutionDetails(
                 analysis: analysis,
-                plan: decision.adaptiveRegionalTonePlan
+                plan: selectedRegionalPlan
             )
             let aestheticProxy = PhotographyAestheticProgressScorer().score(
                 source: analysis,
@@ -831,6 +856,9 @@ final class PhotoProcessingPipeline {
                 }
                 return "\(executedEvidence.key.rawValue)=\(String(format: "%.4f", executedEvidence.actualValue)){input=\(executedEvidence.inputEvidence);target=\(executedEvidence.target);rules=\(executedEvidence.knowledgeRuleIDs.map(\.rawValue).joined(separator: ","));status=\(executedEvidence.decisionStatus.rawValue)}"
             }.joined(separator: ";")
+            let lifecycle = decision.recipeLifecycle.map { snapshot in
+                "\(snapshot.stage){changes=[\(snapshot.changes.joined(separator: ","))];recipe=\(snapshot.recipeSummary)}"
+            }.joined(separator: " -> ")
             let duration = Self.milliseconds(ProcessInfo.processInfo.systemUptime - start)
             let passedTechnicalQuality = selectedQuality.status != .failed
             let details = [
@@ -841,8 +869,9 @@ final class PhotoProcessingPipeline {
                 "[D] 视觉理解=\(analysis.visualSceneUnderstanding.traceSummary)",
                 "[D] 摄影问题=\(problems.problems.map { $0.kind.rawValue }.joined(separator: ","))",
                 "[D] 审美目标=\(decision.aestheticPlan?.traceSummary ?? "未生成")",
-                "[D] 增强区域影调=\(decision.adaptiveRegionalTonePlan?.traceSummary ?? "未生成（无可靠蒙版或无需调整）")；rules=PT-AESTHETIC-007,PT-QA-003",
+                "[D] 增强区域影调=\(selectedRegionalPlan?.traceSummary ?? "未生成（无可靠蒙版或无需调整）")；rules=PT-AESTHETIC-007,PT-AESTHETIC-008,PT-QA-003",
                 "[D] 动态参数=\(parameters)",
+                "[D] 参数生命周期=\(lifecycle)；rules=PT-QA-004",
                 "[D] 最终实际参数=\(selectedRecipe.traceSummary)",
                 String(format: "[D] 同定义复测=源亮度 %.4f/反差 %.4f/饱和 %.4f；首轮 %.4f/%.4f/%.4f；最终 %.4f/%.4f/%.4f；反馈次数=%d",
                        analysis.averageLuminance, analysis.contrastRange, analysis.averageSaturation,
@@ -851,7 +880,7 @@ final class PhotoProcessingPipeline {
                        selectedIteration),
                 "[D] 有限反馈=\(feedbackTrace)",
                 "[D] 区域执行=\(regionalExecution.joined(separator: " | "))",
-                "[D] 技术质检=\(selectedQuality.status.rawValue)；问题=[\(selectedQuality.issues.map(\.rawValue).joined(separator: ","))]；目标达成=\(String(format: "%.1f", selectedAttainment * 100))%；主体代理=\(String(format: "%.1f", aestheticProxy.subjectPriority * 100))%；协调代理=\(String(format: "%.1f", aestheticProxy.regionalHarmony * 100))%；不是审美结论",
+                "[D] 技术质检=\(selectedQuality.status.rawValue)；问题=[\(selectedQuality.issues.map(\.rawValue).joined(separator: ","))]；全局目标达成=\(String(format: "%.1f", selectedAttainment * 100))%；区域执行达成=\(String(format: "%.1f", selectedRegionalAttainment * 100))%；主体代理=\(String(format: "%.1f", aestheticProxy.subjectPriority * 100))%；协调代理=\(String(format: "%.1f", aestheticProxy.regionalHarmony * 100))%；不是审美结论",
                 "[D] 耗时=\(duration)ms；人工偏好=待评价"
             ]
             return IsolatedDiagnosticCandidateResult(
@@ -1035,8 +1064,16 @@ final class PhotoProcessingPipeline {
                     if shouldSelectMeasuredAestheticFeedback(
                         initialQuality: initialQuality,
                         initialAttainment: initialAttainment,
+                        initialRegionalAttainment: regionalPlanExecutionScore(
+                            plan: decision.adaptiveRegionalTonePlan,
+                            impacts: initialImpacts
+                        ),
                         feedbackQuality: feedbackQuality,
-                        feedbackAttainment: feedbackAttainment
+                        feedbackAttainment: feedbackAttainment,
+                        feedbackRegionalAttainment: regionalPlanExecutionScore(
+                            plan: decision.adaptiveRegionalTonePlan,
+                            impacts: feedbackImpacts
+                        )
                     ) {
                         selectedData = feedbackData
                         selectedRecipe = feedbackRecipe
@@ -1221,8 +1258,10 @@ final class PhotoProcessingPipeline {
     private func shouldSelectMeasuredAestheticFeedback(
         initialQuality: QualityCheckResult,
         initialAttainment: Float,
+        initialRegionalAttainment: Float,
         feedbackQuality: QualityCheckResult,
-        feedbackAttainment: Float
+        feedbackAttainment: Float,
+        feedbackRegionalAttainment: Float
     ) -> Bool {
         guard feedbackQuality.status != .failed else { return false }
         if initialQuality.status == .failed { return true }
@@ -1231,7 +1270,64 @@ final class PhotoProcessingPipeline {
            feedbackAttainment > initialAttainment + 0.006 {
             return true
         }
+        if feedbackQuality.status == initialQuality.status,
+           feedbackRegionalAttainment > initialRegionalAttainment + 0.04 {
+            return true
+        }
         return false
+    }
+
+    /// Measures whether the regional controls that were actually sent to Core
+    /// Image produced the intended direction without destroying endpoints or
+    /// detail. This is execution evidence, not an aesthetic score.
+    private func regionalPlanExecutionScore(
+        plan: AdaptiveRegionalTonePlan?,
+        impacts: [PhotographyRegionImpact]
+    ) -> Float {
+        guard let plan, !plan.adjustments.isEmpty else { return 1 }
+        let values = plan.adjustments.compactMap { adjustment -> Float? in
+            guard let impact = impacts.first(where: { $0.region == adjustment.region }) else {
+                return nil
+            }
+            let intendedTone = adjustment.exposureEV
+                + adjustment.midtoneBias * 0.8
+                + adjustment.lowerMidtoneLift * 0.5
+            let toneExpectation = min(0.06, abs(intendedTone) * 0.12)
+            let toneDirection: Float
+            if toneExpectation <= 0.004 {
+                toneDirection = 1
+            } else if intendedTone.sign == impact.luminanceDelta.sign {
+                toneDirection = min(1, abs(impact.luminanceDelta) / toneExpectation)
+            } else {
+                toneDirection = 0
+            }
+
+            let requestedColor = abs(adjustment.hsl.yellowSaturation)
+                + abs(adjustment.hsl.greenSaturation)
+                + abs(adjustment.hsl.orangeSaturation)
+            let colorExpectation = min(0.035, requestedColor * 0.10)
+            let colorRealization = colorExpectation <= 0.003
+                ? Float(1)
+                : min(1, impact.colorDelta / colorExpectation)
+            let shadowPenalty = max(
+                0,
+                impact.editedShadowRatio - impact.sourceShadowRatio - 0.035
+            ).clamped(to: 0...0.18) / 0.18
+            let highlightPenalty = max(
+                0,
+                impact.editedHighlightRatio - impact.sourceHighlightRatio - 0.03
+            ).clamped(to: 0...0.16) / 0.16
+            let detailPenalty = max(0, 0.78 - impact.detailEnergyRatio).clamped(to: 0...0.5) / 0.5
+            return (
+                toneDirection * 0.62
+                    + colorRealization * 0.38
+                    - shadowPenalty * 0.42
+                    - highlightPenalty * 0.34
+                    - detailPenalty * 0.28
+            ).clamped(to: 0...1)
+        }
+        guard !values.isEmpty else { return 0 }
+        return values.reduce(0, +) / Float(values.count)
     }
 
     /// M bypasses all automatic decisions and proves whether declared controls

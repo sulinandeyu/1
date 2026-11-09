@@ -37,18 +37,29 @@ final class PhotographyDecisionEngine {
         // deliberately not called from the production path.
         var recipe = adaptiveSolution.recipe
         var actions = adaptiveSolution.actions
+        var lifecycle: [PhotographyRecipeLifecycleSnapshot] = [
+            lifecycleSnapshot(stage: "solverOutput", recipe: recipe, previous: nil)
+        ]
+        var previousRecipe = recipe
         applyAnalysisReliabilityLimits(
             analysis: analysis,
             recipe: &recipe,
             actions: &actions
         )
+        lifecycle.append(lifecycleSnapshot(stage: "analysisReliabilityLimits", recipe: recipe, previous: previousRecipe))
+        previousRecipe = recipe
         applyProblemSafetyLimits(problems: problems, recipe: &recipe)
+        lifecycle.append(lifecycleSnapshot(stage: "problemSafetyLimits", recipe: recipe, previous: previousRecipe))
+        previousRecipe = recipe
         applyColorIntegrityGuards(
             analysis: analysis,
             recipe: &recipe,
             actions: &actions
         )
+        lifecycle.append(lifecycleSnapshot(stage: "colorIntegrityGuards", recipe: recipe, previous: previousRecipe))
+        previousRecipe = recipe
         enforcePortraitProtection(analysis: analysis, recipe: &recipe, actions: &actions)
+        lifecycle.append(lifecycleSnapshot(stage: "portraitProtection", recipe: recipe, previous: previousRecipe))
 
         if actions.isEmpty {
             actions.append(
@@ -60,6 +71,7 @@ final class PhotographyDecisionEngine {
         }
 
         let finalRecipe = recipe.clamped()
+        lifecycle.append(lifecycleSnapshot(stage: "finalProductBounds", recipe: finalRecipe, previous: recipe))
         let adaptiveRegionalTonePlan = enableMeasuredAestheticPlanning
             ? AdaptiveRegionalTonePlanner().makePlan(
                 analysis: analysis,
@@ -85,8 +97,21 @@ final class PhotographyDecisionEngine {
             parameterEvidence: adaptiveSolution.parameterEvidence.map {
                 $0.refreshingActualValue(from: finalRecipe)
             },
+            recipeLifecycle: lifecycle,
             aestheticPlan: aestheticPlan,
             adaptiveRegionalTonePlan: adaptiveRegionalTonePlan
+        )
+    }
+
+    private func lifecycleSnapshot(
+        stage: String,
+        recipe: AutomaticEditingRecipe,
+        previous: AutomaticEditingRecipe?
+    ) -> PhotographyRecipeLifecycleSnapshot {
+        PhotographyRecipeLifecycleSnapshot(
+            stage: stage,
+            recipeSummary: recipe.traceSummary,
+            changes: previous.map { recipe.lifecycleChanges(from: $0) } ?? ["initialSolverOutput"]
         )
     }
 
@@ -1487,8 +1512,10 @@ struct AdaptiveRegionalTonePlanner {
         if analysis.faceCount > 0, analysis.personMask?.isValid != true {
             return nil
         }
-        let planConfidence = aestheticPlan?.confidence ?? 0.35
-        let response = (0.72 + planConfidence * 0.28).clamped(to: 0.72...0.95)
+        // Confidence gates whether a semantic mask may be used (see
+        // `reliableStatistics`). It must not repeatedly shrink a correction
+        // whose direction and magnitude are already supported by measured
+        // pixels inside that reliable mask.
         let noiseHeadroom = (1 - analysis.noiseEstimate * 2.8).clamped(to: 0.28...1)
         let endpointPressure = max(0, analysis.contrastRange - 0.72)
         var adjustments: [ManualRegionalToneAdjustment] = []
@@ -1498,32 +1525,38 @@ struct AdaptiveRegionalTonePlanner {
             mask: analysis.groundMask,
             statistics: analysis.groundStatistics
         ) {
-            let hierarchyDepth = (0.025 + endpointPressure * 0.16)
+            let luminanceResidual = abs(statistics.averageLuminance - target.luminance)
+            let contrastResidual = max(0, target.contrast - statistics.contrastRange)
+            let expressionDemand = (
+                luminanceResidual / 0.20 + contrastResidual / 0.30
+            ).clamped(to: 0...1)
+            let response = 0.86 + expressionDemand * 0.14
+            let hierarchyDepth = (0.035 + endpointPressure * 0.16 + expressionDemand * 0.055)
                 * noiseHeadroom
             let desired = (target.luminance - hierarchyDepth)
-                .clamped(to: 0.25...0.62)
+                .clamped(to: 0.21...0.62)
             let ev = exposureEV(from: statistics.averageLuminance, to: desired)
-                .clamped(to: -0.38...0.22) * response
+                .clamped(to: -0.58...0.28) * response
             let recoverableShadow = max(0, statistics.shadowRatio - analysis.blackRatio)
             let adjustment = ManualRegionalToneAdjustment(
                 region: .ground,
                 exposureEV: ev,
                 highlightAmount: (1 - max(0, statistics.highlightRatio - 0.08) * 0.9)
                     .clamped(to: 0.64...1),
-                shadowAmount: (recoverableShadow * 0.22 * noiseHeadroom).clamped(to: 0...0.12),
-                lowerMidtoneLift: ev < -0.08 ? -min(0.045, abs(ev) * 0.12) : 0,
-                midtoneBias: (ev * 0.16).clamped(to: -0.055...0.04),
-                upperMidtoneSeparation: (endpointPressure * 0.08).clamped(to: 0...0.035),
-                contrast: (1 + max(0, 0.58 - statistics.contrastRange) * 0.12)
-                    .clamped(to: 1...1.055),
+                shadowAmount: (recoverableShadow * 0.30 * noiseHeadroom).clamped(to: 0...0.16),
+                lowerMidtoneLift: ev < -0.08 ? -min(0.095, abs(ev) * 0.20) : 0,
+                midtoneBias: (ev * 0.24).clamped(to: -0.11...0.06),
+                upperMidtoneSeparation: (endpointPressure * 0.10 + contrastResidual * 0.06).clamped(to: 0...0.055),
+                contrast: (1 + max(0, target.contrast - statistics.contrastRange) * 0.20)
+                    .clamped(to: 1...1.09),
                 luminanceLowerBound: 0.12,
                 luminanceUpperBound: 0.82,
                 luminanceFeather: 0.16
             )
             if !adjustment.isNeutral { adjustments.append(adjustment) }
             evidence.append(String(
-                format: "ground measured=%.3f target=%.3f EV=%+.3f range=0.12...0.82 noiseHeadroom=%.3f",
-                statistics.averageLuminance, desired, ev, noiseHeadroom
+                format: "ground measured=%.3f target=%.3f EV=%+.3f demand=%.3f response=%.3f range=0.12...0.82 noiseHeadroom=%.3f",
+                statistics.averageLuminance, desired, ev, expressionDemand, response, noiseHeadroom
             ))
         }
 
@@ -1532,10 +1565,20 @@ struct AdaptiveRegionalTonePlanner {
             statistics: analysis.vegetationStatistics
         ) {
             let colorFocus = aestheticPlan?.colorSeparationStrength ?? 0
+            let measuredColorSeparation = (
+                (statistics.yellowColorRatio - statistics.greenColorRatio) / 0.45
+            ).clamped(to: 0...1)
+            let luminanceResidual = abs(statistics.averageLuminance - target.luminance)
+            let expressionDemand = (
+                luminanceResidual / 0.22
+                    + measuredColorSeparation * 0.55
+                    + colorFocus / 0.12
+            ).clamped(to: 0...1)
+            let response = 0.86 + expressionDemand * 0.14
             let desired = (target.luminance - 0.035 - colorFocus * 0.24)
-                .clamped(to: 0.24...0.6)
+                .clamped(to: 0.22...0.6)
             let ev = exposureEV(from: statistics.averageLuminance, to: desired)
-                .clamped(to: -0.28...0.2) * response
+                .clamped(to: -0.42...0.25) * response
             let yellowEvidence = (statistics.yellowColorRatio / 0.35).clamped(to: 0...1)
             let greenEvidence = (statistics.greenColorRatio / 0.3).clamped(to: 0...1)
             // PT-AESTHETIC-007: a measured warm/cool foliage separation is
@@ -1543,18 +1586,15 @@ struct AdaptiveRegionalTonePlanner {
             // aesthetic confidence erase a relationship that is already
             // present inside the reliable vegetation mask.  This remains a
             // bounded per-photo measurement, not an autumn/scene preset.
-            let measuredColorSeparation = (
-                (statistics.yellowColorRatio - statistics.greenColorRatio) / 0.45
-            ).clamped(to: 0...1)
             let saturationHeadroom = ((0.46 - statistics.averageSaturation) / 0.46)
                 .clamped(to: 0...1)
             var hsl = ProfessionalHSLAdjustment.neutral
             hsl.yellowSaturation = (
                 yellowEvidence
                     * saturationHeadroom
-                    * (0.06 + colorFocus * 1.2 + measuredColorSeparation * 0.04)
+                    * (0.06 + colorFocus * 1.2 + measuredColorSeparation * 0.12)
             )
-                .clamped(to: 0...0.14)
+                .clamped(to: 0...0.17)
             hsl.yellowLuminance = (yellowEvidence * max(0, 0.42 - statistics.averageLuminance) * 0.08)
                 .clamped(to: 0...0.035)
             hsl.greenSaturation = (-(yellowEvidence - greenEvidence).clamped(to: 0...1) * 0.045)
@@ -1566,11 +1606,12 @@ struct AdaptiveRegionalTonePlanner {
                     .clamped(to: 0.72...1),
                 shadowAmount: (max(0, statistics.shadowRatio - analysis.blackRatio) * 0.18 * noiseHeadroom)
                     .clamped(to: 0...0.11),
-                midtoneBias: (ev * 0.11).clamped(to: -0.035...0.025),
+                lowerMidtoneLift: ev < -0.08 ? -min(0.065, abs(ev) * 0.16) : 0,
+                midtoneBias: (ev * 0.18).clamped(to: -0.075...0.04),
                 upperMidtoneSeparation: max(0, 0.55 - statistics.contrastRange)
                     .clamped(to: 0...0.035),
-                contrast: (1 + max(0, 0.56 - statistics.contrastRange) * 0.1)
-                    .clamped(to: 1...1.05),
+                contrast: (1 + max(0, target.contrast - statistics.contrastRange) * 0.16)
+                    .clamped(to: 1...1.08),
                 hsl: hsl,
                 luminanceLowerBound: 0.1,
                 luminanceUpperBound: 0.86,
@@ -1578,8 +1619,9 @@ struct AdaptiveRegionalTonePlanner {
             )
             if !adjustment.isNeutral { adjustments.append(adjustment) }
             evidence.append(String(
-                format: "vegetation measured=%.3f target=%.3f EV=%+.3f yellow=%.3f green=%.3f yellowSat=%+.3f",
+                format: "vegetation measured=%.3f target=%.3f EV=%+.3f demand=%.3f response=%.3f yellow=%.3f green=%.3f yellowSat=%+.3f",
                 statistics.averageLuminance, desired, ev,
+                expressionDemand, response,
                 statistics.yellowColorRatio, statistics.greenColorRatio,
                 hsl.yellowSaturation
             ))
@@ -1595,7 +1637,7 @@ struct AdaptiveRegionalTonePlanner {
                 max(target.luminance + 0.16, 0.72)
             ).clamped(to: 0.62...0.9)
             let ev = exposureEV(from: statistics.averageLuminance, to: desired)
-                .clamped(to: -0.28...0.08) * response
+                .clamped(to: -0.32...0.08) * 0.94
             let adjustment = ManualRegionalToneAdjustment(
                 region: .sky,
                 exposureEV: ev,
@@ -1657,6 +1699,129 @@ struct AdaptiveRegionalTonePlanner {
     private func exposureEV(from source: Float, to target: Float) -> Float {
         guard source > 0.015, target > 0.015 else { return 0 }
         return log2(target / source)
+    }
+}
+
+/// PT-AESTHETIC-008. Uses the first *rendered* regional measurements to make
+/// one bounded correction. It does not invent a new look: it either helps the
+/// already-solved regional intent reach the pixels, or attenuates only regions
+/// that produced measured clipping, neutral loss or mask-boundary risk.
+struct AdaptiveRegionalToneFeedbackSolver {
+    func makeFeedback(
+        plan: AdaptiveRegionalTonePlan?,
+        impacts: [PhotographyRegionImpact],
+        issues: [QualityIssue]
+    ) -> AdaptiveRegionalTonePlan? {
+        guard let plan else { return nil }
+        let issueSet = Set(issues)
+        let boundaryRisk = issueSet.contains(.localMaskBoundaryArtifact)
+        let neutralRisk = issueSet.contains(.neutralLuminanceLoss)
+            || issueSet.contains(.neutralColorDrift)
+        let globalShadowRisk = issueSet.contains(.crushedShadows)
+            || issueSet.contains(.abnormalBlackCoverage)
+            || issueSet.contains(.tooHarsh)
+        var reasons: [String] = []
+        var changed = false
+
+        let adjusted = plan.adjustments.map { requested -> ManualRegionalToneAdjustment in
+            guard let impact = impacts.first(where: { $0.region == requested.region }) else {
+                return requested
+            }
+            var value = requested
+            let regionalShadowRisk = impact.editedShadowRatio
+                > impact.sourceShadowRatio + 0.055
+                || impact.detailEnergyRatio < 0.72
+            let regionalHighlightRisk = impact.editedHighlightRatio
+                > impact.sourceHighlightRatio + 0.045
+            let protectsNeutral = [.ground, .architecture, .sky].contains(requested.region)
+
+            if regionalShadowRisk || globalShadowRisk || (neutralRisk && protectsNeutral) {
+                let scale: Float = regionalShadowRisk ? 0.66 : 0.76
+                value.exposureEV *= scale
+                value.blackPoint *= 0.45
+                value.lowerMidtoneLift *= 0.58
+                value.midtoneBias *= 0.60
+                value.contrast = 1 + (value.contrast - 1) * 0.62
+                value.shadowAmount = max(value.shadowAmount, min(0.18, impact.editedShadowRatio * 0.22))
+                value.luminanceLowerBound = max(value.luminanceLowerBound, protectsNeutral ? 0.14 : 0.11)
+                value.luminanceFeather = max(value.luminanceFeather, 0.18)
+                changed = true
+                reasons.append(String(
+                    format: "%@ safety attenuation shadow %.3f->%.3f detail=%.3f neutral=%@",
+                    requested.region.rawValue,
+                    impact.sourceShadowRatio,
+                    impact.editedShadowRatio,
+                    impact.detailEnergyRatio,
+                    (neutralRisk && protectsNeutral) ? "yes" : "no"
+                ))
+            } else if regionalHighlightRisk {
+                value.exposureEV = min(0, value.exposureEV)
+                value.highlightAmount = min(value.highlightAmount, 0.72)
+                value.highlightRollOff = max(value.highlightRollOff, 0.12)
+                value.luminanceUpperBound = min(value.luminanceUpperBound, 0.9)
+                value.luminanceFeather = max(value.luminanceFeather, 0.17)
+                changed = true
+                reasons.append(String(
+                    format: "%@ highlight protection %.3f->%.3f",
+                    requested.region.rawValue,
+                    impact.sourceHighlightRatio,
+                    impact.editedHighlightRatio
+                ))
+            } else {
+                let intendedTone = requested.exposureEV
+                    + requested.midtoneBias * 0.8
+                    + requested.lowerMidtoneLift * 0.5
+                let minimumExpectedLuminanceDelta = min(0.055, abs(intendedTone) * 0.12)
+                if minimumExpectedLuminanceDelta > 0.012,
+                   abs(impact.luminanceDelta) < minimumExpectedLuminanceDelta * 0.55 {
+                    value.exposureEV *= 1.22
+                    value.lowerMidtoneLift *= 1.18
+                    value.midtoneBias *= 1.18
+                    value.contrast = 1 + (value.contrast - 1) * 1.12
+                    changed = true
+                    reasons.append(String(
+                        format: "%@ measured tone under-response actual=%+.4f expected>=%.4f",
+                        requested.region.rawValue,
+                        impact.luminanceDelta,
+                        minimumExpectedLuminanceDelta
+                    ))
+                }
+                let requestedColor = abs(requested.hsl.yellowSaturation)
+                    + abs(requested.hsl.greenSaturation)
+                    + abs(requested.hsl.orangeSaturation)
+                let minimumExpectedColorDelta = min(0.035, requestedColor * 0.10)
+                if minimumExpectedColorDelta > 0.004,
+                   impact.colorDelta < minimumExpectedColorDelta * 0.55 {
+                    value.hsl.yellowSaturation *= 1.18
+                    value.hsl.yellowLuminance *= 1.12
+                    value.hsl.greenSaturation *= 1.12
+                    value.hsl.orangeSaturation *= 1.12
+                    changed = true
+                    reasons.append(String(
+                        format: "%@ measured color under-response actual=%.4f expected>=%.4f",
+                        requested.region.rawValue,
+                        impact.colorDelta,
+                        minimumExpectedColorDelta
+                    ))
+                }
+            }
+
+            if boundaryRisk {
+                value.exposureEV *= 0.84
+                value.lowerMidtoneLift *= 0.82
+                value.midtoneBias *= 0.82
+                value.luminanceFeather = max(value.luminanceFeather, 0.21)
+                changed = true
+                reasons.append("\(requested.region.rawValue) boundary feather increased")
+            }
+            return value.diagnosticClamped()
+        }
+
+        guard changed, adjusted != plan.adjustments else { return nil }
+        return AdaptiveRegionalTonePlan(
+            adjustments: adjusted,
+            evidence: plan.evidence + reasons.map { "feedback: \($0)" }
+        )
     }
 }
 

@@ -2346,11 +2346,105 @@ final class SceneAdaptationTests: XCTestCase {
         )
 
         XCTAssertLessThan(ground.exposureEV, -0.12)
+        XCTAssertLessThan(ground.midtoneBias, -0.04)
         XCTAssertGreaterThanOrEqual(ground.luminanceLowerBound, 0.1)
         XCTAssertLessThanOrEqual(ground.luminanceUpperBound, 0.86)
         XCTAssertGreaterThanOrEqual(ground.luminanceFeather, 0.14)
         XCTAssertGreaterThan(vegetation.hsl.yellowSaturation, 0.05)
         XCTAssertNotEqual(ground.exposureEV, vegetation.exposureEV)
+        XCTAssertTrue(plan.evidence.contains { $0.contains("demand=") })
+    }
+
+    func testAdaptiveRegionalFeedbackStrengthensMeasuredUnderResponseWithoutChangingIntent() throws {
+        let requested = ManualRegionalToneAdjustment(
+            region: .ground,
+            exposureEV: -0.34,
+            lowerMidtoneLift: -0.06,
+            midtoneBias: -0.07,
+            contrast: 1.05,
+            luminanceLowerBound: 0.12,
+            luminanceUpperBound: 0.82,
+            luminanceFeather: 0.16
+        )
+        let plan = AdaptiveRegionalTonePlan(adjustments: [requested], evidence: ["measured plan"])
+        let impact = PhotographyRegionImpact(
+            region: .ground,
+            maskCoverage: 0.32,
+            luminanceDelta: -0.004,
+            colorDelta: 0.002,
+            contrastDelta: 0.001,
+            changedPixelRatio: 0.48,
+            sourceShadowRatio: 0.05,
+            editedShadowRatio: 0.055,
+            detailEnergyRatio: 0.96
+        )
+
+        let feedback = try XCTUnwrap(AdaptiveRegionalToneFeedbackSolver().makeFeedback(
+            plan: plan,
+            impacts: [impact],
+            issues: []
+        ))
+        let adjusted = try XCTUnwrap(feedback.adjustments.first)
+        XCTAssertLessThan(adjusted.exposureEV, requested.exposureEV)
+        XCTAssertLessThan(adjusted.midtoneBias, requested.midtoneBias)
+        XCTAssertTrue(feedback.evidence.contains { $0.contains("under-response") })
+    }
+
+    func testAdaptiveRegionalFeedbackProtectsOnlyMeasuredRiskInsteadOfRelaxingQualityGate() throws {
+        let requested = ManualRegionalToneAdjustment(
+            region: .architecture,
+            exposureEV: -0.42,
+            blackPoint: 0.04,
+            lowerMidtoneLift: -0.08,
+            midtoneBias: -0.1,
+            contrast: 1.1,
+            luminanceLowerBound: 0.08,
+            luminanceUpperBound: 0.88,
+            luminanceFeather: 0.12
+        )
+        let plan = AdaptiveRegionalTonePlan(adjustments: [requested], evidence: ["measured plan"])
+        let impact = PhotographyRegionImpact(
+            region: .architecture,
+            maskCoverage: 0.1,
+            luminanceDelta: -0.12,
+            colorDelta: 0.006,
+            contrastDelta: 0.02,
+            changedPixelRatio: 0.8,
+            sourceShadowRatio: 0.06,
+            editedShadowRatio: 0.18,
+            detailEnergyRatio: 0.64
+        )
+
+        let feedback = try XCTUnwrap(AdaptiveRegionalToneFeedbackSolver().makeFeedback(
+            plan: plan,
+            impacts: [impact],
+            issues: [.neutralLuminanceLoss, .localMaskBoundaryArtifact]
+        ))
+        let adjusted = try XCTUnwrap(feedback.adjustments.first)
+        XCTAssertLessThan(adjusted.exposureEV.magnitude, requested.exposureEV.magnitude)
+        XCTAssertLessThan(adjusted.blackPoint, requested.blackPoint)
+        XCTAssertGreaterThanOrEqual(adjusted.luminanceLowerBound, 0.14)
+        XCTAssertGreaterThanOrEqual(adjusted.luminanceFeather, 0.21)
+    }
+
+    func testDecisionRecordsSolverToRendererParameterLifecycle() {
+        let analysis = fixture(
+            luminance: 0.63,
+            contrast: 0.82,
+            saturation: 0.18,
+            labels: ["outdoor"],
+            highlightRatio: 0.24
+        )
+        let decision = engine.makeDecision(
+            for: analysis,
+            problems: detector.detect(in: analysis),
+            enableMeasuredAestheticPlanning: true
+        )
+
+        XCTAssertEqual(decision.recipeLifecycle.first?.stage, "solverOutput")
+        XCTAssertEqual(decision.recipeLifecycle.last?.stage, "finalProductBounds")
+        XCTAssertTrue(decision.recipeLifecycle.contains { $0.stage == "problemSafetyLimits" })
+        XCTAssertFalse(decision.recipeLifecycle.last?.recipeSummary.isEmpty ?? true)
     }
 
     func testR3MeasuredSafetyCorrectionPreservesExpressionButProtectsEndpoints() throws {

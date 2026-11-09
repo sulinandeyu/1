@@ -621,6 +621,46 @@ enum ManualRenderingBoundary: String, Equatable, Sendable {
     case inverseResearch
 }
 
+extension AutomaticEditingRecipe {
+    /// Machine-readable limiter evidence for D diagnostics. Only values that
+    /// actually changed are emitted, so a later ZIP can distinguish the solver
+    /// request from reliability, safety, portrait and product-bound limits.
+    func lifecycleChanges(from previous: AutomaticEditingRecipe) -> [String] {
+        var result: [String] = []
+        func append(_ key: String, _ old: Float, _ new: Float) {
+            guard abs(old - new) > 0.000_01 else { return }
+            result.append(String(format: "%@:%+.5f->%+.5f", key, old, new))
+        }
+        append("exposureEV", previous.exposureEV, exposureEV)
+        append("highlights", previous.highlightAmount, highlightAmount)
+        append("shadows", previous.shadowAmount, shadowAmount)
+        append("brightness", previous.brightness, brightness)
+        append("contrast", previous.contrast, contrast)
+        append("blackPoint", previous.blackPoint, blackPoint)
+        append("whitePoint", previous.whitePoint, whitePoint)
+        append("lowerMidtone", previous.lowerMidtoneLift, lowerMidtoneLift)
+        append("midtoneBias", previous.midtoneBias, midtoneBias)
+        append("upperMidtone", previous.upperMidtoneSeparation, upperMidtoneSeparation)
+        append("toneCurve", previous.toneCurveAmount, toneCurveAmount)
+        append("localContrast", previous.localContrastAmount, localContrastAmount)
+        append("temperature", previous.temperatureShift, temperatureShift)
+        append("tint", previous.tintShift, tintShift)
+        append("saturation", previous.saturation, saturation)
+        append("vibrance", previous.vibrance, vibrance)
+        append("yellowSaturation", previous.hsl.yellowSaturation, hsl.yellowSaturation)
+        append("yellowLuminance", previous.hsl.yellowLuminance, hsl.yellowLuminance)
+        append("greenSaturation", previous.hsl.greenSaturation, hsl.greenSaturation)
+        append("greenLuminance", previous.hsl.greenLuminance, hsl.greenLuminance)
+        append("skyExposureEV", previous.skyExposureEV, skyExposureEV)
+        append("skyHighlights", previous.skyHighlightAmount, skyHighlightAmount)
+        append("subjectExposureEV", previous.subjectExposureEV, subjectExposureEV)
+        append("backgroundSeparation", previous.backgroundSeparation, backgroundSeparation)
+        append("noiseReduction", previous.noiseReductionAmount, noiseReductionAmount)
+        append("sharpening", previous.sharpeningAmount, sharpeningAmount)
+        return result.isEmpty ? ["unchanged"] : result
+    }
+}
+
 /// Explicit mask-backed controls for M and inverse-renderer diagnostics.  They
 /// are never constructed from a scene label and never enter the production B
 /// recipe.  A luminance interval can protect deep shadows and bright neutrals

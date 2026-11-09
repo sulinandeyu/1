@@ -10,6 +10,7 @@ struct PhotographyDecision: Equatable, Sendable {
     let treatmentPlan: PhotographyTreatmentPlan
     let recipe: AutomaticEditingRecipe
     let parameterEvidence: [PhotographyParameterEvidence]
+    let recipeLifecycle: [PhotographyRecipeLifecycleSnapshot]
     let aestheticPlan: AestheticPhotographyPlan?
     /// Diagnostic-only, measurement-derived regional tone controls.  The plan
     /// is nil for the formal B path and is rendered only when the caller
@@ -79,6 +80,7 @@ struct PhotographyDecision: Equatable, Sendable {
             ),
             recipe: recipe,
             parameterEvidence: parameterEvidence.map { $0.refreshingActualValue(from: recipe) },
+            recipeLifecycle: recipeLifecycle,
             aestheticPlan: aestheticPlan,
             adaptiveRegionalTonePlan: adaptiveRegionalTonePlan
         )
@@ -150,7 +152,9 @@ enum PhotographyKnowledgeRuleID: String, Equatable, Hashable, Sendable {
     case measuredTargetHypotheses = "PT-AESTHETIC-005"
     case separatedAestheticAssessment = "PT-AESTHETIC-006"
     case measuredRegionalToneExpression = "PT-AESTHETIC-007"
+    case measuredRegionalRenderFeedback = "PT-AESTHETIC-008"
     case protectedRegionalBlend = "PT-QA-003"
+    case parameterLifecycleAudit = "PT-QA-004"
 }
 
 /// A plan is deliberately separate from the global recipe: it records the
@@ -165,6 +169,16 @@ struct AdaptiveRegionalTonePlan: Equatable, Sendable {
         guard !adjustments.isEmpty else { return "无可靠区域需要增强影调" }
         return evidence.joined(separator: " | ")
     }
+}
+
+/// Records where a dynamically solved recipe was changed before rendering.
+/// These snapshots are diagnostic evidence only; they never provide a second
+/// parameter source. The final entry is the exact global recipe sent to the
+/// Core Image renderer.
+struct PhotographyRecipeLifecycleSnapshot: Equatable, Sendable {
+    let stage: String
+    let recipeSummary: String
+    let changes: [String]
 }
 
 /// Pure export policy shared by the iOS ZIP exporter and decision-core tests.

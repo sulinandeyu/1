@@ -68,3 +68,16 @@
 3. 安全 R3 必须实际消除 `tooHarsh`、`neutralLuminanceLoss` 和 `localMaskBoundaryArtifact`，不能仅凭参数合同或自动测试判定通过。
 4. 新 D 必须通过真实成片证明增强区域算子带来协调而有意义的变化；技术通过与人工摄影审美继续分开记录。
 
+# 自动专业摄影闭环最终集成（2026-11-09，进行中）
+
+- 分支：`codex/automatic-professional-integration-20261109`，基线 `5125ba971adaf255d9f11b3972ae2297a3e876f6`（Build 32 已验证/内测基线，正式 B 未改）。
+- 已复核知识规则：`PhotographyKnowledge/README.md`、`SOURCE_INDEX.md`、`CODE_MAPPING.md`。
+- 已证实根因：D 的动态配方在求解后依次经过可靠性、问题安全、颜色完整性、人物保护与产品边界；可靠区域计划又把低审美置信度作为全参数缩放，首轮反馈只修改极小的全局值且不修改区域计划。M/R3 使用更宽的区域曲线/曝光/HSL 诊断边界，因此“渲染器能表达、自动 D 调不动”。
+- 本阶段代码（待远程 Apple 验证）：
+  - `PT-AESTHETIC-007` 改为由当前区域亮度/反差/黄色绿色关系计算表达需求；置信度只决定区域证据是否可用，不再重复缩小已可靠的实测残差。
+  - 新增 `PT-AESTHETIC-008`：首轮真实区域复测后，安全且响应不足时只沿原计划方向补足；发生暗部、端点、中性色或蒙版边界风险时只收回受影响区域；最多一次从原图重渲染，不放宽质检阈值。
+  - 新增 `PT-QA-004`：记录 `solverOutput → analysisReliabilityLimits → problemSafetyLimits → colorIntegrityGuards → portraitProtection → finalProductBounds`，并与 rendered/measured 证据分开导出。
+  - D 的反馈选择同时检查全局目标与区域执行达成；技术质检失败的反馈候选仍拒绝。正式 B、拍照和保存路径未改变。
+- 新增决策测试：区域响应不足补偿、区域风险定点收回、参数生命周期，以及原有 Build 31 区域表达契约增强。
+- 当前限制：Windows 没有 Swift/Core Image；以上修改尚不能写成编译、Core Image 像素或 iPhone 审美通过。下一步是提交独立分支并运行现有远程 iOS Build；真实新 D 全分辨率图片仍必须由后续内部诊断真机生成，在满足发布门槛前不上传下一 TestFlight。
+
