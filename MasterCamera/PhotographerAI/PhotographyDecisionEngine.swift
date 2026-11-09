@@ -1538,10 +1538,22 @@ struct AdaptiveRegionalTonePlanner {
                 .clamped(to: -0.28...0.2) * response
             let yellowEvidence = (statistics.yellowColorRatio / 0.35).clamped(to: 0...1)
             let greenEvidence = (statistics.greenColorRatio / 0.3).clamped(to: 0...1)
+            // PT-AESTHETIC-007: a measured warm/cool foliage separation is
+            // evidence in its own right.  Do not let a conservative global
+            // aesthetic confidence erase a relationship that is already
+            // present inside the reliable vegetation mask.  This remains a
+            // bounded per-photo measurement, not an autumn/scene preset.
+            let measuredColorSeparation = (
+                (statistics.yellowColorRatio - statistics.greenColorRatio) / 0.45
+            ).clamped(to: 0...1)
             let saturationHeadroom = ((0.46 - statistics.averageSaturation) / 0.46)
                 .clamped(to: 0...1)
             var hsl = ProfessionalHSLAdjustment.neutral
-            hsl.yellowSaturation = (yellowEvidence * saturationHeadroom * (0.06 + colorFocus * 1.2))
+            hsl.yellowSaturation = (
+                yellowEvidence
+                    * saturationHeadroom
+                    * (0.06 + colorFocus * 1.2 + measuredColorSeparation * 0.04)
+            )
                 .clamped(to: 0...0.14)
             hsl.yellowLuminance = (yellowEvidence * max(0, 0.42 - statistics.averageLuminance) * 0.08)
                 .clamped(to: 0...0.035)
