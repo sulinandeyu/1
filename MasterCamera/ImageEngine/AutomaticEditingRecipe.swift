@@ -837,51 +837,50 @@ struct ManualPhotographyParameters: Equatable, Sendable {
     /// from B/D and exists only to compare Windows R3-W with Core Image R3-I.
     static let inverseR3Verification: ManualPhotographyParameters = {
         var fittedHSL = ProfessionalHSLAdjustment.neutral
-        fittedHSL.orangeHue = 0.0065561
-        fittedHSL.orangeLuminance = 0.1872270
-        fittedHSL.yellowHue = -0.0646570
-        fittedHSL.yellowLuminance = 0.1355930
-        fittedHSL.greenHue = -0.0799945
-        fittedHSL.greenLuminance = 0.0731797
+        fittedHSL.orangeHue = 0.0581306
+        fittedHSL.yellowHue = -0.0284173
+        fittedHSL.yellowLuminance = 0.25
+        fittedHSL.greenHue = -0.0204436
+        fittedHSL.greenLuminance = -0.2
         return ManualPhotographyParameters(
-            identifier: "inverse-r3-core-image-expression-v2-ci-faithful",
+            identifier: "inverse-r3-core-image-expression-v3-ci-cube-faithful",
             renderingBoundary: .inverseResearch,
             cinematicIntensity: .dramatic,
-            exposureEV: -1.0368538,
-            brightness: 0.0419268,
-            contrast: 1.2649534,
-            blackPoint: 0.0259743,
-            whitePoint: 0.8880557,
-            shadowRollOff: 0.0000050,
-            lowerMidtoneLift: -0.1326854,
-            midtoneBias: 0.1999361,
-            highlightRollOff: 0.5948973,
-            saturation: 0.9272287,
+            exposureEV: -0.5606130,
+            brightness: 0.0464275,
+            contrast: 1.2665886,
+            blackPoint: 0.0000014,
+            whitePoint: 0.9999971,
+            shadowRollOff: 0,
+            lowerMidtoneLift: -0.1260555,
+            midtoneBias: -0.25,
+            highlightRollOff: 0.0000039,
+            saturation: 1.1606786,
             hsl: fittedHSL,
             regionalToneAdjustments: [
                 ManualRegionalToneAdjustment(
                     region: .ground,
                     exposureEV: -1,
-                    contrast: 0.9945908,
-                    saturation: 0.9641539
+                    contrast: 1.0289750,
+                    saturation: 0.8792687
                 ),
                 ManualRegionalToneAdjustment(
                     region: .vegetation,
-                    exposureEV: 0.3359365,
-                    contrast: 0.9753266,
-                    saturation: 1.0161514
+                    exposureEV: 0.3315822,
+                    contrast: 0.9896702,
+                    saturation: 0.9980755
                 ),
                 ManualRegionalToneAdjustment(
                     region: .sky,
-                    exposureEV: 0.0547196,
+                    exposureEV: 0.0570545,
                     contrast: 0.99999,
-                    saturation: 0.7523905
+                    saturation: 1.2896523
                 ),
                 ManualRegionalToneAdjustment(
                     region: .architecture,
-                    exposureEV: -0.4869779,
-                    contrast: 0.9928082,
-                    saturation: 0.8514957
+                    exposureEV: 0.0346182,
+                    contrast: 1.0123817,
+                    saturation: 0.8327602
                 )
             ]
         )

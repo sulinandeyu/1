@@ -6,6 +6,7 @@ from inverse_solver import (
     GLOBAL_NEUTRAL,
     LOCAL_NEUTRAL,
     apply_local_controls,
+    apply_hsl,
     cinematic_outputs,
     core_image_cube_curve_map,
     render_global,
@@ -42,6 +43,12 @@ class InverseSolverTests(unittest.TestCase):
         value = np.array([0.1517], dtype=np.float32)
         output = core_image_cube_curve_map(value, cinematic_outputs(params))
         self.assertAlmostEqual(float(output[0]), 0.084, delta=0.005)
+
+    def test_hsl_cube_is_neutral_when_hsl_parameters_are_neutral(self):
+        rng = np.random.default_rng(11)
+        linear = rng.random((17, 13, 3), dtype=np.float32)
+        output = apply_hsl(linear, GLOBAL_NEUTRAL)
+        self.assertLess(float(np.max(np.abs(linear - output))), 4e-6)
 
 
 if __name__ == "__main__":

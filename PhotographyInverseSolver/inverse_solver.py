@@ -183,7 +183,8 @@ def cinematic_outputs(params: np.ndarray, strength: float = 1.0) -> np.ndarray:
     return np.clip(output, 0, 1).astype(np.float32)
 
 
-def apply_hsl(encoded: np.ndarray, params: np.ndarray) -> np.ndarray:
+def apply_hsl_transform_encoded(encoded: np.ndarray, params: np.ndarray) -> np.ndarray:
+    """Apply the Swift processor's perceptual HSV operation in encoded sRGB."""
     hsv = rgb_to_hsv(encoded)
     hue, sat, val = hsv[..., 0], hsv[..., 1], hsv[..., 2]
     chroma_guard = np.minimum(1.0, sat * 3.2)
@@ -196,6 +197,53 @@ def apply_hsl(encoded: np.ndarray, params: np.ndarray) -> np.ndarray:
     hsv[..., 1] = np.clip(sat * (1.0 + sat_delta), 0, 1)
     hsv[..., 2] = np.clip(val + lum_delta, 0, 1)
     return hsv_to_rgb(hsv)
+
+
+def trilinear_cube_sample(values: np.ndarray, cube: np.ndarray) -> np.ndarray:
+    """Sample an RGB cube exactly as a CIColorCube lattice interpolation.
+
+    Work in bounded chunks so a full 2160x2880 validation frame does not create
+    eight simultaneous full-resolution corner arrays.
+    """
+    original_shape = values.shape
+    flat = np.clip(values.reshape(-1, 3), 0, 1).astype(np.float32)
+    dimension = cube.shape[0]
+    output = np.empty_like(flat)
+    for start in range(0, len(flat), 250_000):
+        part = flat[start:start + 250_000]
+        scaled = part * np.float32(dimension - 1)
+        lower = np.floor(scaled).astype(np.int32)
+        upper = np.minimum(lower + 1, dimension - 1)
+        fraction = scaled - lower
+        sampled = np.zeros_like(part)
+        for red_high in (0, 1):
+            red_index = upper[:, 0] if red_high else lower[:, 0]
+            red_weight = fraction[:, 0] if red_high else 1.0 - fraction[:, 0]
+            for green_high in (0, 1):
+                green_index = upper[:, 1] if green_high else lower[:, 1]
+                green_weight = fraction[:, 1] if green_high else 1.0 - fraction[:, 1]
+                for blue_high in (0, 1):
+                    blue_index = upper[:, 2] if blue_high else lower[:, 2]
+                    blue_weight = fraction[:, 2] if blue_high else 1.0 - fraction[:, 2]
+                    weight = (red_weight * green_weight * blue_weight)[:, None]
+                    sampled += cube[red_index, green_index, blue_index] * weight
+        output[start:start + len(part)] = sampled
+    return output.reshape(original_shape)
+
+
+def apply_hsl(linear: np.ndarray, params: np.ndarray, dimension: int = 32) -> np.ndarray:
+    """Match ProfessionalHSLProcessor's perceptual 32³ Core Image cube.
+
+    The cube input/output is extended-linear sRGB, while the HSV calculation is
+    intentionally performed in encoded sRGB inside each lattice sample.
+    """
+    grid = np.linspace(0, 1, dimension, dtype=np.float32)
+    red, green, blue = np.meshgrid(grid, grid, grid, indexing="ij")
+    lattice_linear = np.stack([red, green, blue], axis=-1)
+    lattice_encoded = linear_to_srgb(lattice_linear)
+    adjusted_encoded = apply_hsl_transform_encoded(lattice_encoded, params)
+    cube = srgb_to_linear(adjusted_encoded)
+    return trilinear_cube_sample(linear, cube)
 
 
 def apply_color_controls(linear: np.ndarray, brightness: float, contrast: float, saturation: float) -> np.ndarray:

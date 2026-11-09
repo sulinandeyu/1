@@ -37,8 +37,10 @@ The tool reproduces the public mathematics visible in the Swift source:
 - the continuous HSL hue weights used by `ProfessionalHSLProcessor`;
 - mask feathering, regional exposure/contrast/saturation and alpha blending.
 
-HSL and local blending run in the same extended-linear-sRGB working domain as
-the app, with sRGB encoding only at output. `CIColorControls`,
+HSL uses the app's perceptual 32³ cube: each extended-linear lattice point is
+encoded to sRGB for HSV adjustment, converted back to linear, and then sampled
+with trilinear interpolation. Local blending remains in the linear working
+domain, with sRGB encoding only at output. `CIColorControls`,
 `CIHighlightShadowAdjust`, `CITemperatureAndTint`, and
 `CIToneCurve` are Apple implementations whose full transfer functions are not
 available on Windows. The inverse experiment therefore keeps highlight/shadow
