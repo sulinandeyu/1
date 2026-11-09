@@ -2281,7 +2281,7 @@ final class SceneAdaptationTests: XCTestCase {
         XCTAssertTrue(profile.rationale.joined().contains("同一测量定义"))
     }
 
-    func testMeasuredDGeneratesProtectedEnhancedRegionalToneFromCurrentPixels() {
+    func testMeasuredDGeneratesProtectedEnhancedRegionalToneFromCurrentPixels() throws {
         let groundMask = NormalizedPhotoMask(
             width: 8,
             height: 8,
@@ -2297,11 +2297,6 @@ final class SceneAdaptationTests: XCTestCase {
             contrast: 0.831,
             saturation: 0.168,
             labels: ["outdoor"],
-            shadowRatio: 0.055,
-            highlightRatio: 0.253,
-            blackRatio: 0.01,
-            whiteRatio: 0.04,
-            noiseEstimate: 0.04,
             groundMask: groundMask,
             vegetationMask: vegetationMask,
             groundStatistics: regionStatistics(
@@ -2322,6 +2317,11 @@ final class SceneAdaptationTests: XCTestCase {
                 yellowColorRatio: 0.509,
                 greenColorRatio: 0.192
             ),
+            shadowRatio: 0.055,
+            highlightRatio: 0.253,
+            blackRatio: 0.01,
+            whiteRatio: 0.04,
+            noiseEstimate: 0.04,
             segmentation: SceneSegmentationDiagnostics(
                 status: .available,
                 reason: nil,
@@ -2337,9 +2337,13 @@ final class SceneAdaptationTests: XCTestCase {
             problems: detector.detect(in: analysis),
             enableMeasuredAestheticPlanning: true
         )
-        let adjustments = try XCTUnwrap(decision.adaptiveRegionalTonePlan).adjustments
-        let ground = try XCTUnwrap(adjustments.first { $0.region == .ground })
-        let vegetation = try XCTUnwrap(adjustments.first { $0.region == .vegetation })
+        let plan: AdaptiveRegionalTonePlan = try XCTUnwrap(decision.adaptiveRegionalTonePlan)
+        let ground: ManualRegionalToneAdjustment = try XCTUnwrap(
+            plan.adjustments.first { $0.region == TreatmentRegion.ground }
+        )
+        let vegetation: ManualRegionalToneAdjustment = try XCTUnwrap(
+            plan.adjustments.first { $0.region == TreatmentRegion.vegetation }
+        )
 
         XCTAssertLessThan(ground.exposureEV, -0.12)
         XCTAssertGreaterThanOrEqual(ground.luminanceLowerBound, 0.1)
@@ -2349,7 +2353,7 @@ final class SceneAdaptationTests: XCTestCase {
         XCTAssertNotEqual(ground.exposureEV, vegetation.exposureEV)
     }
 
-    func testR3MeasuredSafetyCorrectionPreservesExpressionButProtectsEndpoints() {
+    func testR3MeasuredSafetyCorrectionPreservesExpressionButProtectsEndpoints() throws {
         let source = ManualPhotographyParameters.inverseR3Verification
         let corrected = source.safetyAdjustedForMeasuredRisks(
             tooHarsh: true,
@@ -2359,8 +2363,12 @@ final class SceneAdaptationTests: XCTestCase {
             neutralColorDrift: false,
             localMaskBoundaryArtifact: true
         )
-        let sourceGround = try XCTUnwrap(source.regionalToneAdjustments.first { $0.region == .ground })
-        let correctedGround = try XCTUnwrap(corrected.regionalToneAdjustments.first { $0.region == .ground })
+        let sourceGround: ManualRegionalToneAdjustment = try XCTUnwrap(
+            source.regionalToneAdjustments.first { $0.region == TreatmentRegion.ground }
+        )
+        let correctedGround: ManualRegionalToneAdjustment = try XCTUnwrap(
+            corrected.regionalToneAdjustments.first { $0.region == TreatmentRegion.ground }
+        )
 
         XCTAssertGreaterThan(corrected.exposureEV, source.exposureEV)
         XCTAssertLessThan(corrected.contrast, source.contrast)
