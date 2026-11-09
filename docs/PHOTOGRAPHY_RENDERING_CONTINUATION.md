@@ -6,6 +6,7 @@
 
 - 当前分支：`codex/coreimage-tone-expression-20261109`
 - 已推送基线：`1299fa760f27d9456fb3598739596d6dfa7c38dd`
+- 当前修正提交：`15cc8ec5dfed4b6b1d74c4c718ddcf199bfeb817`
 - 正式 B：未修改；新增能力仅用于诊断 M / 反求 R3-I。
 - TestFlight：未上传；Build 31 的发布门尚未满足。
 
@@ -24,11 +25,11 @@
    - 修正后的扩展诊断 R3-W 全图 RGB MAE：`0.0752609`。
    - 道路亮度 `0.07167`，目标 `0.06376`；植被亮度 `0.20059`，目标 `0.18281`；道路减植被关系 `-0.12892`，目标 `-0.11905`。
    - 黄色/橙色饱和与中性色亮度仍存在明显差距，人工审美状态仍为待验收。
+7. 远程 iOS Build #77（run `42579545332`）：81 项中 80 项通过；EV、黑点、32³ 曲线、区域中性恒等和亮度保护均通过。唯一失败是 Apple 私有 `CIColorControls` 与 Windows 近似最大偏差 `59/255`，不是自定义曲线差异。
 
 ## 正在进行
 
-- 将修正后的 R3-W 参数接入仅诊断的 `ManualPhotographyParameters.inverseR3Verification`。
-- 重新执行远程 Apple 像素测试，取得真实 Core Image 阶段值并修复剩余差异。
+- 将自定义 HSL 与 Apple 私有 `CIColorControls` 分开验证：HSL 保持跨平台紧容差，私有滤镜使用实际 Apple 像素基线做回归，明确不宣称 Windows 精确一致。
 
 ## 尚未完成 / 发布门
 

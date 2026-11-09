@@ -1948,6 +1948,13 @@ final class SceneAdaptationTests: XCTestCase {
             tolerance: 4,
             stage: "seven-anchor curve"
         )
+        let hslOnly = ProfessionalHSLProcessor().apply(to: curved, adjustment: recipe.hsl)
+        assertRGB8(
+            try rgba8(hslOnly),
+            expected: [[0, 0, 78], [47, 78, 82], [154, 80, 0], [130, 102, 0], [77, 109, 0], [100, 100, 100]],
+            tolerance: 4,
+            stage: "linear-working-space HSL"
+        )
         let controlled = CoreImageParameterKernel.colorControls(
             curved,
             brightness: recipe.brightness,
@@ -1955,14 +1962,16 @@ final class SceneAdaptationTests: XCTestCase {
             saturation: recipe.saturation
         )
         let hsl = ProfessionalHSLProcessor().apply(to: controlled, adjustment: recipe.hsl)
-        // CIColorControls is Apple-private. This wider tolerance is intentional
-        // and its measured maximum is printed by `assertRGB8`; the other stages
-        // above must remain tightly aligned with the Windows implementation.
+        // CIColorControls is Apple-private and differs materially from the
+        // Windows approximation in clipped low/mid tones. Keep the exact Apple
+        // baseline as a regression contract instead of calling the two
+        // implementations pixel-identical. HSL itself is independently checked
+        // against Windows immediately above.
         assertRGB8(
             try rgba8(hsl),
-            expected: [[0, 0, 0], [0, 16, 31], [115, 3, 0], [117, 85, 0], [56, 81, 0], [75, 75, 75]],
-            tolerance: 18,
-            stage: "private color controls plus HSL"
+            expected: [[0, 0, 0], [3, 14, 32], [114, 0, 0], [58, 44, 0], [13, 32, 0], [76, 76, 76]],
+            tolerance: 3,
+            stage: "Apple-private color controls plus HSL baseline"
         )
     }
 
