@@ -99,6 +99,26 @@ final class DiagnosticBundleExporter {
             try jsonData(performanceObject(photo: photo)),
             "processing duration and memory evidence"
         )
+        let r3Candidate = photo.diagnosticCandidates.first { $0.identifier == "M" }
+        let r3ImageFile = Self.resolvedPreview(
+            for: r3Candidate,
+            in: photo.processingStagePreviews
+        ) == nil ? "unavailable" : "images/M_manual_render.jpg"
+        let r3Status: [String: Any] = [
+            "source": "A_original.jpg identified by sourceSha256",
+            "professionalTargetT": "external_research_reference_not_packaged",
+            "professionalTargetReason": "T is licensing-restricted and must never be bundled or exported as an App result.",
+            "coreImageCandidate": r3ImageFile,
+            "parameterIdentifier": ManualPhotographyParameters.inverseR3Verification.identifier,
+            "candidateStates": r3Candidate?.states.map(\.rawValue) ?? ["unavailable"],
+            "technicalQualityStatus": r3Candidate?.technicalQualityStatus ?? "notRun",
+            "humanAestheticStatus": "awaiting_real_device_review"
+        ]
+        add(
+            "evidence/R3_VALIDATION_STATUS.json",
+            try jsonData(r3Status),
+            "R3-I experiment provenance; T is intentionally external"
+        )
 
         let inventory = entries.map { entry -> [String: Any] in
             [
@@ -131,7 +151,7 @@ final class DiagnosticBundleExporter {
                 "D": "measured automatic aesthetic diagnostic; never replaces B",
                 "E1": "independently solved spatial-emphasis target experiment; human preference pending",
                 "E2": "independently solved restrained-depth target experiment; human preference pending",
-                "M": "human-declared renderer verification; never replaces B or D",
+                "M": "R3-I human-declared Core Image renderer verification; never replaces B or D",
                 "difference": "A versus B, amplified five times"
             ],
             "files": inventory
@@ -335,11 +355,13 @@ final class DiagnosticBundleExporter {
         D = 逐图自动后期诊断输出，不替换 B
         E1 = 由当前照片测量独立求解的空间层次目标实验，人工偏好待评价
         E2 = 由当前照片测量独立求解的克制暗调目标实验，人工偏好待评价
-        M = 人工声明参数的渲染表达能力验证，不替换 B/D
+        M / R3-I = 人工声明 R3 参数的 Core Image 渲染表达能力验证，不替换 B/D
+        T = 外部专业目标参考；因许可限制不打包、不导出，也绝不冒充 App 成片
         差异图 = A 与 B 的五倍放大差异，不代表 D、E1、E2 或 M
 
         candidate_states_and_parameters.json 明确区分 planned、executed、rejected、fallback、unavailable，
         并分别记录技术质检、摄影目标质量状态和人工审美状态。
+        R3_VALIDATION_STATUS.json 明确区分 A、外部 T 与设备实际 M/R3-I。
         屏幕截图不是实际成片文件；images 目录中的 JPEG 才是本次处理实际输出。
         """
     }

@@ -1884,6 +1884,10 @@ final class SceneAdaptationTests: XCTestCase {
         XCTAssertEqual(research.lowerMidtoneLift, -0.1260555, accuracy: 0.0001)
         XCTAssertEqual(research.midtoneBias, -0.25, accuracy: 0.0001)
         XCTAssertEqual(ManualPhotographyParameters.inverseR3Verification.renderingBoundary, .inverseResearch)
+        XCTAssertEqual(
+            ManualPhotographyParameters.inverseR3Verification.identifier,
+            "inverse-r3-core-image-expression-v3-ci-cube-faithful"
+        )
     }
 
     func testDiagnosticRegionalToneNeutralDoesNotAlterPixels() throws {
