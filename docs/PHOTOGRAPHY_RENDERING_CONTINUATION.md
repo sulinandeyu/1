@@ -5,10 +5,10 @@
 ## 当前状态
 
 - 当前分支：`codex/coreimage-tone-expression-20261109`
-- 已验证源码提交：`73e9e4ce`
-- 当前进度提交：`03ce99a5`
+- 已验证及发布源码提交：`30ee33400b286b94c4e4bec9aa31a506bcb7c40e`
+- 当前进度提交：`30ee3340`
 - 正式 B：未修改；新增能力仅用于诊断 M / 反求 R3-I。
-- TestFlight：未上传；Build 31 的发布门尚未满足。
+- TestFlight：小苏相机 `1.0 (Build 31)` 已上传，App Store Connect 状态为 `VALID` / `READY_FOR_BETA_TESTING`，现有内部测试组可安装。
 
 ## 已完成
 
@@ -32,22 +32,26 @@
 11. 远程 iOS Build #81（run `42584431183`）：81 项测试全部通过，并取得 R3 v3 的真实 Apple 私有颜色控制基线：`[0,0,51] [21,41,55] [132,57,0] [128,103,0] [0,2,0] [112,112,112]`。App 编译发现诊断探针 `map` 闭包缺少显式 `return`；当前本地提交已修复，并把该基线从临时 `18/255` 容差收紧为 `3/255`。
 12. 仓库仅有 1 个受控图片资源，秋季街道原图 SHA-256 `12BE...0F35` 不在 Git 跟踪文件中。当前远程 Apple 环境无法取得这张私有全分辨率输入，因此不能伪造 R3-I，也不能把 Windows R3-W 写成 Core Image 样片。
 13. 远程 iOS Build #82（run `42585880410`，HEAD `03ce99a5`）：81/81 Swift 测试通过、0 失败，包含收紧为 `3/255` 的 R3 Apple 基线、区域中性恒等、亮度范围保护、曝光/曲线/HSL/白平衡方向及原有场景回归；iOS Simulator App 构建成功。
+14. 补齐设备端 R3-I 诊断证据：相册诊断导入会以同一原图生成全分辨率 M/R3-I 候选；ZIP 中新增 `evidence/R3_VALIDATION_STATUS.json`，记录原图 SHA-256、实际候选状态、执行参数标识 `inverse-r3-core-image-expression-v3-ci-cube-faithful`、技术质检和人工审美状态。专业目标 T 因来源与授权限制不打包、不提交公开仓库。
+15. 远程 iOS Build #86（run `42592309510`，HEAD `30ee3340`）：81/81 Swift 测试通过、0 失败，iOS Simulator App 编译成功。此前 Build #85 暴露的诊断导出字段引用错误已修复为读取真实 `qualityStatus` 与 `humanAestheticStatus`，未修改正式 B。
+16. TestFlight Release #37（run `42593674139`，HEAD `30ee3340`）：归档、签名、IPA 导出及上传全部成功，实际版本为 `1.0 (31)`。
+17. TestFlight Verification #38（run `42594262535`）：App Store Connect 已确认 `processingState=VALID`、`internalBuildState=READY_FOR_BETA_TESTING`，并继承 1 个 `hasAccessToAllBuilds=true` 的现有内部测试组；日志明确输出 `TESTFLIGHT_INTERNAL_INSTALLABLE build=31`。
 
 ## 正在进行
 
-- Core Image 算子与 App 编译验证已完成；当前停在 R3-I 私有全分辨率输入无法安全传入远程 Apple 环境的发布门。
+- Build 31 已完成内部 TestFlight 发布。下一步是在真实 iPhone 上从相册导入秋季街道 A，取得设备端全分辨率 M/R3-I 与诊断 ZIP，再进行真实区域安全和人工摄影审美验收。
 
-## 尚未完成 / 发布门
+## 尚未完成 / 真机验收项
 
-1. 远程 Apple 测试必须全部通过，Simulator 必须构建成功。
-2. 必须取得真实 Core Image R3-I；Windows R3-W 不得冒充 R3-I。
-3. 必须完成 R3-I 的区域暗部、高光、中性色、细节和光晕安全检查。
-4. 必须对项目已有不同场景素材执行新增算子回归；人物结果仍需真机人工验收。
-5. 仅在以上条件满足、且包内无受限参考像素/权重后，才可使用既有工作流上传内部 TestFlight Build 31。
+1. 真实秋季街道全分辨率 R3-I 尚未生成；私有 A/T 未上传至公开 Git 或公开构建产物，Windows R3-W 仍未冒充 R3-I。
+2. 需要使用 Build 31 取得真实 R3-I，完成道路、植被、天空、白色车辆/建筑中性色、暗部细节、噪声及蒙版光晕检查。
+3. 需要用项目已有不同场景原图做设备端回归；人物结果必须继续验证肤色与真实纹理，禁止美颜或外貌修改。
+4. TestFlight 可安装只代表工程发布门通过，不代表 R3-I 摄影效果或跨场景审美已经验收。
 
 ## 下一步
 
-1. 不把私有/来源受限的 A/T 提交到公开仓库；为 R3-I 提供合规的 Apple 环境素材传递或设备端诊断采集路径。
-2. 取得 R3-I 后执行道路、植被、天空、中性色、细节、噪声和蒙版光晕检查，并与 R3-W/T 对比。
-3. 在 R3-I 与跨场景/人物人工验收完成前，按发布门停止 Build 31 上传，不绕过验收条件。
+1. 在 iPhone 安装 TestFlight Build 31，打开相册诊断入口并导入真实秋季街道 A。
+2. 等待 A/B/D/E1/E2/M 生成完成，确认 M 标识为 R3-I 实验候选；使用一键导出生成诊断 ZIP。
+3. 将 ZIP 提供回项目，复核实际全分辨率图片、参数、区域指标、质量状态和原图 SHA-256；T 继续只在本地授权边界内参与对比。
+4. 完成真实 R3-I 与跨场景/人物人工验收前，不替换正式 B、不合并正式分支、不提交 App Store 正式审核。
 
