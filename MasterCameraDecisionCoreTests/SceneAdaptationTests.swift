@@ -1818,6 +1818,7 @@ final class SceneAdaptationTests: XCTestCase {
         )
 
         XCTAssertNil(formal.aestheticPlan)
+        XCTAssertNil(formal.adaptiveRegionalTonePlan)
         XCTAssertEqual(formal.aestheticTarget, .neutral)
         XCTAssertNotNil(diagnostic.aestheticPlan)
         XCTAssertEqual(diagnostic.aestheticTarget, .measuredHarmony)
@@ -2275,7 +2276,100 @@ final class SceneAdaptationTests: XCTestCase {
 
         XCTAssertGreaterThan(profile.resolvedTarget.luminance, 0.55)
         XCTAssertLessThan(profile.resolvedTarget.luminance, bright.averageLuminance)
+        XCTAssertGreaterThan(profile.resolvedTarget.contrast, 0.79)
+        XCTAssertLessThanOrEqual(profile.resolvedTarget.contrast, bright.contrastRange)
         XCTAssertTrue(profile.rationale.joined().contains("同一测量定义"))
+    }
+
+    func testMeasuredDGeneratesProtectedEnhancedRegionalToneFromCurrentPixels() {
+        let groundMask = NormalizedPhotoMask(
+            width: 8,
+            height: 8,
+            pixels: Data((0..<64).map { $0 < 22 ? UInt8(255) : UInt8(0) })
+        )
+        let vegetationMask = NormalizedPhotoMask(
+            width: 8,
+            height: 8,
+            pixels: Data((0..<64).map { $0 >= 22 && $0 < 50 ? UInt8(255) : UInt8(0) })
+        )
+        let analysis = fixture(
+            luminance: 0.637,
+            contrast: 0.831,
+            saturation: 0.168,
+            labels: ["outdoor"],
+            shadowRatio: 0.055,
+            highlightRatio: 0.253,
+            blackRatio: 0.01,
+            whiteRatio: 0.04,
+            noiseEstimate: 0.04,
+            groundMask: groundMask,
+            vegetationMask: vegetationMask,
+            groundStatistics: regionStatistics(
+                luminance: 0.692,
+                contrast: 0.587,
+                saturation: 0.073,
+                red: 0.55,
+                green: 0.53,
+                blue: 0.47
+            ),
+            vegetationStatistics: regionStatistics(
+                luminance: 0.557,
+                contrast: 0.802,
+                saturation: 0.270,
+                red: 0.46,
+                green: 0.44,
+                blue: 0.31,
+                yellowColorRatio: 0.509,
+                greenColorRatio: 0.192
+            ),
+            segmentation: SceneSegmentationDiagnostics(
+                status: .available,
+                reason: nil,
+                skyCoverage: 0,
+                groundCoverage: 0.328,
+                vegetationCoverage: 0.423,
+                waterCoverage: 0,
+                architectureCoverage: 0
+            )
+        )
+        let decision = engine.makeDecision(
+            for: analysis,
+            problems: detector.detect(in: analysis),
+            enableMeasuredAestheticPlanning: true
+        )
+        let adjustments = try XCTUnwrap(decision.adaptiveRegionalTonePlan).adjustments
+        let ground = try XCTUnwrap(adjustments.first { $0.region == .ground })
+        let vegetation = try XCTUnwrap(adjustments.first { $0.region == .vegetation })
+
+        XCTAssertLessThan(ground.exposureEV, -0.12)
+        XCTAssertGreaterThanOrEqual(ground.luminanceLowerBound, 0.1)
+        XCTAssertLessThanOrEqual(ground.luminanceUpperBound, 0.86)
+        XCTAssertGreaterThanOrEqual(ground.luminanceFeather, 0.14)
+        XCTAssertGreaterThan(vegetation.hsl.yellowSaturation, 0.05)
+        XCTAssertNotEqual(ground.exposureEV, vegetation.exposureEV)
+    }
+
+    func testR3MeasuredSafetyCorrectionPreservesExpressionButProtectsEndpoints() {
+        let source = ManualPhotographyParameters.inverseR3Verification
+        let corrected = source.safetyAdjustedForMeasuredRisks(
+            tooHarsh: true,
+            crushedShadows: false,
+            abnormalBlackCoverage: false,
+            neutralLuminanceShift: -0.16,
+            neutralColorDrift: false,
+            localMaskBoundaryArtifact: true
+        )
+        let sourceGround = try XCTUnwrap(source.regionalToneAdjustments.first { $0.region == .ground })
+        let correctedGround = try XCTUnwrap(corrected.regionalToneAdjustments.first { $0.region == .ground })
+
+        XCTAssertGreaterThan(corrected.exposureEV, source.exposureEV)
+        XCTAssertLessThan(corrected.contrast, source.contrast)
+        XCTAssertLessThan(correctedGround.exposureEV.magnitude, sourceGround.exposureEV.magnitude)
+        XCTAssertGreaterThanOrEqual(correctedGround.luminanceLowerBound, 0.12)
+        XCTAssertLessThanOrEqual(correctedGround.luminanceUpperBound, 0.86)
+        XCTAssertGreaterThanOrEqual(correctedGround.luminanceFeather, 0.16)
+        XCTAssertNotEqual(corrected.exposureEV, 0)
+        XCTAssertNotEqual(correctedGround.exposureEV, 0)
     }
 
     func testRegionalYellowAndGreenRelationshipCreatesMeasuredColorSeparation() {

@@ -11,6 +11,10 @@ struct PhotographyDecision: Equatable, Sendable {
     let recipe: AutomaticEditingRecipe
     let parameterEvidence: [PhotographyParameterEvidence]
     let aestheticPlan: AestheticPhotographyPlan?
+    /// Diagnostic-only, measurement-derived regional tone controls.  The plan
+    /// is nil for the formal B path and is rendered only when the caller
+    /// explicitly enables measured aesthetic planning (D/E diagnostics).
+    let adaptiveRegionalTonePlan: AdaptiveRegionalTonePlan?
 
     var summaryText: String {
         let actionText = actions.map(\.title).joined(separator: ", ")
@@ -75,7 +79,8 @@ struct PhotographyDecision: Equatable, Sendable {
             ),
             recipe: recipe,
             parameterEvidence: parameterEvidence.map { $0.refreshingActualValue(from: recipe) },
-            aestheticPlan: aestheticPlan
+            aestheticPlan: aestheticPlan,
+            adaptiveRegionalTonePlan: adaptiveRegionalTonePlan
         )
     }
 }
@@ -144,6 +149,22 @@ enum PhotographyKnowledgeRuleID: String, Equatable, Hashable, Sendable {
     case renderMeasureFeedback = "PT-AESTHETIC-004"
     case measuredTargetHypotheses = "PT-AESTHETIC-005"
     case separatedAestheticAssessment = "PT-AESTHETIC-006"
+    case measuredRegionalToneExpression = "PT-AESTHETIC-007"
+    case protectedRegionalBlend = "PT-QA-003"
+}
+
+/// A plan is deliberately separate from the global recipe: it records the
+/// exact mask-backed controls that D will send to the pixel renderer.  Values
+/// are solved from the current image's measured regions, never from a scene
+/// label or a stored look.
+struct AdaptiveRegionalTonePlan: Equatable, Sendable {
+    let adjustments: [ManualRegionalToneAdjustment]
+    let evidence: [String]
+
+    var traceSummary: String {
+        guard !adjustments.isEmpty else { return "无可靠区域需要增强影调" }
+        return evidence.joined(separator: " | ")
+    }
 }
 
 /// Pure export policy shared by the iOS ZIP exporter and decision-core tests.

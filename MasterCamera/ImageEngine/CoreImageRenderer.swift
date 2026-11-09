@@ -187,16 +187,26 @@ final class CoreImageRenderer {
     func renderAutomaticEdit(
         from data: Data,
         recipe: AutomaticEditingRecipe = .naturalEnhancement,
-        analysis: PhotoAnalysis? = nil
+        analysis: PhotoAnalysis? = nil,
+        adaptiveRegionalTonePlan: AdaptiveRegionalTonePlan? = nil
     ) throws -> Data {
         AppLogger.imageEngine.info(
             "渲染器收到配方：\(recipe.traceSummary, privacy: .public)；局部蒙版 person=\(analysis?.personMask?.isValid == true)，subject=\(analysis?.salientSubjectMask?.isValid == true)，sky=\(analysis?.skyMask?.isValid == true)，ground=\(analysis?.groundMask?.isValid == true)，vegetation=\(analysis?.vegetationMask?.isValid == true)，water=\(analysis?.waterMask?.isValid == true)，architecture=\(analysis?.architectureMask?.isValid == true)"
         )
-        let result = try processImage(data: data, recipe: recipe, analysis: analysis)
+        let result = try processImage(
+            data: data,
+            recipe: recipe,
+            analysis: analysis,
+            manualRegionalToneAdjustments: adaptiveRegionalTonePlan?.adjustments ?? []
+        )
         let finished = result.finalImage
         let canvas = result.canvas
 
-        let modules = executedModuleNames(for: recipe, analysis: analysis)
+        let modules = executedModuleNames(
+            for: recipe,
+            analysis: analysis,
+            manualRegionalAdjustments: adaptiveRegionalTonePlan?.adjustments ?? []
+        )
         AppLogger.imageEngine.info(
             "执行像素模块：\(modules.joined(separator: " → "))；输出范围 \(Int(finished.extent.width))×\(Int(finished.extent.height))"
         )
@@ -600,6 +610,21 @@ final class CoreImageRenderer {
             analysis: analysis,
             adjustments: adjustments
         )
+    }
+
+    func adaptiveRegionalExecutionDetails(
+        analysis: PhotoAnalysis?,
+        plan: AdaptiveRegionalTonePlan?
+    ) -> [String] {
+        guard let plan else { return [] }
+        return localAdjustmentProcessor.manualRegionalExecutionDetails(
+            analysis: analysis,
+            adjustments: plan.adjustments
+        ).map {
+            $0.replacingOccurrences(of: "M 区域影调", with: "D 增强区域影调")
+                .replacingOccurrences(of: "（M；", with: "（D 动态实测；")
+                .replacingOccurrences(of: "（M ", with: "（D 动态实测 ")
+        }
     }
 
     private func applyWhiteBalance(to image: CIImage, recipe: AutomaticEditingRecipe) -> CIImage {

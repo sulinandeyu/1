@@ -799,6 +799,64 @@ struct ManualPhotographyParameters: Equatable, Sendable {
         return recipe
     }
 
+    /// PT-QA-003 diagnostic-only response to measured rendering failures.  The
+    /// caller supplies actual quality evidence; no threshold is changed here.
+    /// B/D never call this method.
+    func safetyAdjustedForMeasuredRisks(
+        tooHarsh: Bool,
+        crushedShadows: Bool,
+        abnormalBlackCoverage: Bool,
+        neutralLuminanceShift: Float?,
+        neutralColorDrift: Bool,
+        localMaskBoundaryArtifact: Bool
+    ) -> ManualPhotographyParameters {
+        var corrected = self
+        if tooHarsh || crushedShadows || abnormalBlackCoverage {
+            corrected.cinematicIntensity = .standard
+            corrected.contrast = 1 + (contrast - 1) * 0.56
+            corrected.lowerMidtoneLift = lowerMidtoneLift * 0.62
+            corrected.midtoneBias = midtoneBias * 0.60
+            corrected.shadowRollOff = max(shadowRollOff, 0.045)
+            corrected.shadowAmount = max(shadowAmount, 0.055)
+        }
+        if let neutralLuminanceShift, neutralLuminanceShift < -0.055 {
+            let requiredRecovery = -0.055 - neutralLuminanceShift
+            corrected.exposureEV += min(0.26, requiredRecovery * 1.35)
+            corrected.brightness += min(0.025, requiredRecovery * 0.18)
+            corrected.saturation = 1 + (saturation - 1) * 0.62
+        }
+        if neutralColorDrift {
+            corrected.saturation = 1 + (corrected.saturation - 1) * 0.65
+            corrected.temperatureShift *= 0.5
+            corrected.tintShift *= 0.5
+        }
+
+        let boundaryScale: Float = localMaskBoundaryArtifact ? 0.68 : 0.78
+        corrected.regionalToneAdjustments = regionalToneAdjustments.map { requested in
+            var regional = requested
+            regional.exposureEV *= boundaryScale
+            regional.lowerMidtoneLift *= boundaryScale
+            regional.midtoneBias *= boundaryScale
+            regional.upperMidtoneSeparation *= boundaryScale
+            regional.blackPoint *= 0.5
+            regional.contrast = 1 + (regional.contrast - 1) * boundaryScale
+            regional.saturation = 1 + (regional.saturation - 1) * 0.72
+            regional.luminanceLowerBound = max(0.12, regional.luminanceLowerBound)
+            regional.luminanceUpperBound = min(0.86, regional.luminanceUpperBound)
+            regional.luminanceFeather = max(0.16, regional.luminanceFeather)
+            if regional.exposureEV < -0.08 {
+                regional.shadowAmount = max(regional.shadowAmount, 0.07)
+                regional.shadowRollOff = max(regional.shadowRollOff, 0.035)
+            }
+            if regional.region == .sky {
+                regional.luminanceLowerBound = max(0.5, regional.luminanceLowerBound)
+                regional.luminanceUpperBound = 1
+            }
+            return regional.diagnosticClamped()
+        }
+        return corrected
+    }
+
     /// A deliberately declared control combination for renderer verification.
     /// It is not an aesthetic preset and is only enabled for diagnostic imports.
     static let rendererVerification: ManualPhotographyParameters = {

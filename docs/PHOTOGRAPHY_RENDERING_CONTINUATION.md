@@ -4,7 +4,7 @@
 
 ## 当前状态
 
-- 当前分支：`codex/coreimage-tone-expression-20261109`
+- 当前分支：`codex/build31-r3-safety-auto-d-20261109`
 - 已验证及发布源码提交：`30ee33400b286b94c4e4bec9aa31a506bcb7c40e`
 - 当前进度提交：`30ee3340`
 - 正式 B：未修改；新增能力仅用于诊断 M / 反求 R3-I。
@@ -36,22 +36,30 @@
 15. 远程 iOS Build #86（run `42592309510`，HEAD `30ee3340`）：81/81 Swift 测试通过、0 失败，iOS Simulator App 编译成功。此前 Build #85 暴露的诊断导出字段引用错误已修复为读取真实 `qualityStatus` 与 `humanAestheticStatus`，未修改正式 B。
 16. TestFlight Release #37（run `42593674139`，HEAD `30ee3340`）：归档、签名、IPA 导出及上传全部成功，实际版本为 `1.0 (31)`。
 17. TestFlight Verification #38（run `42594262535`）：App Store Connect 已确认 `processingState=VALID`、`internalBuildState=READY_FOR_BETA_TESTING`，并继承 1 个 `hasAccessToAllBuilds=true` 的现有内部测试组；日志明确输出 `TESTFLIGHT_INTERNAL_INSTALLABLE build=31`。
+18. 已读取 Build 31 真机 ZIP `XiaoSuCamera_Diagnostic_20261109_193312_411c710221.zip`，确认 A/B/D/E1/E2/M 均为同一原图的 2160×2880 全分辨率结果；C 继续为 unavailable。D 全局亮度约 `0.6132`，相对 A 的 RGB MAE 仅 `0.0385`；M/R3-I 亮度约 `0.3525`、RGB MAE `0.2821`，证明增强调色算子已在真实 iPhone 执行，但其强度不安全。
+19. Build 31 M/R3-I 的失败区域已量化：地面阴影占比约 `54.23%`、黑位约 `32.56%`，建筑阴影约 `39.03%`、黑位约 `32.35%`，建筑中性色亮度约 `0.0291`；这与 `tooHarsh`、`neutralLuminanceLoss`、`localMaskBoundaryArtifact` 一致，不允许通过放宽阈值处理。
+20. 根因已定位为两部分：M 的全局 `-0.56 EV` 与地面全亮度范围 `-1 EV` 叠加且缺少端点/羽化保护；D 虽有可靠地面、植被、天空和建筑蒙版，但仍只执行接近零的局部 EV/HSL，且高反差目标被过度压低到保守范围。
+21. 当前独立分支已实现但尚待远程 Apple 验证：
+   - `PT-AESTHETIC-007`：由每张照片的区域亮度、反差、噪声、颜色占比、可靠蒙版及逐图目标生成 `AdaptiveRegionalTonePlan`，直接进入 D/E 全分辨率 Core Image 区域处理；不读取场景名称，不复制 R3 参数，正式 B 的计划固定为 `nil`。
+   - `PT-QA-003`：M/R3 首轮真实渲染失败后，按实际问题进行一次有界安全修正、重渲染和重质检；不修改质检阈值，只有状态或问题数量改善才采用。
+   - 高反差源图的 D 目标不再被无条件压平到 `0.66`；增强区域处理使用中间亮度范围、阴影/高光保护及至少 `0.16` 羽化。
+22. Windows 已生成同源 A/B/D/M/T 接触表和完整区域指标：`output/build31_real_diagnosis/A_B_D_M_T_contact_sheet.jpg`、`build31_full_resolution_metrics.json`。这些是真机 Build 31 结果复核，不是新 Swift/Core Image 输出；新 D 与安全 R3 仍需远程编译和下一次真机成片验收。
 
 ## 正在进行
 
-- Build 31 已完成内部 TestFlight 发布。下一步是在真实 iPhone 上从相册导入秋季街道 A，取得设备端全分辨率 M/R3-I 与诊断 ZIP，再进行真实区域安全和人工摄影审美验收。
+- Build 31 真机证据已完成根因复核。当前正在对 `codex/build31-r3-safety-auto-d-20261109` 执行静态检查、知识规则映射和远程 Apple 编译/测试；本轮禁止上传 Build 32，正式 B 未修改。
 
 ## 尚未完成 / 真机验收项
 
-1. 真实秋季街道全分辨率 R3-I 尚未生成；私有 A/T 未上传至公开 Git 或公开构建产物，Windows R3-W 仍未冒充 R3-I。
-2. 需要使用 Build 31 取得真实 R3-I，完成道路、植被、天空、白色车辆/建筑中性色、暗部细节、噪声及蒙版光晕检查。
+1. 新安全修正后的 R3 尚未在 Core Image/iPhone 上生成；Windows 只能验证参数方向与 Build 31 旧图指标，不能替代真实渲染。
+2. 新 D 的动态增强区域计划尚未取得 iPhone 实际成片，不能声称已满足人工摄影审美。
 3. 需要用项目已有不同场景原图做设备端回归；人物结果必须继续验证肤色与真实纹理，禁止美颜或外貌修改。
-4. TestFlight 可安装只代表工程发布门通过，不代表 R3-I 摄影效果或跨场景审美已经验收。
+4. 自动技术通过仍不能决定 D 是否比 B 更好，必须继续 A/B/D/安全 R3 盲测。
 
 ## 下一步
 
-1. 在 iPhone 安装 TestFlight Build 31，打开相册诊断入口并导入真实秋季街道 A。
-2. 等待 A/B/D/E1/E2/M 生成完成，确认 M 标识为 R3-I 实验候选；使用一键导出生成诊断 ZIP。
-3. 将 ZIP 提供回项目，复核实际全分辨率图片、参数、区域指标、质量状态和原图 SHA-256；T 继续只在本地授权边界内参与对比。
-4. 完成真实 R3-I 与跨场景/人物人工验收前，不替换正式 B、不合并正式分支、不提交 App Store 正式审核。
+1. 完成当前分支远程 Swift 测试、Core Image 像素测试和 iOS Simulator 构建；若失败，只修复真实编译/测试问题并重跑。
+2. 核实 B 输出路径没有读取 `AdaptiveRegionalTonePlan`，并复核 D 的执行回执与实际计划一致。
+3. 测试通过后等待用户决定是否准备下一内部诊断版；未经确认不上传 Build 32。
+4. 下一真机版需导出旧 D、新 D、安全 R3 及对应参数/区域质检，再完成秋季街道和跨场景/人物人工验收。
 

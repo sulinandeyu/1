@@ -21,6 +21,8 @@
 | PT-AESTHETIC-004 | `PhotoProcessingPipeline.evaluateMeasuredAestheticCandidate` 首轮结果 + `PhotoAnalyzer` 同定义复测 + `measuredAestheticFeedbackRecipe` | 仅 D 可执行最多一次有界完整分辨率重渲染；再次运行 `QualityCheckService` 与目标达成评分后择优 | 不改变 B；技术质检失败或目标无改善则保留首轮；不能把自动分数冒充审美结论 | Build 28 旧包尚无反馈；iOS Build #73 已通过 73 项决策测试与 Simulator 编译；新真机 Core Image 成片 ZIP 和人工盲测待验证 |
 | PT-AESTHETIC-005 | `AestheticTargetHypothesisGenerator` | E1/E2 复用现有 `AestheticPhotographyPlanner`、`AdaptivePhotographyParameterSolver` 与完整分辨率 Core Image；只在诊断导入顺序执行 | 目标名称不绑定参数；所有数值来自当前图端点、噪声、可靠覆盖和区域颜色；不替换 B | Windows Build 29 同源分析已完成；Swift/真机 E1/E2 待远程验证 |
 | PT-AESTHETIC-006 | `DiagnosticCandidateEvidence.targetQualityStatus/humanAestheticStatus`、诊断 ZIP | 分离技术状态、目标质量不确定性和人工盲测状态 | 无人工评价时固定为待评价；目标达成率不得冒充审美分 | 结构化代码已接入；远程编译和新真机 ZIP 待验证 |
+| PT-AESTHETIC-007 | `AdaptiveRegionalTonePlanner`：全局/区域实测、可靠蒙版、逐图目标与颜色占比 | `AdaptiveRegionalTonePlan` 复用 `DiagnosticRegionalToneProcessor` 的区域曝光、七段曲线、端点保护和 HSL，并直接进入 D/E 全分辨率 Core Image | 不读取场景名称；人物保护不足、空/低质量蒙版时停用；中间亮度范围与羽化约束 | Build 31 根因已用真实 ZIP 量化；决策测试已加入，远程 Apple 编译/像素测试与新 iPhone 成片待验证 |
+| PT-QA-003 | `QualityCheckService` 首轮真实结果 + `ManualPhotographyParameters.safetyAdjustedForMeasuredRisks` | M/R3 最多一次有界安全修正、重渲染和重质检；保留实际采用参数 | 不放宽阈值、不进入 B；只有状态或问题数量改善才采用；真实人物仍禁止外貌修改 | Build 31 失败区域已量化；纯参数契约测试已加入，真实 Core Image 修正结果待远程及 iPhone 验证 |
 | PT-LEARN-001 | `LearningEnhancementPrototype` 的模型/权重清单与 manifest | 仅允许本地研究推理；不进入 Xcode target | 代码、权重、训练数据三层许可都需满足 | DeepLPF 权重因 FiveK 研究许可被阻止分发 |
 | PT-LEARN-002 | `run_deeplpf_prototype.py` 的源图相对技术安全门 | 学习输出只作为隔离 C 候选；超限时拒绝 | 技术通过不等于审美通过；人物还需蒙版内比较 | 5 张真实手机图已运行，4 张被技术门拒绝 |
 | PT-LEARN-003 | `run_semantic_probe.py`；iOS 现有 DETR/Vision 分割 | 可靠语义仅限制/保护学习变换；未知区域走亮度/全局协调 | 禁止把 background 推断为天空/道路/建筑/植被 | Windows 5 图实测完成；iOS DETR 真机仍待验收 |

@@ -703,13 +703,17 @@ final class PhotoProcessingPipeline {
             let initialData = try renderer.renderAutomaticEdit(
                 from: originalData,
                 recipe: decision.recipe,
-                analysis: analysis
+                analysis: analysis,
+                adaptiveRegionalTonePlan: decision.adaptiveRegionalTonePlan
             )
             renderedData = initialData
             phase = "qualityEvaluation"
             let initialRegionalExecution = renderer.regionalExecutionDetails(
                 for: decision.recipe,
                 analysis: analysis
+            ) + renderer.adaptiveRegionalExecutionDetails(
+                analysis: analysis,
+                plan: decision.adaptiveRegionalTonePlan
             )
             let initialQuality = try qualityService.check(
                 originalData: originalData,
@@ -748,11 +752,15 @@ final class PhotoProcessingPipeline {
                     let feedbackData = try renderer.renderAutomaticEdit(
                         from: originalData,
                         recipe: feedbackRecipe,
-                        analysis: analysis
+                        analysis: analysis,
+                        adaptiveRegionalTonePlan: decision.adaptiveRegionalTonePlan
                     )
                     let feedbackRegionalExecution = renderer.regionalExecutionDetails(
                         for: feedbackRecipe,
                         analysis: analysis
+                    ) + renderer.adaptiveRegionalExecutionDetails(
+                        analysis: analysis,
+                        plan: decision.adaptiveRegionalTonePlan
                     )
                     let feedbackQuality = try qualityService.check(
                         originalData: originalData,
@@ -808,6 +816,9 @@ final class PhotoProcessingPipeline {
             let regionalExecution = renderer.regionalExecutionDetails(
                 for: selectedRecipe,
                 analysis: analysis
+            ) + renderer.adaptiveRegionalExecutionDetails(
+                analysis: analysis,
+                plan: decision.adaptiveRegionalTonePlan
             )
             let aestheticProxy = PhotographyAestheticProgressScorer().score(
                 source: analysis,
@@ -830,6 +841,7 @@ final class PhotoProcessingPipeline {
                 "[D] 视觉理解=\(analysis.visualSceneUnderstanding.traceSummary)",
                 "[D] 摄影问题=\(problems.problems.map { $0.kind.rawValue }.joined(separator: ","))",
                 "[D] 审美目标=\(decision.aestheticPlan?.traceSummary ?? "未生成")",
+                "[D] 增强区域影调=\(decision.adaptiveRegionalTonePlan?.traceSummary ?? "未生成（无可靠蒙版或无需调整）")；rules=PT-AESTHETIC-007,PT-QA-003",
                 "[D] 动态参数=\(parameters)",
                 "[D] 最终实际参数=\(selectedRecipe.traceSummary)",
                 String(format: "[D] 同定义复测=源亮度 %.4f/反差 %.4f/饱和 %.4f；首轮 %.4f/%.4f/%.4f；最终 %.4f/%.4f/%.4f；反馈次数=%d",
@@ -947,12 +959,16 @@ final class PhotoProcessingPipeline {
             let initialData = try renderer.renderAutomaticEdit(
                 from: originalData,
                 recipe: decision.recipe,
-                analysis: analysis
+                analysis: analysis,
+                adaptiveRegionalTonePlan: decision.adaptiveRegionalTonePlan
             )
             renderedData = initialData
             let initialRegionalExecution = renderer.regionalExecutionDetails(
                 for: decision.recipe,
                 analysis: analysis
+            ) + renderer.adaptiveRegionalExecutionDetails(
+                analysis: analysis,
+                plan: decision.adaptiveRegionalTonePlan
             )
             let initialQuality = try qualityService.check(
                 originalData: originalData,
@@ -989,11 +1005,15 @@ final class PhotoProcessingPipeline {
                     let feedbackData = try renderer.renderAutomaticEdit(
                         from: originalData,
                         recipe: feedbackRecipe,
-                        analysis: analysis
+                        analysis: analysis,
+                        adaptiveRegionalTonePlan: decision.adaptiveRegionalTonePlan
                     )
                     let feedbackExecution = renderer.regionalExecutionDetails(
                         for: feedbackRecipe,
                         analysis: analysis
+                    ) + renderer.adaptiveRegionalExecutionDetails(
+                        analysis: analysis,
+                        plan: decision.adaptiveRegionalTonePlan
                     )
                     let feedbackQuality = try qualityService.check(
                         originalData: originalData,
@@ -1048,6 +1068,9 @@ final class PhotoProcessingPipeline {
             let regionalExecution = renderer.regionalExecutionDetails(
                 for: selectedRecipe,
                 analysis: analysis
+            ) + renderer.adaptiveRegionalExecutionDetails(
+                analysis: analysis,
+                plan: decision.adaptiveRegionalTonePlan
             )
             let impactTrace = selectedImpacts.map {
                 String(
@@ -1073,6 +1096,7 @@ final class PhotoProcessingPipeline {
                 "[\(identifier)] humanAestheticStatus=awaiting_blind_review；禁止自动宣称优于 B/D",
                 "[\(identifier)] 摄影目标=\(hypothesis.profile.hypothesisIdentifier)；\(hypothesis.profile.resolvedTarget.summaryText)；依据=[\(hypothesis.rationale.joined(separator: " | "))]",
                 "[\(identifier)] 审美目标=\(decision.aestheticPlan?.traceSummary ?? "未生成")",
+                "[\(identifier)] 增强区域影调=\(decision.adaptiveRegionalTonePlan?.traceSummary ?? "未生成（无可靠蒙版或无需调整）")；rules=PT-AESTHETIC-007,PT-QA-003",
                 "[\(identifier)] 最终实际参数=\(selectedRecipe.traceSummary)；证据=[\(parameters)]",
                 String(format: "[\(identifier)] 同定义复测=源亮度 %.4f/反差 %.4f/饱和 %.4f；最终 %.4f/%.4f/%.4f；目标达成 %.1f%%（仅技术目标）",
                        analysis.averageLuminance, analysis.contrastRange, analysis.averageSaturation,
@@ -1221,31 +1245,82 @@ final class PhotoProcessingPipeline {
               let parameters = configuration.diagnosticValidation.manualParameters
         else { return nil }
         let start = ProcessInfo.processInfo.systemUptime
-        let recipe = parameters.makeRecipe()
         var renderedData: Data?
         do {
-            let data = try renderer.renderManualEdit(
+            let initialData = try renderer.renderManualEdit(
                 from: originalData,
                 parameters: parameters,
                 analysis: analysis
             )
-            renderedData = data
-            let regionalExecution = renderer.manualRegionalExecutionDetails(
+            renderedData = initialData
+            let initialRegionalExecution = renderer.manualRegionalExecutionDetails(
                 analysis: analysis,
                 adjustments: parameters.regionalToneAdjustments
             )
-            let quality = try qualityService.check(
+            let initialQuality = try qualityService.check(
                 originalData: originalData,
-                editedData: data,
+                editedData: initialData,
                 sourceAnalysis: analysis,
                 expectedRegions: [],
-                regionalExecutionDetails: regionalExecution
+                regionalExecutionDetails: initialRegionalExecution
             )
-            let impacts = try qualityService.measureRegionImpacts(
+            let initialImpacts = try qualityService.measureRegionImpacts(
                 originalData: originalData,
-                editedData: data,
+                editedData: initialData,
                 analysis: analysis
             )
+
+            var selectedParameters = parameters
+            var selectedData = initialData
+            var selectedQuality = initialQuality
+            var selectedImpacts = initialImpacts
+            var selectedRegionalExecution = initialRegionalExecution
+            var safetyTrace = "未触发：初始 M/R3 未命中可修复的影调安全问题"
+            if let corrected = safetyCorrectedManualParameters(
+                parameters,
+                quality: initialQuality
+            ) {
+                let correctedData = try renderer.renderManualEdit(
+                    from: originalData,
+                    parameters: corrected,
+                    analysis: analysis
+                )
+                let correctedExecution = renderer.manualRegionalExecutionDetails(
+                    analysis: analysis,
+                    adjustments: corrected.regionalToneAdjustments
+                )
+                let correctedQuality = try qualityService.check(
+                    originalData: originalData,
+                    editedData: correctedData,
+                    sourceAnalysis: analysis,
+                    expectedRegions: [],
+                    regionalExecutionDetails: correctedExecution
+                )
+                let correctedImpacts = try qualityService.measureRegionImpacts(
+                    originalData: originalData,
+                    editedData: correctedData,
+                    analysis: analysis
+                )
+                let improved = correctedQuality.status.isBetter(than: initialQuality.status)
+                    || (correctedQuality.status == initialQuality.status
+                        && correctedQuality.issues.count < initialQuality.issues.count)
+                if improved {
+                    selectedParameters = corrected
+                    selectedData = correctedData
+                    selectedQuality = correctedQuality
+                    selectedImpacts = correctedImpacts
+                    selectedRegionalExecution = correctedExecution
+                    renderedData = correctedData
+                    safetyTrace = "采用结果反馈安全修正：\(initialQuality.status.rawValue)[\(initialQuality.issues.map(\.rawValue).joined(separator: ","))] → \(correctedQuality.status.rawValue)[\(correctedQuality.issues.map(\.rawValue).joined(separator: ","))]"
+                } else {
+                    safetyTrace = "拒绝结果反馈安全修正：未改善技术状态/问题数量；保留初始失败证据，不降低阈值"
+                }
+            }
+            let recipe = selectedParameters.makeRecipe()
+            let quality = selectedQuality
+            let data = selectedData
+            let impacts = selectedImpacts
+            let regionalExecution = selectedRegionalExecution
             let impactTrace = impacts.map {
                 String(
                     format: "%@{coverage=%.3f,luma=%+.4f,color=%.4f,contrast=%+.4f,changed=%.3f}",
@@ -1264,13 +1339,14 @@ final class PhotoProcessingPipeline {
                     imageData: data
                 ),
                 details: [
-                    "[M] 状态=manualRendererVerification；id=\(parameters.identifier)；不参与自动决策，不替换 B/D",
+                    "[M] 状态=manualRendererVerification；id=\(selectedParameters.identifier)；不参与自动决策，不替换 B/D",
                     "[M] renderStatus=completed；technicalQualityStatus=\(quality.status.rawValue)",
                     "[M] targetQualityStatus=manual_expression_probe_not_automatic_target",
                     "[M] humanAestheticStatus=awaiting_blind_review",
                     "[M] 声明参数=\(recipe.traceSummary)",
-                    "[M] 执行模块=\(renderer.executedModuleNames(for: recipe, analysis: analysis, manualRegionalAdjustments: parameters.regionalToneAdjustments).joined(separator: " → "))",
+                    "[M] 执行模块=\(renderer.executedModuleNames(for: recipe, analysis: analysis, manualRegionalAdjustments: selectedParameters.regionalToneAdjustments).joined(separator: " → "))",
                     "[M] 区域影调回执=\(regionalExecution.joined(separator: "；"))",
+                    "[M] 安全反馈=\(safetyTrace)；rules=PT-QA-003；质检阈值未修改",
                     "[M] 技术质检=\(quality.status.rawValue)；问题=[\(quality.issues.map(\.rawValue).joined(separator: ","))]；RGB_MAE=\(String(format: "%.4f", quality.processingImpact.normalizedMeanAbsoluteRGBDifference))",
                     String(format: "[M] 失败阈值证据=tooHarsh: contrastRange %.4f / 上限 0.9000；neutralLuminanceLoss: coverage %.4f / 启用阈值 0.0150，luminanceShift %+.4f / 下限 -0.0650",
                            quality.measuredAnalysis.contrastRange,
@@ -1323,6 +1399,35 @@ final class PhotoProcessingPipeline {
                 )
             )
         }
+    }
+
+    /// PT-QA-003. One bounded result-feedback pass for the isolated M/R3
+    /// expression probe. It reacts to measured failure evidence; it does not
+    /// change QualityCheckService thresholds and never enters B or D.
+    private func safetyCorrectedManualParameters(
+        _ source: ManualPhotographyParameters,
+        quality: QualityCheckResult
+    ) -> ManualPhotographyParameters? {
+        let issues = Set(quality.issues)
+        let correctable: Set<QualityIssue> = [
+            .tooHarsh,
+            .crushedShadows,
+            .abnormalBlackCoverage,
+            .neutralLuminanceLoss,
+            .neutralColorDrift,
+            .localMaskBoundaryArtifact
+        ]
+        guard !issues.isDisjoint(with: correctable) else { return nil }
+        return source.safetyAdjustedForMeasuredRisks(
+            tooHarsh: issues.contains(.tooHarsh),
+            crushedShadows: issues.contains(.crushedShadows),
+            abnormalBlackCoverage: issues.contains(.abnormalBlackCoverage),
+            neutralLuminanceShift: issues.contains(.neutralLuminanceLoss)
+                ? quality.colorIntegrity.neutralLuminanceShift
+                : nil,
+            neutralColorDrift: issues.contains(.neutralColorDrift),
+            localMaskBoundaryArtifact: issues.contains(.localMaskBoundaryArtifact)
+        )
     }
 
     private func parameterExecutionResults(

@@ -372,20 +372,31 @@ struct PhotographyTargetProfile: Equatable, Sendable {
             .clamped(to: 0.26...0.7)
         let measuredHalfWidth = (0.042 + baseline.atmosphereProtection * 0.018)
             .clamped(to: 0.038...0.06)
+        // A high source range is not itself a request to flatten the photograph.
+        // Preserve most of the measured range and let endpoint/region controls
+        // handle recoverable highlights and spatial hierarchy.  This remains
+        // source-relative and is used only by the diagnostic D path.
+        let measuredContrast = max(
+            baseline.contrast,
+            analysis.contrastRange
+                - max(0, analysis.contrastRange - 0.72) * 0.28
+        ).clamped(to: 0.46...0.82)
         let measuredTarget = AdaptivePhotographyTarget(
             luminance: measuredLuminance,
             luminanceMinimum: (measuredLuminance - measuredHalfWidth).clamped(to: 0.2...0.68),
             luminanceMaximum: (measuredLuminance + measuredHalfWidth).clamped(to: 0.3...0.76),
-            contrast: baseline.contrast,
+            contrast: measuredContrast,
             shadowRatio: baseline.shadowRatio,
             highlightRatio: baseline.highlightRatio,
             saturation: baseline.saturation,
             atmosphereProtection: baseline.atmosphereProtection,
             rationale: String(
-                format: "D 使用同一测量定义的源图相对目标：亮度 %.3f%+.3f→%.3f；可恢复高光 %.3f、可恢复阴影 %.3f、白位压力 %.3f、噪声余量 %.3f。",
+                format: "D 使用同一测量定义的源图相对目标：亮度 %.3f%+.3f→%.3f；反差 %.3f→%.3f；可恢复高光 %.3f、可恢复阴影 %.3f、白位压力 %.3f、噪声余量 %.3f。",
                 analysis.averageLuminance,
                 measuredLuminanceShift,
                 measuredLuminance,
+                analysis.contrastRange,
+                measuredContrast,
                 recoverableHighlights,
                 recoverableShadows,
                 whitePressure,
