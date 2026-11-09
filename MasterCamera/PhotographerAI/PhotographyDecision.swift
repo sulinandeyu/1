@@ -605,11 +605,37 @@ struct PhotographyRegionImpact: Equatable, Sendable {
     let colorDelta: Float
     let contrastDelta: Float
     let changedPixelRatio: Float
-    let sourceShadowRatio: Float = 0
-    let editedShadowRatio: Float = 0
-    let sourceHighlightRatio: Float = 0
-    let editedHighlightRatio: Float = 0
-    let detailEnergyRatio: Float = 1
+    let sourceShadowRatio: Float
+    let editedShadowRatio: Float
+    let sourceHighlightRatio: Float
+    let editedHighlightRatio: Float
+    let detailEnergyRatio: Float
+
+    init(
+        region: TreatmentRegion,
+        maskCoverage: Float,
+        luminanceDelta: Float,
+        colorDelta: Float,
+        contrastDelta: Float,
+        changedPixelRatio: Float,
+        sourceShadowRatio: Float = 0,
+        editedShadowRatio: Float = 0,
+        sourceHighlightRatio: Float = 0,
+        editedHighlightRatio: Float = 0,
+        detailEnergyRatio: Float = 1
+    ) {
+        self.region = region
+        self.maskCoverage = maskCoverage
+        self.luminanceDelta = luminanceDelta
+        self.colorDelta = colorDelta
+        self.contrastDelta = contrastDelta
+        self.changedPixelRatio = changedPixelRatio
+        self.sourceShadowRatio = sourceShadowRatio
+        self.editedShadowRatio = editedShadowRatio
+        self.sourceHighlightRatio = sourceHighlightRatio
+        self.editedHighlightRatio = editedHighlightRatio
+        self.detailEnergyRatio = detailEnergyRatio
+    }
 }
 
 struct PhotographyCandidateSelector {

@@ -1967,8 +1967,10 @@ final class SceneAdaptationTests: XCTestCase {
         // baseline as a regression contract instead of calling the two
         // implementations pixel-identical. HSL itself is independently checked
         // against Windows immediately above.
+        let privateControlsBaseline = try rgba8(hsl)
+        print("CORE_IMAGE_R3_PRIVATE_BASELINE=\(privateControlsBaseline)")
         assertRGB8(
-            try rgba8(hsl),
+            privateControlsBaseline,
             // Temporary expected vector is the declared Windows approximation.
             // A mismatch is intentional evidence collection: the failure log
             // yields the new Apple baseline for these revised R3 parameters.
