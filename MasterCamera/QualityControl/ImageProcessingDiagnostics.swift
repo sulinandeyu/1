@@ -87,6 +87,7 @@ struct DiagnosticCandidateEvidence: Codable, Equatable, Sendable {
     let targetQualityStatus: String
     let humanAestheticStatus: String
     let assessmentEvidence: [String]
+    let parameterLifecycle: [PhotographyRecipeLifecycleSnapshot]
     let durationMilliseconds: Int?
 }
 

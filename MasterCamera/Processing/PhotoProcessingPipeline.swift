@@ -363,6 +363,12 @@ final class PhotoProcessingPipeline {
             bStates.append(.fallback)
             bFallback.append(finalFallbackReason ?? "质量检查应用了安全修正")
         }
+        var bLifecycle = finalDecision.recipeLifecycle
+        bLifecycle.append(PhotographyRecipeLifecycleSnapshot(
+            stage: "finalRenderedSelection",
+            recipeSummary: finalRecipe.traceSummary,
+            changes: finalRecipe.lifecycleChanges(from: finalDecision.recipe)
+        ))
         let a = DiagnosticCandidateEvidence(
             identifier: "A",
             displayName: "原图",
@@ -377,6 +383,7 @@ final class PhotoProcessingPipeline {
             targetQualityStatus: "source_not_applicable",
             humanAestheticStatus: "source_reference",
             assessmentEvidence: ["A 是同源输入，不接受技术成片或审美优胜判定。"],
+            parameterLifecycle: [],
             durationMilliseconds: nil
         )
         let b = DiagnosticCandidateEvidence(
@@ -398,6 +405,7 @@ final class PhotoProcessingPipeline {
             targetQualityStatus: "formal_algorithm_not_reassessed_in_experiment",
             humanAestheticStatus: "awaiting_blind_review",
             assessmentEvidence: ["B 保持正式算法；本轮未用 D/E 的目标分数替代人工偏好。"],
+            parameterLifecycle: bLifecycle,
             durationMilliseconds: nil
         )
         var candidates = [
@@ -417,6 +425,7 @@ final class PhotoProcessingPipeline {
                 preview: measuredAestheticValidation?.preview,
                 details: measuredAestheticValidation?.details,
                 stage: measuredAestheticValidation?.stage,
+                parameterLifecycle: measuredAestheticValidation?.parameterLifecycle ?? [],
                 nilReason: "D 诊断路径未启用"
             )
         ]
@@ -449,6 +458,7 @@ final class PhotoProcessingPipeline {
         preview: ProcessingStagePreview?,
         details: [String]?,
         stage: ProcessingStageRecord?,
+        parameterLifecycle: [PhotographyRecipeLifecycleSnapshot] = [],
         nilReason: String
     ) -> DiagnosticCandidateEvidence {
         let lines = details ?? []
@@ -515,6 +525,7 @@ final class PhotoProcessingPipeline {
             targetQualityStatus: targetQualityLine ?? "notEvaluated",
             humanAestheticStatus: humanAestheticLine ?? "awaiting_blind_review",
             assessmentEvidence: assessmentEvidence,
+            parameterLifecycle: parameterLifecycle,
             durationMilliseconds: stage?.durationMilliseconds
         )
     }
@@ -890,6 +901,12 @@ final class PhotoProcessingPipeline {
                 "[D] 技术质检=\(selectedQuality.status.rawValue)；问题=[\(selectedQuality.issues.map(\.rawValue).joined(separator: ","))]；全局目标达成=\(String(format: "%.1f", selectedAttainment * 100))%；区域执行达成=\(String(format: "%.1f", selectedRegionalAttainment * 100))%；主体代理=\(String(format: "%.1f", aestheticProxy.subjectPriority * 100))%；协调代理=\(String(format: "%.1f", aestheticProxy.regionalHarmony * 100))%；不是审美结论",
                 "[D] 耗时=\(duration)ms；人工偏好=待评价"
             ]
+            var executedLifecycle = decision.recipeLifecycle
+            executedLifecycle.append(PhotographyRecipeLifecycleSnapshot(
+                stage: selectedIteration > 0 ? "feedbackRenderedSelection" : "initialRenderedSelection",
+                recipeSummary: selectedRecipe.traceSummary,
+                changes: selectedRecipe.lifecycleChanges(from: decision.recipe)
+            ))
             return IsolatedDiagnosticCandidateResult(
                 preview: ProcessingStagePreview(
                     name: "D 新版逐图自动后期（\(selectedQuality.status.rawValue)）",
@@ -901,7 +918,8 @@ final class PhotoProcessingPipeline {
                     durationMilliseconds: duration,
                     executed: true,
                     detail: "渲染完成 · 技术质检 \(passedTechnicalQuality ? "通过/警告" : "失败")（\(selectedQuality.status.rawValue)）· 仅诊断 · 未替换 B"
-                )
+                ),
+                parameterLifecycle: executedLifecycle
             )
         } catch {
             let duration = Self.milliseconds(ProcessInfo.processInfo.systemUptime - start)
@@ -2017,6 +2035,19 @@ private struct IsolatedDiagnosticCandidateResult {
     let preview: ProcessingStagePreview?
     let details: [String]
     let stage: ProcessingStageRecord
+    let parameterLifecycle: [PhotographyRecipeLifecycleSnapshot]
+
+    init(
+        preview: ProcessingStagePreview?,
+        details: [String],
+        stage: ProcessingStageRecord,
+        parameterLifecycle: [PhotographyRecipeLifecycleSnapshot] = []
+    ) {
+        self.preview = preview
+        self.details = details
+        self.stage = stage
+        self.parameterLifecycle = parameterLifecycle
+    }
 }
 
 private struct AestheticExperimentCandidateResult {

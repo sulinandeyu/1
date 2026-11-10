@@ -238,6 +238,13 @@ final class DiagnosticBundleExporter {
                 "targetRationale": decision.adaptiveTarget.rationale,
                 "aestheticPlan": decision.aestheticPlan?.traceSummary ?? "unavailable",
                 "recipe": decision.recipe.traceSummary,
+                "parameterLifecycle": decision.recipeLifecycle.map { snapshot in
+                    [
+                        "stage": snapshot.stage,
+                        "recipe": snapshot.recipeSummary,
+                        "changes": snapshot.changes
+                    ] as [String: Any]
+                },
                 "actions": decision.actions.map { ["title": $0.title, "reason": $0.reason] }
             ]
         }

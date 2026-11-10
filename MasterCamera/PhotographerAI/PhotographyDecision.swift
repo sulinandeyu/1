@@ -175,7 +175,7 @@ struct AdaptiveRegionalTonePlan: Equatable, Sendable {
 /// These snapshots are diagnostic evidence only; they never provide a second
 /// parameter source. The final entry is the exact global recipe sent to the
 /// Core Image renderer.
-struct PhotographyRecipeLifecycleSnapshot: Equatable, Sendable {
+struct PhotographyRecipeLifecycleSnapshot: Codable, Equatable, Sendable {
     let stage: String
     let recipeSummary: String
     let changes: [String]
