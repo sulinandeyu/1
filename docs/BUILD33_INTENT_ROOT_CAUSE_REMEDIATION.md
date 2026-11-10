@@ -93,3 +93,10 @@ Build 33 `neutralLuminanceLoss` 的逐区归因显示：
 4. 新 D 尚无 Core Image/iPhone 全分辨率成片，人工摄影审美仍为待验收；不能宣称条件 C 已完成。
 5. 除当前同源案例外，现有其他手机素材在 Windows 上缺少与 D 相同的 Vision 蒙版和 Core Image 输出。本轮只有同场景标签不同像素状态的决策测试，跨场景真机回归仍未完成。
 6. 正式 B 未变，本轮不提出 Build 34 上传计划。
+
+## 远程 Apple 验证
+
+- 首次运行 [iOS Build 42775661833](https://github.com/sulinandeyu/1/actions/runs/42775661833) 在 Swift Package 编译期失败：新增测试直接引用了只属于 App target 的 `QualityCheckService`。这不是产品算法失败，也没有通过删除断言解决。
+- 修复方式：将 `PT-QA-005` 的样本归因和原 -0.065 门槛抽成 `NeutralToneSafetyAttribution` 共享合同；App 的真实像素采样继续在 `QualityCheckService`，决策核心测试验证硬保护优先级及不变阈值。
+- 最终提交 `0253179be651d71144219e5778a869b2549a5d00` 的 [iOS Build 42776977710](https://github.com/sulinandeyu/1/actions/runs/42776977710) 通过：89/89 Swift 测试、0 失败，iOS Simulator App 构建成功。
+- 该结果证明 Swift 调用链和安全合同可以编译执行；它不产生本张照片的新 Core Image 全分辨率 D，不能替代后续 iPhone 人工摄影审美验收。

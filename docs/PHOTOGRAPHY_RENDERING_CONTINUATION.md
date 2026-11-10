@@ -77,6 +77,8 @@
 - Windows 工程投影（不是 Core Image 成片）：旧 D 地面/植被约 0.520/0.528，新投影约 0.489/0.527；到 T 的 RGB MAE 0.2366→0.2248。改善仍明显小于专业目标，不能宣称新 D 审美通过。
 - 新增自动测试：同场景标签但不同像素关系产生不同目标；neutral loss 归因保持原阈值并保护非暗调区域。下一步仅执行远程 Apple 编译与测试，不上传 TestFlight。
 - 完整报告：`docs/BUILD33_INTENT_ROOT_CAUSE_REMEDIATION.md`；本地真实图像证据在 `output/build33_root_cause` 与 `output/build33_intent_remediation`，不提交私人原图或受限目标到公开 Git。
+- 首次远程 iOS Build `42775661833` 失败：Swift Package 测试错误引用 App-only `QualityCheckService`。已把 PT-QA-005 归因/阈值抽为 App 与决策测试共享的纯合同，没有删除断言或降低 -0.065 门槛。
+- 最终提交 `0253179be651d71144219e5778a869b2549a5d00` 的 iOS Build `42776977710` 已通过：89/89 Swift 测试、0 失败，iOS Simulator 构建成功。新 D 仍无真机全分辨率成片，跨场景真实回归和人工审美均待验收；本轮没有上传 Build 34。
 
 # 自动专业摄影闭环最终集成（2026-11-09，进行中）
 
