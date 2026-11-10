@@ -755,7 +755,14 @@ final class PhotoProcessingPipeline {
             let feedbackRegionalPlan = AdaptiveRegionalToneFeedbackSolver().makeFeedback(
                 plan: decision.adaptiveRegionalTonePlan,
                 impacts: initialImpacts,
-                issues: initialQuality.issues
+                risks: AdaptiveRegionalToneFeedbackRisks(
+                    maskBoundaryArtifact: initialQuality.issues.contains(.localMaskBoundaryArtifact),
+                    neutralIntegrityLoss: initialQuality.issues.contains(.neutralLuminanceLoss)
+                        || initialQuality.issues.contains(.neutralColorDrift),
+                    shadowDetailLoss: initialQuality.issues.contains(.crushedShadows)
+                        || initialQuality.issues.contains(.abnormalBlackCoverage)
+                        || initialQuality.issues.contains(.tooHarsh)
+                )
             )
             if feedbackRecipe != nil || feedbackRegionalPlan != nil {
                 phase = "feedbackRendering"

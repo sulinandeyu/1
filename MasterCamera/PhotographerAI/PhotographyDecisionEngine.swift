@@ -1710,16 +1710,12 @@ struct AdaptiveRegionalToneFeedbackSolver {
     func makeFeedback(
         plan: AdaptiveRegionalTonePlan?,
         impacts: [PhotographyRegionImpact],
-        issues: [QualityIssue]
+        risks: AdaptiveRegionalToneFeedbackRisks = .none
     ) -> AdaptiveRegionalTonePlan? {
         guard let plan else { return nil }
-        let issueSet = Set(issues)
-        let boundaryRisk = issueSet.contains(.localMaskBoundaryArtifact)
-        let neutralRisk = issueSet.contains(.neutralLuminanceLoss)
-            || issueSet.contains(.neutralColorDrift)
-        let globalShadowRisk = issueSet.contains(.crushedShadows)
-            || issueSet.contains(.abnormalBlackCoverage)
-            || issueSet.contains(.tooHarsh)
+        let boundaryRisk = risks.maskBoundaryArtifact
+        let neutralRisk = risks.neutralIntegrityLoss
+        let globalShadowRisk = risks.shadowDetailLoss
         var reasons: [String] = []
         var changed = false
 
@@ -1823,6 +1819,22 @@ struct AdaptiveRegionalToneFeedbackSolver {
             evidence: plan.evidence + reasons.map { "feedback: \($0)" }
         )
     }
+}
+
+/// A dependency-neutral summary of quality-control findings used by the
+/// decision core. The app pipeline maps its concrete `QualityIssue` values to
+/// these measured risk classes; the Swift package therefore does not need to
+/// import the app-only QualityControl module.
+struct AdaptiveRegionalToneFeedbackRisks: Equatable, Sendable {
+    let maskBoundaryArtifact: Bool
+    let neutralIntegrityLoss: Bool
+    let shadowDetailLoss: Bool
+
+    static let none = AdaptiveRegionalToneFeedbackRisks(
+        maskBoundaryArtifact: false,
+        neutralIntegrityLoss: false,
+        shadowDetailLoss: false
+    )
 }
 
 struct AdaptivePhotographySolution: Equatable, Sendable {

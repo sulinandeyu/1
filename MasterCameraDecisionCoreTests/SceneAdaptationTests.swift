@@ -2381,8 +2381,7 @@ final class SceneAdaptationTests: XCTestCase {
 
         let feedback = try XCTUnwrap(AdaptiveRegionalToneFeedbackSolver().makeFeedback(
             plan: plan,
-            impacts: [impact],
-            issues: []
+            impacts: [impact]
         ))
         let adjusted = try XCTUnwrap(feedback.adjustments.first)
         XCTAssertLessThan(adjusted.exposureEV, requested.exposureEV)
@@ -2418,7 +2417,11 @@ final class SceneAdaptationTests: XCTestCase {
         let feedback = try XCTUnwrap(AdaptiveRegionalToneFeedbackSolver().makeFeedback(
             plan: plan,
             impacts: [impact],
-            issues: [.neutralLuminanceLoss, .localMaskBoundaryArtifact]
+            risks: AdaptiveRegionalToneFeedbackRisks(
+                maskBoundaryArtifact: true,
+                neutralIntegrityLoss: true,
+                shadowDetailLoss: false
+            )
         ))
         let adjusted = try XCTUnwrap(feedback.adjustments.first)
         XCTAssertLessThan(adjusted.exposureEV.magnitude, requested.exposureEV.magnitude)
