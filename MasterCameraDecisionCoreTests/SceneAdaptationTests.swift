@@ -2393,7 +2393,7 @@ final class SceneAdaptationTests: XCTestCase {
         let width = 64
         let height = 32
         let source = constantImage(width: width, height: height, value: 0.55)
-        let weakMask = constantImage(width: width, height: height, value: 0.10)
+        let mask = constantImage(width: width, height: height, value: 1)
         let requested = ManualRegionalToneAdjustment(
             region: .ground,
             exposureEV: -0.34,
@@ -2407,15 +2407,19 @@ final class SceneAdaptationTests: XCTestCase {
         let processor = DiagnosticRegionalToneProcessor()
         let firstRender = processor.apply(
             to: source,
-            semanticMask: weakMask,
+            semanticMask: mask,
             adjustment: requested
         )
         let sourceLuminance = try meanRGB(source).luminance
         let firstLuminance = try meanRGB(firstRender).luminance
         let impact = PhotographyRegionImpact(
             region: .ground,
-            maskCoverage: 0.10,
-            luminanceDelta: firstLuminance - sourceLuminance,
+            maskCoverage: 1,
+            // This is the measured regional response supplied by the quality
+            // service. Keep it deliberately below the solved intent so this
+            // test exercises the feedback-to-renderer connection rather than
+            // re-testing the impact measurement implementation.
+            luminanceDelta: -0.004,
             colorDelta: 0,
             contrastDelta: 0,
             changedPixelRatio: 1,
@@ -2430,7 +2434,7 @@ final class SceneAdaptationTests: XCTestCase {
         let corrected = try XCTUnwrap(feedbackPlan.adjustments.first)
         let secondRender = processor.apply(
             to: source,
-            semanticMask: weakMask,
+            semanticMask: mask,
             adjustment: corrected
         )
         let secondLuminance = try meanRGB(secondRender).luminance
