@@ -81,3 +81,22 @@
 - 新增决策测试：区域响应不足补偿、区域风险定点收回、参数生命周期，以及原有 Build 31 区域表达契约增强。
 - 当前限制：Windows 没有 Swift/Core Image；以上修改尚不能写成编译、Core Image 像素或 iPhone 审美通过。下一步是提交独立分支并运行现有远程 iOS Build；真实新 D 全分辨率图片仍必须由后续内部诊断真机生成，在满足发布门槛前不上传下一 TestFlight。
 
+# 2026-11-10 自动专业摄影最终集成续记
+
+- 分支：`codex/automatic-professional-integration-20261109`
+- 主要提交：
+  - `b64788e5`：区域测量反馈、参数生命周期和自动 D 闭环整改。
+  - `3cb962e6`：解除决策核心对 App-only `QualityIssue` 的依赖。
+  - `bd336ca8`：区域实测反馈契约修正。
+  - `93061439`：诊断 ZIP 结构化参数生命周期（已推送；等待 Apple 验证）。
+- 远程 Apple 结果：
+  - iOS Build #92 失败：Swift Package 无法解析 App-only `QualityIssue`；已修复。
+  - iOS Build #93 通过：86/86，iOS Simulator 构建成功。
+  - iOS Build #94 失败：新增像素测试的 10% 软蒙版变化被 8-bit 量化；没有放宽产品阈值，改为遵守区域测量契约。
+  - iOS Build #95 通过：87/87，iOS Simulator 构建成功；包含反馈后真实 Core Image 像素响应测试。
+  - iOS Build #96 通过：`9306143944c22e3477ccb528b45ce677ec59d369`，87/87，iOS Simulator 构建成功；结构化生命周期导出完成编译验证。
+- 真实成片状态：已有 Build 31 A/B/旧 D/M/T 真机证据；本轮新 D 尚无真机全分辨率结果，摄影审美未验收。
+- 发布状态：TestFlight 仍为 Build 32；未上传下一版，正式 B 未替换。
+- 下一步：仅在满足门槛时准备内部诊断构建，取得 A/B/新 D ZIP 和跨场景人工盲评。
+- 完整报告：`docs/AUTOMATIC_PROFESSIONAL_INTEGRATION_REPORT.md`
+
