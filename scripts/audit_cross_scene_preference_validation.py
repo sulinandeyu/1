@@ -20,6 +20,7 @@ SPLIT = ROOT / "PhoneValidationDataset" / "cross_scene_split.json"
 OUTPUT = ROOT / "output" / "cross_scene_preference_validation"
 HISTORICAL = ROOT / "TestPhotos" / "V8_2_FourScenes"
 BUILD33 = ROOT / "tmp" / "build33_diagnostic_20261110_103023" / "images"
+BUILD33_EVIDENCE = ROOT / "tmp" / "build33_diagnostic_20261110_103023" / "evidence"
 
 
 def sha256(path: Path) -> str:
@@ -198,6 +199,11 @@ def main() -> None:
         ]
         if build33_source.is_file() and (BUILD33 / filename).is_file()
     }
+    build33_candidate_records: list[dict[str, Any]] = []
+    candidate_record_path = BUILD33_EVIDENCE / "candidate_states_and_parameters.json"
+    if candidate_record_path.is_file():
+        records = json.loads(candidate_record_path.read_text(encoding="utf-8"))
+        build33_candidate_records = [record for record in records if record.get("identifier") in {"D", "E1", "E2", "M"}]
 
     preference_files = [
         ROOT / "TestPhotos" / "photography_preferences.jsonl",
@@ -216,6 +222,7 @@ def main() -> None:
         "historicalActualPairs": historical_results,
         "build33ActualCandidateIdentifiers": current_candidates,
         "build33ActualCandidateMetrics": build33_metrics,
+        "build33ActualExecutedParameters": build33_candidate_records,
         "currentDCrossSceneStatus": "pending_device_export",
         "realHumanPreferenceRecordCount": real_preference_count,
         "ruleSystemProfessionalTargetSelectionSupported": False,
