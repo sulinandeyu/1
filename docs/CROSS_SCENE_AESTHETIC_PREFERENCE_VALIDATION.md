@@ -9,6 +9,8 @@
 
 本轮没有增加秋季道路规则、没有替换正式 B、没有上传 Build 34。已把技术状态、摄影目标判断和人工偏好拆成三个独立字段，并建立开发/盲测样本隔离和通用 X/Y 离线盲测工具。
 
+远程 Apple 验证：提交 `6463a56f4373054444d0908a65d67f0c7143cc8c` 的 [iOS Build run 42837545990](https://github.com/sulinandeyu/1/actions/runs/42837545990) 已完成；90/90 项 Swift 测试通过、0 失败，iOS Simulator `BUILD SUCCEEDED`。这只证明代码与诊断契约可编译运行，不是摄影审美通过。
+
 ## 1. 样本隔离
 
 清单：`PhoneValidationDataset/cross_scene_split.json`
