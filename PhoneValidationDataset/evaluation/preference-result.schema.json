@@ -1,25 +1,20 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "XiaoSuCamera blind photography preference result",
+  "title": "XiaoSuCamera blind photography preference result v2",
   "type": "object",
-  "required": ["caseId", "recordedAt", "choice", "blindAssignment", "reasons", "files"],
+  "required": ["schemaVersion", "caseId", "recordedAt", "choice", "blindAssignment", "candidateIds", "technicalQuality", "targetAssessment", "humanPreferenceStatus", "reasons", "files"],
   "properties": {
+    "schemaVersion": { "const": 2 },
     "caseId": { "type": "string", "minLength": 1 },
     "recordedAt": { "type": "string", "format": "date-time" },
     "choice": { "enum": ["left_better", "right_better", "both_bad", "difference_not_obvious"] },
-    "blindAssignment": {
-      "type": "object",
-      "required": ["left", "right"],
-      "properties": { "left": { "enum": ["B", "C"] }, "right": { "enum": ["B", "C"] } }
-    },
-    "reasons": {
-      "type": "array",
-      "items": { "enum": ["skin_tone_abnormal", "color_cast", "oversharpened", "haze", "oversaturated", "local_edit_error", "highlight_damage", "shadow_damage", "other"] }
-    },
-    "files": {
-      "type": "object",
-      "required": ["original", "baselineB", "referenceCandidateC"]
-    },
+    "blindAssignment": { "type": "object", "required": ["left", "right"], "additionalProperties": false, "properties": { "left": { "type": "string", "minLength": 1 }, "right": { "type": "string", "minLength": 1 } } },
+    "candidateIds": { "type": "object", "required": ["x", "y"], "properties": { "x": { "type": "string", "minLength": 1 }, "y": { "type": "string", "minLength": 1 } } },
+    "technicalQuality": { "type": "object", "minProperties": 2, "additionalProperties": { "enum": ["passed", "warning", "failed", "unknown"] } },
+    "targetAssessment": { "enum": ["not_evaluated", "reasonable", "unreasonable", "uncertain"] },
+    "humanPreferenceStatus": { "enum": ["evaluated", "inconclusive"] },
+    "reasons": { "type": "array", "items": { "enum": ["skin_tone_abnormal", "neutral_color_damage", "color_cast", "oversharpened", "haze", "oversaturated", "local_edit_error", "highlight_damage", "shadow_damage", "halo", "weak_expression", "other"] } },
+    "files": { "type": "object", "required": ["original", "candidateX", "candidateY"] },
     "notes": { "type": "string" },
     "reviewer": { "type": "string" },
     "iphoneBuild": { "type": "string" }

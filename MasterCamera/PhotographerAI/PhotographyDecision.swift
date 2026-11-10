@@ -157,6 +157,7 @@ enum PhotographyKnowledgeRuleID: String, Equatable, Hashable, Sendable {
     case protectedRegionalBlend = "PT-QA-003"
     case parameterLifecycleAudit = "PT-QA-004"
     case attributedNeutralProtection = "PT-QA-005"
+    case humanPreferenceCalibration = "PT-PREF-001"
 }
 
 /// PT-QA-005 is deliberately a small shared contract: the app performs pixel
@@ -609,6 +610,22 @@ enum CandidateEvaluationStatus: String, Equatable, Sendable {
     case skipped
 }
 
+/// Technical safety and an engineering proxy score are not evidence of human
+/// photographic preference.  Keep this status explicit in every diagnostic
+/// candidate so a high automatic score cannot be presented as an aesthetic
+/// endorsement.
+enum PhotographyPreferenceEvidenceStatus: String, Equatable, Sendable {
+    case notEvaluated
+    case humanSupported
+    case humanRejected
+    case inconclusive
+}
+
+enum PhotographySelectionBasis: String, Equatable, Sendable {
+    case engineeringProxyOnly
+    case humanPreferenceCalibrated
+}
+
 struct PhotographyCandidateEvaluation: Equatable, Sendable {
     let planID: String
     let title: String
@@ -624,6 +641,8 @@ struct PhotographyCandidateEvaluation: Equatable, Sendable {
     let reason: String
     let durationMilliseconds: Int
     let selected: Bool
+    let preferenceEvidenceStatus: PhotographyPreferenceEvidenceStatus
+    let selectionBasis: PhotographySelectionBasis
 
     init(
         planID: String,
@@ -639,7 +658,9 @@ struct PhotographyCandidateEvaluation: Equatable, Sendable {
         regionImpacts: [PhotographyRegionImpact] = [],
         reason: String,
         durationMilliseconds: Int,
-        selected: Bool
+        selected: Bool,
+        preferenceEvidenceStatus: PhotographyPreferenceEvidenceStatus = .notEvaluated,
+        selectionBasis: PhotographySelectionBasis = .engineeringProxyOnly
     ) {
         self.planID = planID
         self.title = title
@@ -655,6 +676,8 @@ struct PhotographyCandidateEvaluation: Equatable, Sendable {
         self.reason = reason
         self.durationMilliseconds = durationMilliseconds
         self.selected = selected
+        self.preferenceEvidenceStatus = preferenceEvidenceStatus
+        self.selectionBasis = selectionBasis
     }
 
     func markingSelected() -> PhotographyCandidateEvaluation {
@@ -672,7 +695,9 @@ struct PhotographyCandidateEvaluation: Equatable, Sendable {
             regionImpacts: regionImpacts,
             reason: reason,
             durationMilliseconds: durationMilliseconds,
-            selected: true
+            selected: true,
+            preferenceEvidenceStatus: preferenceEvidenceStatus,
+            selectionBasis: selectionBasis
         )
     }
 }

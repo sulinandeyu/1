@@ -497,7 +497,7 @@ struct PhotoDiagnosticSection: Identifiable, Equatable, Sendable {
                                 )
                             }.joined(separator: ",")
                             return String(
-                                format: "%@%@ · %@ · %.1f分 · 问题改善 %.0f%% · 逐图目标 %.0f%% · 主体改善 %.0f%% · 区域协调 %.0f%% · 保真 %.0f%% · %@",
+                                format: "%@%@ · %@ · 工程代理 %.1f分 · 问题改善 %.0f%% · 逐图目标 %.0f%% · 主体改善代理 %.0f%% · 区域协调代理 %.0f%% · 保真 %.0f%% · 选择依据=%@ · 人工偏好=%@ · %@",
                                 candidate.title,
                                 candidate.selected ? "（已选）" : "",
                                 candidate.status.rawValue,
@@ -507,6 +507,8 @@ struct PhotoDiagnosticSection: Identifiable, Equatable, Sendable {
                                 candidate.subjectPriorityScore * 100,
                                 candidate.harmonyScore * 100,
                                 candidate.preservationScore * 100,
+                                candidate.selectionBasis.rawValue,
+                                candidate.preferenceEvidenceStatus.rawValue,
                                 candidate.reason
                             ) + (impactText.isEmpty ? "" : " · 区域[\(impactText)]")
                         }.joined(separator: "；")

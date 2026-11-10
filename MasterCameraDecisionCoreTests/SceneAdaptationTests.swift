@@ -694,6 +694,27 @@ final class SceneAdaptationTests: XCTestCase {
 
         let selected = try XCTUnwrap(PhotographyCandidateSelector().select(from: [rejected, accepted]))
         XCTAssertEqual(selected.planID, "accepted")
+        XCTAssertEqual(selected.selectionBasis, .engineeringProxyOnly)
+        XCTAssertEqual(selected.preferenceEvidenceStatus, .notEvaluated)
+    }
+
+    func testCandidateSelectionCannotImplicitlyClaimHumanPreference() throws {
+        let evaluation = PhotographyCandidateEvaluation(
+            planID: "proxy-winner",
+            title: "工程代理候选",
+            status: .passed,
+            score: 98,
+            problemImprovement: 0.8,
+            preservationScore: 0.8,
+            issues: [],
+            reason: "自动指标较高",
+            durationMilliseconds: 8,
+            selected: false
+        ).markingSelected()
+
+        XCTAssertTrue(evaluation.selected)
+        XCTAssertEqual(evaluation.selectionBasis, .engineeringProxyOnly)
+        XCTAssertEqual(evaluation.preferenceEvidenceStatus, .notEvaluated)
     }
 
     func testProblemImprovementDoesNotRewardUnchangedImage() {

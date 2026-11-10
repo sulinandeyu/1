@@ -1,0 +1,75 @@
+{
+  "schemaVersion": 1,
+  "purpose": "Isolated cross-scene target-selection validation. Image hashes, not filenames, define isolation.",
+  "rules": {
+    "developmentMayTuneRules": true,
+    "blindMayTuneRules": false,
+    "blindRevealAfterPreferenceExport": true,
+    "knownTargetTOrInverseParametersAllowedInAutomaticD": false,
+    "windowsMetricsAreCoreImageAcceptance": false
+  },
+  "development": [
+    {
+      "id": "phone-owned-001",
+      "path": "../真实图片/44be3f7cea3f221e8ae069dfcbda1fef.jpg",
+      "sha256": "a789925a4ad590570a0d4348a1675f20492ee028c653d58d0fbf06e924b9bff9",
+      "sceneEvidence": ["indoor", "mixed_dynamic_range"],
+      "currentDCandidate": "pending_device_export",
+      "humanPreference": "not_performed"
+    },
+    {
+      "id": "phone-owned-002",
+      "path": "../真实图片/d591c944ab71c641ab655b4740ca1287.jpg",
+      "sha256": "4be217140c8058027d36a7a3c093be5af53b8b48bb544d1ac7aa98264074f7c9",
+      "sceneEvidence": ["night", "architecture", "bright_signage"],
+      "currentDCandidate": "pending_device_export",
+      "humanPreference": "not_performed"
+    },
+    {
+      "id": "historical-building",
+      "path": "../TestPhotos/V8_2_FourScenes/B_building_original.jpg",
+      "sha256": "ad31b9d5903576b0f82b6f29e01c0b4fef216901376838a60ace2bc77546bd3a",
+      "sceneEvidence": ["overcast", "architecture"],
+      "historicalActualCandidate": "../TestPhotos/V8_2_FourScenes/B_building_v81.jpg",
+      "candidateScope": "historical_renderer_evidence_not_current_D",
+      "humanPreference": "not_performed"
+    }
+  ],
+  "blind": [
+    {
+      "id": "phone-owned-003",
+      "path": "../真实图片/ddfb7fb8bd03582cbee6a7c9a1ac3282.jpg",
+      "sha256": "4fbafa643e334f66910c5b31a4a3832699681d074b9b2be4de821796110e6a41",
+      "sceneEvidence": ["indoor", "food", "environmental_person"],
+      "currentDCandidate": "pending_device_export",
+      "humanPreference": "not_performed"
+    },
+    {
+      "id": "historical-selfie",
+      "path": "../TestPhotos/V8_2_FourScenes/A_selfie_original.jpg",
+      "sha256": "c1bbf4a8bfe2c97a98496818f16d4b49d41f8f8673677ec885233d88784d126b",
+      "sceneEvidence": ["portrait", "vehicle_interior"],
+      "historicalActualCandidate": "../TestPhotos/V8_2_FourScenes/A_selfie_v81.jpg",
+      "candidateScope": "historical_renderer_evidence_not_current_D",
+      "humanPreference": "not_performed"
+    },
+    {
+      "id": "historical-vehicle-person",
+      "path": "../TestPhotos/V8_2_FourScenes/C_vehicle_person_original.jpg",
+      "sha256": "c7fdd46271756c49425c4c922e84246f06aba3fb1b33b40e97716fc3ca9ebec5",
+      "sceneEvidence": ["overcast", "vehicle", "environmental_person"],
+      "historicalActualCandidate": "../TestPhotos/V8_2_FourScenes/C_vehicle_person_v81.jpg",
+      "candidateScope": "historical_renderer_evidence_not_current_D",
+      "humanPreference": "not_performed"
+    },
+    {
+      "id": "historical-trees",
+      "path": "../TestPhotos/V8_2_FourScenes/D_trees_original.jpg",
+      "sha256": "b1ae5d71e7e3d05dbe5bcab1e4c508ffa0d6f8d1ba705e4dc3ac882b28522116",
+      "sceneEvidence": ["overcast", "vegetation", "landscape"],
+      "historicalActualCandidate": "../TestPhotos/V8_2_FourScenes/D_trees_v81.jpg",
+      "candidateScope": "historical_renderer_evidence_not_current_D",
+      "humanPreference": "not_performed"
+    }
+  ]
+}

@@ -1746,7 +1746,7 @@ final class PhotoProcessingPipeline {
                     harmonyScore: aestheticProgress.regionalHarmony,
                     issues: quality.issues.map(\.rawValue),
                     regionImpacts: regionImpacts,
-                    reason: "\(plan.rationale) 技术质检=\(quality.status.rawValue)；逐图目标达成=\(Int((targetAttainment * 100).rounded()))%，主体改善=\(Int((aestheticProgress.subjectPriority * 100).rounded()))%，区域协调=\(Int((aestheticProgress.regionalHarmony * 100).rounded()))%，肤色/中性色风险=\(Int((quality.colorIntegrity.riskPenalty * 100).rounded()))%，弱改善惩罚=\(Int(insufficientImprovementPenalty))；不以像素差异大小单独判优。",
+                    reason: "\(plan.rationale) 技术质检=\(quality.status.rawValue)；逐图目标达成=\(Int((targetAttainment * 100).rounded()))%，主体改善代理=\(Int((aestheticProgress.subjectPriority * 100).rounded()))%，区域协调代理=\(Int((aestheticProgress.regionalHarmony * 100).rounded()))%，肤色/中性色风险=\(Int((quality.colorIntegrity.riskPenalty * 100).rounded()))%，弱改善惩罚=\(Int(insufficientImprovementPenalty))；当前仅为工程代理评分，人工摄影偏好=未评价。",
                     durationMilliseconds: duration,
                     selected: false
                 )
@@ -1784,7 +1784,7 @@ final class PhotoProcessingPipeline {
             $0.planID == selected.planID ? $0.markingSelected() : $0
         }
         let selectionReason = String(
-            format: "%@；最终按实测选择：状态=%@，得分=%.1f，问题改善=%.1f%%，逐图目标达成=%.1f%%，主体改善=%.1f%%，区域协调=%.1f%%，保真=%.1f%%。",
+            format: "%@；最终按工程代理选择（不是人工审美结论）：状态=%@，工程代理得分=%.1f，问题改善=%.1f%%，逐图目标达成=%.1f%%，主体改善代理=%.1f%%，区域协调代理=%.1f%%，保真=%.1f%%，人工偏好=notEvaluated。",
             selected.reason,
             selected.status.rawValue,
             selected.score,

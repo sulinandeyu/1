@@ -308,7 +308,10 @@ final class DiagnosticBundleExporter {
                     "issues": evaluation.issues,
                     "reason": evaluation.reason,
                     "durationMilliseconds": evaluation.durationMilliseconds,
-                    "selected": evaluation.selected
+                    "selected": evaluation.selected,
+                    "selectionBasis": evaluation.selectionBasis.rawValue,
+                    "humanPreferenceStatus": evaluation.preferenceEvidenceStatus.rawValue,
+                    "scoreMeaning": "engineering_proxy_not_human_aesthetic_preference"
                 ] as [String: Any]
             }
             object["fallbackReason"] = diagnostics.fallbackReason ?? "none"
