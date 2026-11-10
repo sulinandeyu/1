@@ -159,6 +159,34 @@ enum PhotographyKnowledgeRuleID: String, Equatable, Hashable, Sendable {
     case attributedNeutralProtection = "PT-QA-005"
 }
 
+/// PT-QA-005 is deliberately a small shared contract: the app performs pixel
+/// sampling, while this policy assigns samples and applies the unchanged
+/// protected-neutral threshold.
+enum NeutralToneSafetyBucket: Equatable, Sendable {
+    case protected
+    case intentionalTone
+}
+
+struct NeutralToneSafetyAttribution: Sendable {
+    static let minimumProtectedCoverage: Float = 0.015
+    static let protectedLuminanceLossThreshold: Float = -0.065
+
+    static func bucket(
+        isHardProtected: Bool,
+        isIntentionalTone: Bool
+    ) -> NeutralToneSafetyBucket {
+        isIntentionalTone && !isHardProtected ? .intentionalTone : .protected
+    }
+
+    static func hasProtectedLuminanceLoss(
+        coverage: Float,
+        luminanceShift: Float
+    ) -> Bool {
+        coverage >= minimumProtectedCoverage
+            && luminanceShift < protectedLuminanceLossThreshold
+    }
+}
+
 /// A plan is deliberately separate from the global recipe: it records the
 /// exact mask-backed controls that D will send to the pixel renderer.  Values
 /// are solved from the current image's measured regions, never from a scene

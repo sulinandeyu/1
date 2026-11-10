@@ -167,8 +167,10 @@ final class QualityCheckService {
             // deliberately darkened remain subject to regional clipping, detail
             // and edge checks below instead of being mixed with white vehicles,
             // architecture and salient subjects in one frame-wide average.
-            if colorIntegrity.protectedNeutralCoverage >= 0.015,
-               colorIntegrity.protectedNeutralLuminanceShift < -0.065 {
+            if NeutralToneSafetyAttribution.hasProtectedLuminanceLoss(
+                coverage: colorIntegrity.protectedNeutralCoverage,
+                luminanceShift: colorIntegrity.protectedNeutralLuminanceShift
+            ) {
                 issues.append(.neutralLuminanceLoss)
             }
         }
@@ -570,9 +572,12 @@ final class QualityCheckService {
                         - (source.1 - ((source.0 + source.2) * 0.5))
                     neutralLuminanceShift += resultLuminance - sourceLuminance
                     let isHardProtected = protectedMasks.contains { isActive($0, x: x, y: y) }
-                    let isIntentionalTone = !isHardProtected
-                        && intentionalMasks.contains { isActive($0, x: x, y: y) }
-                    if isIntentionalTone {
+                    let isIntentionalTone = intentionalMasks.contains { isActive($0, x: x, y: y) }
+                    let bucket = NeutralToneSafetyAttribution.bucket(
+                        isHardProtected: isHardProtected,
+                        isIntentionalTone: isIntentionalTone
+                    )
+                    if bucket == .intentionalTone {
                         intentionalToneNeutralCount += 1
                         intentionalToneNeutralLuminanceShift += resultLuminance - sourceLuminance
                     } else {

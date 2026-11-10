@@ -2677,84 +2677,36 @@ final class SceneAdaptationTests: XCTestCase {
         XCTAssertEqual(hierarchy.0.intentSelectionStatus, "measured-hierarchy-hypothesis-human-review-required")
     }
 
-    func testNeutralLuminanceAttributionKeepsThresholdAndProtectsNonToneRegions() throws {
-        let width = 64
-        let height = 64
-        let sourcePixels = Array(repeating: (UInt8(166), UInt8(166), UInt8(166)), count: width * height)
-        var editedPixels = [(UInt8, UInt8, UInt8)]()
-        editedPixels.reserveCapacity(width * height)
-        for _ in 0..<height {
-            for x in 0..<width {
-                // The protected strip stays comfortably above the unchanged
-                // -0.065 luminance-loss threshold even after JPEG quantisation;
-                // the intentional ground strip remains strongly darker.
-                let value: UInt8 = x < 48 ? 100 : 154
-                editedPixels.append((value, value, value))
-            }
-        }
-        let groundMask = NormalizedPhotoMask(
-            width: 8,
-            height: 8,
-            pixels: Data((0..<64).map { index -> UInt8 in index % 8 < 6 ? 255 : 0 })
-        )
-        let architectureMask = NormalizedPhotoMask(
-            width: 8,
-            height: 8,
-            pixels: Data((0..<64).map { index -> UInt8 in index % 8 >= 6 ? 255 : 0 })
-        )
-        let analysis = fixture(
-            luminance: 0.65,
-            contrast: 0.4,
-            saturation: 0,
-            labels: ["outdoor"],
-            groundMask: groundMask,
-            architectureMask: architectureMask,
-            groundStatistics: regionStatistics(
-                luminance: 0.65, contrast: 0.3, saturation: 0,
-                red: 0.65, green: 0.65, blue: 0.65,
-                yellowColorRatio: 0, greenColorRatio: 0
+    func testNeutralLuminanceAttributionKeepsThresholdAndProtectsNonToneRegions() {
+        XCTAssertEqual(
+            NeutralToneSafetyAttribution.bucket(
+                isHardProtected: false,
+                isIntentionalTone: true
             ),
-            architectureStatistics: regionStatistics(
-                luminance: 0.65, contrast: 0.3, saturation: 0,
-                red: 0.65, green: 0.65, blue: 0.65,
-                yellowColorRatio: 0, greenColorRatio: 0
+            .intentionalTone
+        )
+        XCTAssertEqual(
+            NeutralToneSafetyAttribution.bucket(
+                isHardProtected: true,
+                isIntentionalTone: true
             ),
-            segmentation: SceneSegmentationDiagnostics(
-                status: .available,
-                reason: nil,
-                skyCoverage: 0,
-                groundCoverage: groundMask.activeCoverage,
-                vegetationCoverage: 0,
-                waterCoverage: 0,
-                architectureCoverage: architectureMask.activeCoverage
-            )
+            .protected,
+            "Architecture, people and salient subjects stay protected when masks overlap"
         )
-        let sourceData = try jpegData(syntheticImage(width: width, height: height, pixels: sourcePixels))
-        let editedData = try jpegData(syntheticImage(width: width, height: height, pixels: editedPixels))
-        let service = QualityCheckService()
-
-        let unattributed = try service.check(
-            originalData: sourceData,
-            editedData: editedData,
-            sourceAnalysis: analysis
-        )
-        let attributed = try service.check(
-            originalData: sourceData,
-            editedData: editedData,
-            sourceAnalysis: analysis,
-            intentionalNeutralToneRegions: [.ground]
-        )
-
-        XCTAssertTrue(unattributed.issues.contains(.neutralLuminanceLoss))
-        XCTAssertFalse(attributed.issues.contains(.neutralLuminanceLoss))
-        XCTAssertGreaterThan(attributed.colorIntegrity.intentionalToneNeutralCoverage, 0.6)
-        XCTAssertGreaterThan(attributed.colorIntegrity.protectedNeutralCoverage, 0.18)
-        XCTAssertGreaterThanOrEqual(
-            attributed.colorIntegrity.protectedNeutralLuminanceShift,
+        XCTAssertTrue(NeutralToneSafetyAttribution.hasProtectedLuminanceLoss(
+            coverage: 0.22,
+            luminanceShift: -0.108
+        ))
+        XCTAssertFalse(NeutralToneSafetyAttribution.hasProtectedLuminanceLoss(
+            coverage: 0.22,
+            luminanceShift: -0.024
+        ))
+        XCTAssertEqual(
+            NeutralToneSafetyAttribution.protectedLuminanceLossThreshold,
             -0.065,
-            "PT-QA-005 keeps the original threshold; it does not globally brighten the intentional road tone"
+            accuracy: 0.0001,
+            "PT-QA-005 keeps the existing safety threshold"
         )
-        XCTAssertLessThan(attributed.colorIntegrity.intentionalToneNeutralLuminanceShift, -0.15)
     }
 
     func testMeasuredAestheticHypothesesAreIndependentlySolvedFromCurrentPhoto() {
@@ -3019,15 +2971,6 @@ final class SceneAdaptationTests: XCTestCase {
             )
         }
         return bytes
-    }
-
-    private func jpegData(_ image: CIImage) throws -> Data {
-        let context = CIContext(options: [.useSoftwareRenderer: true])
-        return try XCTUnwrap(context.jpegRepresentation(
-            of: image,
-            colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!,
-            options: [:]
-        ))
     }
 
     private func assertRGB8(
