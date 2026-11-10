@@ -1,7 +1,9 @@
 # Build 33 摄影意图、参数求解与质量约束根因整改
 
-日期：2026-11-10  
-分支：`codex/build33-intent-root-cause-20261110`  
+日期：2026-11-10
+
+分支：`codex/build33-intent-root-cause-20261110`
+
 输入证据：`XiaoSuCamera_Diagnostic_20261110_103023_411c710221.zip`
 
 ## 验收边界
@@ -91,4 +93,3 @@ Build 33 `neutralLuminanceLoss` 的逐区归因显示：
 4. 新 D 尚无 Core Image/iPhone 全分辨率成片，人工摄影审美仍为待验收；不能宣称条件 C 已完成。
 5. 除当前同源案例外，现有其他手机素材在 Windows 上缺少与 D 相同的 Vision 蒙版和 Core Image 输出。本轮只有同场景标签不同像素状态的决策测试，跨场景真机回归仍未完成。
 6. 正式 B 未变，本轮不提出 Build 34 上传计划。
-
