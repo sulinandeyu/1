@@ -2389,6 +2389,57 @@ final class SceneAdaptationTests: XCTestCase {
         XCTAssertTrue(feedback.evidence.contains { $0.contains("under-response") })
     }
 
+    func testAdaptiveRegionalFeedbackProducesMeasuredCoreImagePixelResponse() throws {
+        let width = 64
+        let height = 32
+        let source = constantImage(width: width, height: height, value: 0.55)
+        let weakMask = constantImage(width: width, height: height, value: 0.10)
+        let requested = ManualRegionalToneAdjustment(
+            region: .ground,
+            exposureEV: -0.34,
+            lowerMidtoneLift: -0.06,
+            midtoneBias: -0.07,
+            contrast: 1.05,
+            luminanceLowerBound: 0.12,
+            luminanceUpperBound: 0.82,
+            luminanceFeather: 0.16
+        )
+        let processor = DiagnosticRegionalToneProcessor()
+        let firstRender = processor.apply(
+            to: source,
+            semanticMask: weakMask,
+            adjustment: requested
+        )
+        let sourceLuminance = try meanRGB(source).luminance
+        let firstLuminance = try meanRGB(firstRender).luminance
+        let impact = PhotographyRegionImpact(
+            region: .ground,
+            maskCoverage: 0.10,
+            luminanceDelta: firstLuminance - sourceLuminance,
+            colorDelta: 0,
+            contrastDelta: 0,
+            changedPixelRatio: 1,
+            sourceShadowRatio: 0,
+            editedShadowRatio: 0,
+            detailEnergyRatio: 1
+        )
+        let feedbackPlan = try XCTUnwrap(AdaptiveRegionalToneFeedbackSolver().makeFeedback(
+            plan: AdaptiveRegionalTonePlan(adjustments: [requested], evidence: ["measured plan"]),
+            impacts: [impact]
+        ))
+        let corrected = try XCTUnwrap(feedbackPlan.adjustments.first)
+        let secondRender = processor.apply(
+            to: source,
+            semanticMask: weakMask,
+            adjustment: corrected
+        )
+        let secondLuminance = try meanRGB(secondRender).luminance
+
+        XCTAssertLessThan(firstLuminance, sourceLuminance)
+        XCTAssertLessThan(secondLuminance, firstLuminance - (0.5 / 255.0))
+        XCTAssertTrue(feedbackPlan.evidence.contains { $0.contains("under-response") })
+    }
+
     func testAdaptiveRegionalFeedbackProtectsOnlyMeasuredRiskInsteadOfRelaxingQualityGate() throws {
         let requested = ManualRegionalToneAdjustment(
             region: .architecture,
