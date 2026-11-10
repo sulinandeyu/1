@@ -2579,6 +2579,184 @@ final class SceneAdaptationTests: XCTestCase {
         XCTAssertTrue(plan.emphasizedRegions.contains { $0.contains("暖黄色关系") })
     }
 
+    func testMeasuredIntentUsesPixelRelationshipsInsteadOfSharedSceneLabel() throws {
+        let groundMask = NormalizedPhotoMask(
+            width: 4,
+            height: 4,
+            pixels: Data([255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 0])
+        )
+        let vegetationMask = NormalizedPhotoMask(
+            width: 4,
+            height: 4,
+            pixels: Data([0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255])
+        )
+        func makeAnalysis(groundLuma: Float, groundSaturation: Float, vegetationLuma: Float, vegetationSaturation: Float) -> PhotoAnalysis {
+            fixture(
+                luminance: 0.637,
+                contrast: 0.831,
+                saturation: 0.168,
+                labels: ["outdoor"],
+                groundMask: groundMask,
+                vegetationMask: vegetationMask,
+                groundStatistics: regionStatistics(
+                    luminance: groundLuma,
+                    contrast: 0.587,
+                    saturation: groundSaturation,
+                    red: groundLuma,
+                    green: groundLuma,
+                    blue: groundLuma,
+                    yellowColorRatio: 0.05,
+                    greenColorRatio: 0
+                ),
+                vegetationStatistics: regionStatistics(
+                    luminance: vegetationLuma,
+                    contrast: 0.80,
+                    saturation: vegetationSaturation,
+                    red: 0.48,
+                    green: 0.43,
+                    blue: 0.22,
+                    yellowColorRatio: 0.509,
+                    greenColorRatio: 0.192
+                ),
+                shadowRatio: 0.055,
+                highlightRatio: 0.253,
+                noiseEstimate: 0.04,
+                segmentation: SceneSegmentationDiagnostics(
+                    status: .available,
+                    reason: nil,
+                    skyCoverage: 0,
+                    groundCoverage: groundMask.activeCoverage,
+                    vegetationCoverage: vegetationMask.activeCoverage,
+                    waterCoverage: 0,
+                    architectureCoverage: 0
+                )
+            )
+        }
+        func result(_ analysis: PhotoAnalysis) throws -> (AestheticPhotographyPlan, AdaptiveRegionalTonePlan) {
+            let problems = detector.detect(in: analysis)
+            let profile = PhotographyTargetProfile.measuredBaseline(analysis: analysis, problems: problems)
+            let plan = AestheticPhotographyPlanner().makePlan(
+                analysis: analysis,
+                problems: problems,
+                targetProfile: profile
+            )
+            let regional = try XCTUnwrap(
+                AdaptiveRegionalTonePlanner().makePlan(
+                    analysis: analysis,
+                    target: profile.resolvedTarget,
+                    aestheticPlan: plan
+                )
+            )
+            return (plan, regional)
+        }
+
+        let hierarchy = try result(makeAnalysis(
+            groundLuma: 0.692,
+            groundSaturation: 0.073,
+            vegetationLuma: 0.557,
+            vegetationSaturation: 0.270
+        ))
+        let balanced = try result(makeAnalysis(
+            groundLuma: 0.56,
+            groundSaturation: 0.22,
+            vegetationLuma: 0.557,
+            vegetationSaturation: 0.24
+        ))
+        let hierarchyGround = try XCTUnwrap(
+            hierarchy.1.adjustments.first { $0.region == .ground }
+        )
+        let balancedGround = try XCTUnwrap(
+            balanced.1.adjustments.first { $0.region == .ground }
+        )
+
+        XCTAssertNotNil(hierarchy.0.groundVegetationLuminanceDeltaTarget)
+        XCTAssertNil(balanced.0.groundVegetationLuminanceDeltaTarget)
+        XCTAssertGreaterThan(hierarchy.0.measuredIntentStrength, balanced.0.measuredIntentStrength)
+        XCTAssertLessThan(hierarchyGround.exposureEV, balancedGround.exposureEV)
+        XCTAssertTrue(hierarchy.1.intentionalNeutralToneRegions.contains(.ground))
+        XCTAssertEqual(hierarchy.0.intentSelectionStatus, "measured-hierarchy-hypothesis-human-review-required")
+    }
+
+    func testNeutralLuminanceAttributionKeepsThresholdAndProtectsNonToneRegions() throws {
+        let width = 64
+        let height = 64
+        let sourcePixels = Array(repeating: (UInt8(166), UInt8(166), UInt8(166)), count: width * height)
+        var editedPixels = [(UInt8, UInt8, UInt8)]()
+        editedPixels.reserveCapacity(width * height)
+        for _ in 0..<height {
+            for x in 0..<width {
+                // The protected strip stays comfortably above the unchanged
+                // -0.065 luminance-loss threshold even after JPEG quantisation;
+                // the intentional ground strip remains strongly darker.
+                let value: UInt8 = x < 48 ? 100 : 154
+                editedPixels.append((value, value, value))
+            }
+        }
+        let groundMask = NormalizedPhotoMask(
+            width: 8,
+            height: 8,
+            pixels: Data((0..<64).map { index -> UInt8 in index % 8 < 6 ? 255 : 0 })
+        )
+        let architectureMask = NormalizedPhotoMask(
+            width: 8,
+            height: 8,
+            pixels: Data((0..<64).map { index -> UInt8 in index % 8 >= 6 ? 255 : 0 })
+        )
+        let analysis = fixture(
+            luminance: 0.65,
+            contrast: 0.4,
+            saturation: 0,
+            labels: ["outdoor"],
+            groundMask: groundMask,
+            architectureMask: architectureMask,
+            groundStatistics: regionStatistics(
+                luminance: 0.65, contrast: 0.3, saturation: 0,
+                red: 0.65, green: 0.65, blue: 0.65,
+                yellowColorRatio: 0, greenColorRatio: 0
+            ),
+            architectureStatistics: regionStatistics(
+                luminance: 0.65, contrast: 0.3, saturation: 0,
+                red: 0.65, green: 0.65, blue: 0.65,
+                yellowColorRatio: 0, greenColorRatio: 0
+            ),
+            segmentation: SceneSegmentationDiagnostics(
+                status: .available,
+                reason: nil,
+                skyCoverage: 0,
+                groundCoverage: groundMask.activeCoverage,
+                vegetationCoverage: 0,
+                waterCoverage: 0,
+                architectureCoverage: architectureMask.activeCoverage
+            )
+        )
+        let sourceData = try jpegData(syntheticImage(width: width, height: height, pixels: sourcePixels))
+        let editedData = try jpegData(syntheticImage(width: width, height: height, pixels: editedPixels))
+        let service = QualityCheckService()
+
+        let unattributed = try service.check(
+            originalData: sourceData,
+            editedData: editedData,
+            sourceAnalysis: analysis
+        )
+        let attributed = try service.check(
+            originalData: sourceData,
+            editedData: editedData,
+            sourceAnalysis: analysis,
+            intentionalNeutralToneRegions: [.ground]
+        )
+
+        XCTAssertTrue(unattributed.issues.contains(.neutralLuminanceLoss))
+        XCTAssertFalse(attributed.issues.contains(.neutralLuminanceLoss))
+        XCTAssertGreaterThan(attributed.colorIntegrity.intentionalToneNeutralCoverage, 0.6)
+        XCTAssertGreaterThan(attributed.colorIntegrity.protectedNeutralCoverage, 0.18)
+        XCTAssertGreaterThanOrEqual(
+            attributed.colorIntegrity.protectedNeutralLuminanceShift,
+            -0.065,
+            "PT-QA-005 keeps the original threshold; it does not globally brighten the intentional road tone"
+        )
+        XCTAssertLessThan(attributed.colorIntegrity.intentionalToneNeutralLuminanceShift, -0.15)
+    }
+
     func testMeasuredAestheticHypothesesAreIndependentlySolvedFromCurrentPhoto() {
         let vegetationMask = NormalizedPhotoMask(
             width: 4,
@@ -2841,6 +3019,15 @@ final class SceneAdaptationTests: XCTestCase {
             )
         }
         return bytes
+    }
+
+    private func jpegData(_ image: CIImage) throws -> Data {
+        let context = CIContext(options: [.useSoftwareRenderer: true])
+        return try XCTUnwrap(context.jpegRepresentation(
+            of: image,
+            colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!,
+            options: [:]
+        ))
     }
 
     private func assertRGB8(

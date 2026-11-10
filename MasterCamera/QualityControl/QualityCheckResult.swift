@@ -48,9 +48,47 @@ struct ColorIntegrityMetrics: Equatable, Sendable {
     let neutralWarmShift: Float
     let neutralGreenShift: Float
     let neutralLuminanceShift: Float
+    /// Neutral samples outside an explicitly requested dark-tone region, plus
+    /// protected subject/person/architecture samples even when masks overlap.
+    /// The same -0.065 safety threshold is applied to this attributed subset.
+    let protectedNeutralCoverage: Float
+    let protectedNeutralLuminanceShift: Float
+    /// Diagnostic evidence for neutral samples inside a deliberate regional
+    /// depth adjustment. These are not ignored: clipping, detail and mask-edge
+    /// checks remain responsible for their safety.
+    let intentionalToneNeutralCoverage: Float
+    let intentionalToneNeutralLuminanceShift: Float
     let skinCoverage: Float
     let skinColorDifference: Float
     let skinWarmShift: Float
+
+    init(
+        neutralCoverage: Float,
+        neutralChromaIncrease: Float,
+        neutralWarmShift: Float,
+        neutralGreenShift: Float,
+        neutralLuminanceShift: Float,
+        protectedNeutralCoverage: Float = 0,
+        protectedNeutralLuminanceShift: Float = 0,
+        intentionalToneNeutralCoverage: Float = 0,
+        intentionalToneNeutralLuminanceShift: Float = 0,
+        skinCoverage: Float,
+        skinColorDifference: Float,
+        skinWarmShift: Float
+    ) {
+        self.neutralCoverage = neutralCoverage
+        self.neutralChromaIncrease = neutralChromaIncrease
+        self.neutralWarmShift = neutralWarmShift
+        self.neutralGreenShift = neutralGreenShift
+        self.neutralLuminanceShift = neutralLuminanceShift
+        self.protectedNeutralCoverage = protectedNeutralCoverage
+        self.protectedNeutralLuminanceShift = protectedNeutralLuminanceShift
+        self.intentionalToneNeutralCoverage = intentionalToneNeutralCoverage
+        self.intentionalToneNeutralLuminanceShift = intentionalToneNeutralLuminanceShift
+        self.skinCoverage = skinCoverage
+        self.skinColorDifference = skinColorDifference
+        self.skinWarmShift = skinWarmShift
+    }
 
     static let neutral = ColorIntegrityMetrics(
         neutralCoverage: 0,
@@ -58,6 +96,10 @@ struct ColorIntegrityMetrics: Equatable, Sendable {
         neutralWarmShift: 0,
         neutralGreenShift: 0,
         neutralLuminanceShift: 0,
+        protectedNeutralCoverage: 0,
+        protectedNeutralLuminanceShift: 0,
+        intentionalToneNeutralCoverage: 0,
+        intentionalToneNeutralLuminanceShift: 0,
         skinCoverage: 0,
         skinColorDifference: 0,
         skinWarmShift: 0
@@ -68,7 +110,9 @@ struct ColorIntegrityMetrics: Equatable, Sendable {
             ? max(0, neutralChromaIncrease - 0.012) * 9
                 + max(0, abs(neutralWarmShift) - 0.012) * 7
                 + max(0, abs(neutralGreenShift) - 0.012) * 7
-                + max(0, -neutralLuminanceShift - 0.025) * 5
+                + (protectedNeutralCoverage >= 0.015
+                    ? max(0, -protectedNeutralLuminanceShift - 0.025) * 5
+                    : 0)
             : 0
         let skinRisk: Float = skinCoverage >= 0.004
             ? max(0, skinColorDifference - 0.016) * 8

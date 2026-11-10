@@ -399,6 +399,16 @@ struct PhotoDiagnosticSection: Identifiable, Equatable, Sendable {
                         qualityCheck.colorIntegrity.neutralGreenShift * 100,
                         qualityCheck.colorIntegrity.neutralLuminanceShift * 100
                     )
+                ),
+                PhotoDiagnosticItem(
+                    label: "中性亮度归因",
+                    value: String(
+                        format: "受保护 %.1f%% / %+.2f%% · 有意影调 %.1f%% / %+.2f%%",
+                        qualityCheck.colorIntegrity.protectedNeutralCoverage * 100,
+                        qualityCheck.colorIntegrity.protectedNeutralLuminanceShift * 100,
+                        qualityCheck.colorIntegrity.intentionalToneNeutralCoverage * 100,
+                        qualityCheck.colorIntegrity.intentionalToneNeutralLuminanceShift * 100
+                    )
                 )
             ]
         )

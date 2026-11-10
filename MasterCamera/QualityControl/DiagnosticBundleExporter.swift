@@ -264,6 +264,10 @@ final class DiagnosticBundleExporter {
                 "neutralWarmShift": quality.colorIntegrity.neutralWarmShift,
                 "neutralGreenShift": quality.colorIntegrity.neutralGreenShift,
                 "neutralLuminanceShift": quality.colorIntegrity.neutralLuminanceShift,
+                "protectedNeutralCoverage": quality.colorIntegrity.protectedNeutralCoverage,
+                "protectedNeutralLuminanceShift": quality.colorIntegrity.protectedNeutralLuminanceShift,
+                "intentionalToneNeutralCoverage": quality.colorIntegrity.intentionalToneNeutralCoverage,
+                "intentionalToneNeutralLuminanceShift": quality.colorIntegrity.intentionalToneNeutralLuminanceShift,
                 "skinColorDifference": quality.colorIntegrity.skinColorDifference,
                 "skinWarmShift": quality.colorIntegrity.skinWarmShift
             ]

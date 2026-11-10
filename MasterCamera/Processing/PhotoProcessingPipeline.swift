@@ -731,7 +731,8 @@ final class PhotoProcessingPipeline {
                 editedData: initialData,
                 sourceAnalysis: analysis,
                 expectedRegions: decision.treatmentPlan.regionalTreatments.map(\.region),
-                regionalExecutionDetails: initialRegionalExecution
+                regionalExecutionDetails: initialRegionalExecution,
+                intentionalNeutralToneRegions: decision.adaptiveRegionalTonePlan?.intentionalNeutralToneRegions ?? []
             )
             let initialImpacts = try qualityService.measureRegionImpacts(
                 originalData: originalData,
@@ -798,7 +799,8 @@ final class PhotoProcessingPipeline {
                         editedData: feedbackData,
                         sourceAnalysis: analysis,
                         expectedRegions: decision.treatmentPlan.regionalTreatments.map(\.region),
-                        regionalExecutionDetails: feedbackRegionalExecution
+                        regionalExecutionDetails: feedbackRegionalExecution,
+                        intentionalNeutralToneRegions: resolvedFeedbackPlan?.intentionalNeutralToneRegions ?? []
                     )
                     let feedbackImpacts = try qualityService.measureRegionImpacts(
                         originalData: originalData,
@@ -1029,7 +1031,8 @@ final class PhotoProcessingPipeline {
                 editedData: initialData,
                 sourceAnalysis: analysis,
                 expectedRegions: decision.treatmentPlan.regionalTreatments.map(\.region),
-                regionalExecutionDetails: initialRegionalExecution
+                regionalExecutionDetails: initialRegionalExecution,
+                intentionalNeutralToneRegions: decision.adaptiveRegionalTonePlan?.intentionalNeutralToneRegions ?? []
             )
             let initialImpacts = try qualityService.measureRegionImpacts(
                 originalData: originalData,
@@ -1074,7 +1077,8 @@ final class PhotoProcessingPipeline {
                         editedData: feedbackData,
                         sourceAnalysis: analysis,
                         expectedRegions: decision.treatmentPlan.regionalTreatments.map(\.region),
-                        regionalExecutionDetails: feedbackExecution
+                        regionalExecutionDetails: feedbackExecution,
+                        intentionalNeutralToneRegions: decision.adaptiveRegionalTonePlan?.intentionalNeutralToneRegions ?? []
                     )
                     let feedbackImpacts = try qualityService.measureRegionImpacts(
                         originalData: originalData,
@@ -1383,7 +1387,14 @@ final class PhotoProcessingPipeline {
                 editedData: initialData,
                 sourceAnalysis: analysis,
                 expectedRegions: [],
-                regionalExecutionDetails: initialRegionalExecution
+                regionalExecutionDetails: initialRegionalExecution,
+                intentionalNeutralToneRegions: parameters.regionalToneAdjustments.compactMap { adjustment in
+                    adjustment.exposureEV < -0.08
+                        || adjustment.lowerMidtoneLift < -0.03
+                        || adjustment.midtoneBias < -0.03
+                        ? adjustment.region
+                        : nil
+                }
             )
             let initialImpacts = try qualityService.measureRegionImpacts(
                 originalData: originalData,
@@ -1415,7 +1426,14 @@ final class PhotoProcessingPipeline {
                     editedData: correctedData,
                     sourceAnalysis: analysis,
                     expectedRegions: [],
-                    regionalExecutionDetails: correctedExecution
+                    regionalExecutionDetails: correctedExecution,
+                    intentionalNeutralToneRegions: corrected.regionalToneAdjustments.compactMap { adjustment in
+                        adjustment.exposureEV < -0.08
+                            || adjustment.lowerMidtoneLift < -0.03
+                            || adjustment.midtoneBias < -0.03
+                            ? adjustment.region
+                            : nil
+                    }
                 )
                 let correctedImpacts = try qualityService.measureRegionImpacts(
                     originalData: originalData,
@@ -1469,10 +1487,12 @@ final class PhotoProcessingPipeline {
                     "[M] 区域影调回执=\(regionalExecution.joined(separator: "；"))",
                     "[M] 安全反馈=\(safetyTrace)；rules=PT-QA-003；质检阈值未修改",
                     "[M] 技术质检=\(quality.status.rawValue)；问题=[\(quality.issues.map(\.rawValue).joined(separator: ","))]；RGB_MAE=\(String(format: "%.4f", quality.processingImpact.normalizedMeanAbsoluteRGBDifference))",
-                    String(format: "[M] 失败阈值证据=tooHarsh: contrastRange %.4f / 上限 0.9000；neutralLuminanceLoss: coverage %.4f / 启用阈值 0.0150，luminanceShift %+.4f / 下限 -0.0650",
+                    String(format: "[M] 失败阈值证据=tooHarsh: contrastRange %.4f / 上限 0.9000；neutralLuminanceLoss: protectedCoverage %.4f / 启用阈值 0.0150，protectedShift %+.4f / 下限 -0.0650；intentionalToneCoverage %.4f / shift %+.4f",
                            quality.measuredAnalysis.contrastRange,
-                           quality.colorIntegrity.neutralCoverage,
-                           quality.colorIntegrity.neutralLuminanceShift),
+                           quality.colorIntegrity.protectedNeutralCoverage,
+                           quality.colorIntegrity.protectedNeutralLuminanceShift,
+                           quality.colorIntegrity.intentionalToneNeutralCoverage,
+                           quality.colorIntegrity.intentionalToneNeutralLuminanceShift),
                     "[M] 区域实测=\(impactTrace.isEmpty ? "无可靠区域蒙版" : impactTrace)",
                     "[M] 单参数方向另见 M 探针预览；Core Image/iPhone 视觉正确性仍需真机确认"
                 ],
@@ -1544,7 +1564,7 @@ final class PhotoProcessingPipeline {
             crushedShadows: issues.contains(.crushedShadows),
             abnormalBlackCoverage: issues.contains(.abnormalBlackCoverage),
             neutralLuminanceShift: issues.contains(.neutralLuminanceLoss)
-                ? quality.colorIntegrity.neutralLuminanceShift
+                ? quality.colorIntegrity.protectedNeutralLuminanceShift
                 : nil,
             neutralColorDrift: issues.contains(.neutralColorDrift),
             localMaskBoundaryArtifact: issues.contains(.localMaskBoundaryArtifact)

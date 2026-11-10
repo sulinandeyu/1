@@ -12,7 +12,8 @@ final class QualityCheckService {
         editedData: Data,
         sourceAnalysis: PhotoAnalysis? = nil,
         expectedRegions: [TreatmentRegion] = [],
-        regionalExecutionDetails: [String] = []
+        regionalExecutionDetails: [String] = [],
+        intentionalNeutralToneRegions: [TreatmentRegion] = []
     ) throws -> QualityCheckResult {
         let originalAnalysis = try analyzer.analyzeImageQuality(data: originalData)
         let editedAnalysis = try analyzer.analyzeImageQuality(data: editedData)
@@ -91,7 +92,8 @@ final class QualityCheckService {
         let colorIntegrity = colorIntegrity(
             original: originalImage,
             edited: editedImage,
-            sourceAnalysis: sourceAnalysis
+            sourceAnalysis: sourceAnalysis,
+            intentionalNeutralToneRegions: intentionalNeutralToneRegions
         )
         let hasPortrait = sourceAnalysis?.faceRegions.isEmpty == false
         let expectsLocalTreatment = expectedRegions.contains {
@@ -160,7 +162,13 @@ final class QualityCheckService {
                 || abs(colorIntegrity.neutralGreenShift) > 0.03 {
                 issues.append(.neutralColorDrift)
             }
-            if colorIntegrity.neutralLuminanceShift < -0.065 {
+            // PT-QA-005 preserves the existing threshold but applies it to the
+            // attributed protected subset. Neutral road/ground pixels that are
+            // deliberately darkened remain subject to regional clipping, detail
+            // and edge checks below instead of being mixed with white vehicles,
+            // architecture and salient subjects in one frame-wide average.
+            if colorIntegrity.protectedNeutralCoverage >= 0.015,
+               colorIntegrity.protectedNeutralLuminanceShift < -0.065 {
                 issues.append(.neutralLuminanceLoss)
             }
         }
@@ -206,6 +214,22 @@ final class QualityCheckService {
                 .max() ?? 0
             if boundaryScore > 0.075 {
                 issues.append(.localMaskBoundaryArtifact)
+            }
+
+            if !intentionalNeutralToneRegions.isEmpty,
+               let impacts = try? measureRegionImpacts(
+                    originalData: originalData,
+                    editedData: editedData,
+                    analysis: sourceAnalysis
+               ) {
+                let hasRegionalShadowDamage = impacts.contains { impact in
+                    intentionalNeutralToneRegions.contains(impact.region)
+                        && (impact.editedShadowRatio > impact.sourceShadowRatio + 0.055
+                            || impact.detailEnergyRatio < 0.72)
+                }
+                if hasRegionalShadowDamage, !issues.contains(.crushedShadows) {
+                    issues.append(.crushedShadows)
+                }
             }
         }
 
@@ -473,7 +497,8 @@ final class QualityCheckService {
     private func colorIntegrity(
         original: CIImage,
         edited: CIImage,
-        sourceAnalysis: PhotoAnalysis?
+        sourceAnalysis: PhotoAnalysis?,
+        intentionalNeutralToneRegions: [TreatmentRegion]
     ) -> ColorIntegrityMetrics {
         let width = 112
         let height = max(1, Int((CGFloat(width) * original.extent.height / original.extent.width).rounded()))
@@ -488,9 +513,42 @@ final class QualityCheckService {
         var neutralWarmShift: Float = 0
         var neutralGreenShift: Float = 0
         var neutralLuminanceShift: Float = 0
+        var protectedNeutralCount: Float = 0
+        var protectedNeutralLuminanceShift: Float = 0
+        var intentionalToneNeutralCount: Float = 0
+        var intentionalToneNeutralLuminanceShift: Float = 0
         var skinCount: Float = 0
         var skinColorDifference: Float = 0
         var skinWarmShift: Float = 0
+
+        func mask(for region: TreatmentRegion) -> NormalizedPhotoMask? {
+            guard let sourceAnalysis else { return nil }
+            switch region {
+            case .sky: return sourceAnalysis.skyMask
+            case .ground: return sourceAnalysis.groundMask
+            case .vegetation: return sourceAnalysis.vegetationMask
+            case .water: return sourceAnalysis.waterMask
+            case .architecture: return sourceAnalysis.architectureMask
+            case .person: return sourceAnalysis.personMask
+            case .subject: return sourceAnalysis.salientSubjectMask
+            case .global, .background: return nil
+            }
+        }
+        let intentionalMasks = intentionalNeutralToneRegions.compactMap { region in
+            mask(for: region)
+        }
+        let protectedMasks: [NormalizedPhotoMask] = [
+            sourceAnalysis?.personMask,
+            sourceAnalysis?.salientSubjectMask,
+            sourceAnalysis?.architectureMask
+        ].compactMap { $0 }
+
+        func isActive(_ mask: NormalizedPhotoMask, x: Int, y: Int) -> Bool {
+            guard mask.isValid else { return false }
+            let maskX = min(mask.width - 1, max(0, Int(Float(x) / Float(width) * Float(mask.width))))
+            let maskY = min(mask.height - 1, max(0, Int(Float(y) / Float(height) * Float(mask.height))))
+            return mask.pixels[(maskY * mask.width) + maskX] >= 128
+        }
 
         for y in 0..<height {
             for x in 0..<width {
@@ -511,6 +569,16 @@ final class QualityCheckService {
                     neutralGreenShift += (result.1 - ((result.0 + result.2) * 0.5))
                         - (source.1 - ((source.0 + source.2) * 0.5))
                     neutralLuminanceShift += resultLuminance - sourceLuminance
+                    let isHardProtected = protectedMasks.contains { isActive($0, x: x, y: y) }
+                    let isIntentionalTone = !isHardProtected
+                        && intentionalMasks.contains { isActive($0, x: x, y: y) }
+                    if isIntentionalTone {
+                        intentionalToneNeutralCount += 1
+                        intentionalToneNeutralLuminanceShift += resultLuminance - sourceLuminance
+                    } else {
+                        protectedNeutralCount += 1
+                        protectedNeutralLuminanceShift += resultLuminance - sourceLuminance
+                    }
                 }
 
                 guard isProtectedSkinSample(
@@ -534,6 +602,14 @@ final class QualityCheckService {
             neutralWarmShift: neutralCount > 0 ? neutralWarmShift / neutralCount : 0,
             neutralGreenShift: neutralCount > 0 ? neutralGreenShift / neutralCount : 0,
             neutralLuminanceShift: neutralCount > 0 ? neutralLuminanceShift / neutralCount : 0,
+            protectedNeutralCoverage: protectedNeutralCount / pixelCount,
+            protectedNeutralLuminanceShift: protectedNeutralCount > 0
+                ? protectedNeutralLuminanceShift / protectedNeutralCount
+                : 0,
+            intentionalToneNeutralCoverage: intentionalToneNeutralCount / pixelCount,
+            intentionalToneNeutralLuminanceShift: intentionalToneNeutralCount > 0
+                ? intentionalToneNeutralLuminanceShift / intentionalToneNeutralCount
+                : 0,
             skinCoverage: skinCount / pixelCount,
             skinColorDifference: skinCount > 0 ? skinColorDifference / skinCount : 0,
             skinWarmShift: skinCount > 0 ? skinWarmShift / skinCount : 0

@@ -153,8 +153,10 @@ enum PhotographyKnowledgeRuleID: String, Equatable, Hashable, Sendable {
     case separatedAestheticAssessment = "PT-AESTHETIC-006"
     case measuredRegionalToneExpression = "PT-AESTHETIC-007"
     case measuredRegionalRenderFeedback = "PT-AESTHETIC-008"
+    case measuredIntentSelection = "PT-AESTHETIC-009"
     case protectedRegionalBlend = "PT-QA-003"
     case parameterLifecycleAudit = "PT-QA-004"
+    case attributedNeutralProtection = "PT-QA-005"
 }
 
 /// A plan is deliberately separate from the global recipe: it records the
@@ -168,6 +170,20 @@ struct AdaptiveRegionalTonePlan: Equatable, Sendable {
     var traceSummary: String {
         guard !adjustments.isEmpty else { return "无可靠区域需要增强影调" }
         return evidence.joined(separator: " | ")
+    }
+
+    /// Neutral pixels inside these regions are intentionally being reorganised
+    /// by a measured tone plan. They are still checked for clipping, detail loss
+    /// and mask-boundary artefacts, but must not be mixed with protected white or
+    /// grey objects when evaluating neutral luminance preservation.
+    var intentionalNeutralToneRegions: [TreatmentRegion] {
+        adjustments.compactMap { adjustment in
+            let hasIntentionalDepth = adjustment.exposureEV < -0.08
+                || adjustment.lowerMidtoneLift < -0.03
+                || adjustment.midtoneBias < -0.03
+                || adjustment.blackPoint > 0.008
+            return hasIntentionalDepth ? adjustment.region : nil
+        }
     }
 }
 

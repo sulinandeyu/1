@@ -1311,12 +1311,19 @@ struct AestheticPhotographyPlan: Equatable, Sendable {
     let shadowCoolTarget: Float
     let midtoneWarmTarget: Float
     let colorSeparationStrength: Float
+    /// Desired ground/vegetation luminance relationship, derived only when both
+    /// masks are reliable and the current pixels show a colour-rich region being
+    /// visually dominated by a brighter low-saturation plane. This is not a
+    /// scene preset and remains nil when the evidence is absent.
+    let groundVegetationLuminanceDeltaTarget: Float?
+    let measuredIntentStrength: Float
+    let intentSelectionStatus: String
     let risks: [String]
     let rationale: [String]
 
     var traceSummary: String {
         String(
-            format: "confidence=%.3f objective=%@ subjectDelta=%@ localContrast=%.3f shadowCool=%.3f midtoneWarm=%.3f colorSeparation=%.3f emphasize=[%@] subdue=[%@] protect=[%@] risks=[%@] rationale=[%@]",
+            format: "confidence=%.3f objective=%@ subjectDelta=%@ localContrast=%.3f shadowCool=%.3f midtoneWarm=%.3f colorSeparation=%.3f groundVegetationDelta=%@ intentStrength=%.3f intentStatus=%@ emphasize=[%@] subdue=[%@] protect=[%@] risks=[%@] rationale=[%@]",
             confidence,
             primaryObjective,
             subjectBackgroundDeltaTarget.map { String(format: "%.3f", $0) } ?? "n/a",
@@ -1324,6 +1331,9 @@ struct AestheticPhotographyPlan: Equatable, Sendable {
             shadowCoolTarget,
             midtoneWarmTarget,
             colorSeparationStrength,
+            groundVegetationLuminanceDeltaTarget.map { String(format: "%+.3f", $0) } ?? "n/a",
+            measuredIntentStrength,
+            intentSelectionStatus,
             emphasizedRegions.joined(separator: ","),
             subduedRegions.joined(separator: ","),
             protectedRegions.joined(separator: ","),
@@ -1397,14 +1407,21 @@ struct AestheticPhotographyPlanner {
             let saturationHeadroom = bounded((0.48 - vegetation.averageSaturation) / 0.48, 0...1)
             let coexistence = min(yellowPresence, greenPresence) * 0.55
             let dominantAccent = yellowPresence * max(0, 1 - greenPresence * 0.35) * 0.35
-            return max(coexistence, dominantAccent) * saturationHeadroom * 0.16
+            let groundSaturation = analysis.groundStatistics?.averageSaturation
+                ?? analysis.averageSaturation
+            let measuredSaturationGap = max(0, vegetation.averageSaturation - groundSaturation)
+            let relationshipEvidence = (measuredSaturationGap * 0.42).clamped(to: 0...0.09)
+            return max(
+                max(coexistence, dominantAccent) * saturationHeadroom * 0.16,
+                relationshipEvidence
+            )
         }()
         let colorSeparation = bounded(
             max(
                 max(mixedLightSeparation, regionalColorEvidence),
                 targetProfile.regionalColorSeparationTarget
             ) * portraitProtection,
-            0...0.06
+            0...0.09
         )
         let shadowCool = bounded(
             max(0, channelWarmth) * 0.10 * colorSeparation,
@@ -1414,6 +1431,60 @@ struct AestheticPhotographyPlanner {
             max(0, -channelWarmth) * 0.08 * colorSeparation,
             0...0.014
         )
+
+        // PT-AESTHETIC-009: choose a *relationship* from this image rather than
+        // a scene name. A large low-saturation plane may be subdued only when a
+        // separate reliable region already carries materially stronger colour
+        // and the plane currently dominates it in luminance. The result remains
+        // an explicitly uncertain hypothesis until a human preference is logged.
+        let hierarchyEvidence: Float
+        let groundVegetationDeltaTarget: Float?
+        if analysis.groundMask?.qualityAssessment.isUsable == true,
+           analysis.vegetationMask?.qualityAssessment.isUsable == true,
+           let ground = analysis.groundStatistics,
+           let vegetation = analysis.vegetationStatistics {
+            let luminanceDominance = bounded(
+                max(0, ground.averageLuminance - vegetation.averageLuminance) / 0.22,
+                0...1
+            )
+            let saturationAdvantage = bounded(
+                max(0, vegetation.averageSaturation - ground.averageSaturation) / 0.25,
+                0...1
+            )
+            let groundCoverage = analysis.groundMask?.activeCoverage ?? 0
+            let vegetationCoverage = analysis.vegetationMask?.activeCoverage ?? 0
+            let coverageBalance = min(groundCoverage, vegetationCoverage)
+                / max(0.001, max(groundCoverage, vegetationCoverage))
+            let maskReliability = min(
+                analysis.groundMask?.qualityAssessment.reliability ?? 0,
+                analysis.vegetationMask?.qualityAssessment.reliability ?? 0
+            )
+            hierarchyEvidence = (
+                luminanceDominance * 0.36
+                    + saturationAdvantage * 0.44
+                    + coverageBalance * 0.20
+            ) * maskReliability * noiseProtection
+            if hierarchyEvidence >= 0.28,
+               saturationAdvantage >= 0.24,
+               luminanceDominance >= 0.16 {
+                groundVegetationDeltaTarget = -bounded(
+                    0.035 + hierarchyEvidence * 0.105,
+                    0.035...0.12
+                )
+            } else {
+                groundVegetationDeltaTarget = nil
+            }
+        } else {
+            hierarchyEvidence = 0
+            groundVegetationDeltaTarget = nil
+        }
+        let measuredIntentStrength = max(
+            hierarchyEvidence,
+            bounded(colorSeparation / 0.09, 0...1) * 0.72
+        ).clamped(to: 0...1)
+        let intentSelectionStatus = groundVegetationDeltaTarget == nil
+            ? "technical-continuity-no-reliable-hierarchy"
+            : "measured-hierarchy-hypothesis-human-review-required"
 
         var emphasized: [String] = []
         if understanding.subjectConfidence >= 0.58 {
@@ -1485,8 +1556,15 @@ struct AestheticPhotographyPlanner {
             shadowCoolTarget: shadowCool,
             midtoneWarmTarget: midtoneWarm,
             colorSeparationStrength: colorSeparation,
+            groundVegetationLuminanceDeltaTarget: groundVegetationDeltaTarget,
+            measuredIntentStrength: measuredIntentStrength,
+            intentSelectionStatus: intentSelectionStatus,
             risks: Array(Set(risks)).sorted(),
-            rationale: rationale
+            rationale: rationale + [String(
+                format: "PT-AESTHETIC-009：层级证据 %.3f，地面-植被目标 %@；只使用本图可靠蒙版内的亮度、饱和度与覆盖关系，审美偏好仍待人工确认。",
+                hierarchyEvidence,
+                groundVegetationDeltaTarget.map { String(format: "%+.3f", $0) } ?? "n/a"
+            )]
         )
     }
 
@@ -1518,6 +1596,18 @@ struct AdaptiveRegionalTonePlanner {
         // pixels inside that reliable mask.
         let noiseHeadroom = (1 - analysis.noiseEstimate * 2.8).clamped(to: 0.28...1)
         let endpointPressure = max(0, analysis.contrastRange - 0.72)
+        let colorFocus = aestheticPlan?.colorSeparationStrength ?? 0
+        let measuredVegetationTarget: Float? = reliableStatistics(
+            mask: analysis.vegetationMask,
+            statistics: analysis.vegetationStatistics
+        ).map { statistics in
+            // Preserve or gently lift an already colour-bearing region; its
+            // relationship with the ground is solved separately below.
+            max(
+                statistics.averageLuminance - 0.01,
+                target.luminance - 0.035 - colorFocus * 0.24
+            ).clamped(to: 0.22...0.62)
+        }
         var adjustments: [ManualRegionalToneAdjustment] = []
         var evidence: [String] = []
 
@@ -1533,7 +1623,14 @@ struct AdaptiveRegionalTonePlanner {
             let response = 0.86 + expressionDemand * 0.14
             let hierarchyDepth = (0.035 + endpointPressure * 0.16 + expressionDemand * 0.055)
                 * noiseHeadroom
-            let desired = (target.luminance - hierarchyDepth)
+            let continuityDesired = (target.luminance - hierarchyDepth)
+                .clamped(to: 0.21...0.62)
+            let relationshipDesired = measuredVegetationTarget.flatMap { vegetationTarget in
+                aestheticPlan?.groundVegetationLuminanceDeltaTarget.map {
+                    vegetationTarget + $0
+                }
+            }
+            let desired = min(continuityDesired, relationshipDesired ?? continuityDesired)
                 .clamped(to: 0.21...0.62)
             let ev = exposureEV(from: statistics.averageLuminance, to: desired)
                 .clamped(to: -0.58...0.28) * response
@@ -1555,8 +1652,15 @@ struct AdaptiveRegionalTonePlanner {
             )
             if !adjustment.isNeutral { adjustments.append(adjustment) }
             evidence.append(String(
-                format: "ground measured=%.3f target=%.3f EV=%+.3f demand=%.3f response=%.3f range=0.12...0.82 noiseHeadroom=%.3f",
-                statistics.averageLuminance, desired, ev, expressionDemand, response, noiseHeadroom
+                format: "ground measured=%.3f continuityTarget=%.3f relationshipTarget=%@ finalTarget=%.3f EV=%+.3f demand=%.3f response=%.3f range=0.12...0.82 noiseHeadroom=%.3f",
+                statistics.averageLuminance,
+                continuityDesired,
+                relationshipDesired.map { String(format: "%.3f", $0) } ?? "n/a",
+                desired,
+                ev,
+                expressionDemand,
+                response,
+                noiseHeadroom
             ))
         }
 
@@ -1564,7 +1668,6 @@ struct AdaptiveRegionalTonePlanner {
             mask: analysis.vegetationMask,
             statistics: analysis.vegetationStatistics
         ) {
-            let colorFocus = aestheticPlan?.colorSeparationStrength ?? 0
             let measuredColorSeparation = (
                 (statistics.yellowColorRatio - statistics.greenColorRatio) / 0.45
             ).clamped(to: 0...1)
@@ -1575,8 +1678,9 @@ struct AdaptiveRegionalTonePlanner {
                     + colorFocus / 0.12
             ).clamped(to: 0...1)
             let response = 0.86 + expressionDemand * 0.14
-            let desired = (target.luminance - 0.035 - colorFocus * 0.24)
-                .clamped(to: 0.22...0.6)
+            let desired = (measuredVegetationTarget
+                ?? (target.luminance - 0.035 - colorFocus * 0.24))
+                .clamped(to: 0.22...0.62)
             let ev = exposureEV(from: statistics.averageLuminance, to: desired)
                 .clamped(to: -0.42...0.25) * response
             let yellowEvidence = (statistics.yellowColorRatio / 0.35).clamped(to: 0...1)
@@ -2101,7 +2205,7 @@ struct AdaptivePhotographyParameterSolver {
             let yellowSaturationHeadroom = max(0, 0.34 - vegetation.averageSaturation)
             let yellowStrength = bounded(yellowEvidence / 0.22, 0...1)
             let plannedColorSeparation = bounded(
-                (aestheticPlan?.colorSeparationStrength ?? 0) / 0.06,
+                (aestheticPlan?.colorSeparationStrength ?? 0) / 0.09,
                 0...1
             )
             recipe.hsl.yellowSaturation = bounded(
@@ -2227,6 +2331,7 @@ struct AdaptivePhotographyParameterSolver {
                     .semanticEvidenceBoundary,
                     .measuredVisualHierarchy,
                     .regionalColorHarmony,
+                    .measuredIntentSelection,
                     .atmospherePreservation
                 ]
             }
