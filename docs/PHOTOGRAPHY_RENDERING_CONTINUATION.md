@@ -112,3 +112,20 @@
 - 下一步：仅在满足门槛时准备内部诊断构建，取得 A/B/新 D ZIP 和跨场景人工盲评。
 - 完整报告：`docs/AUTOMATIC_PROFESSIONAL_INTEGRATION_REPORT.md`
 
+# 2026-11-11 Build 34 目标空间探索整改
+
+- 独立分支：`codex/build34-target-space-exploration-20261111`；正式 B、普通拍照和原图/成片保存流程未修改，未触发 TestFlight，Build 35 仍暂停。
+- 真机 Build 34 证据已作为失败回归边界：D/E1 `RGB MAE≈0.0115`、D/E2 `≈0.0083`、E1/E2 `≈0.0044`。这三组结果虽技术通过，但目标探索无效，必须记录 `candidate_generation_failed`，不能宣称生成了三种摄影风格。
+- 根因不是 Core Image 未执行：旧 E1/E2 主要改变轻微全局亮度/饱和度，随后 `AestheticPhotographyPlanner` 和 `AdaptiveRegionalTonePlanner` 又共同追逐同一个区域关系，导致不同目标在实际区域参数中收敛。
+- 新增知识规则 `PT-AESTHETIC-010`：目标假设由当前照片可靠蒙版内的区域亮度、反差、色彩占比、动态范围、噪声和人物保护证据生成。E1 为测量驱动的空间层级，E2 为测量驱动的克制纵深；二者具有独立的地面、植被、天空、建筑亮度目标、区域色彩分离和中间调深度，不读取场景名称、专业目标 T 或反求答案。
+- 新增渲染后目标探索判定：对 D/E1/E2 的实际 JPEG/Core Image 输出计算全图 RGB MAE、变化像素比例及可靠区域亮度/颜色差异。D/E1/E2 任一缺失、E1/E2 不具备实质差异，或三对中少于两对达到差异门槛时，诊断明确输出 `candidate_generation_failed_insufficient_exploration`；技术合格不等于摄影审美合格。
+- 诊断 ZIP 的候选集合 JSON 已记录目标探索状态和逐对实测差异；人工摄影审美状态仍保持 `pending_human_review`，不会用像素差异自动填写偏好。
+- 远程 iOS Build 首次运行 `43011705000` 暴露测试样本变量作用域错误；第二次运行 `43013676337` 中新增的真实 Apple Core Image 像素差异测试已经通过，但旧目标测试因缺少地面蒙版却断言地面目标而失败。测试输入已补齐真实地面蒙版和区域统计，没有删除断言或降低差异门槛。
+- 最终验证提交：`356d10939e9138d5f2e652cd765904467ac861b5`。iOS Build run `43014241885` 通过：96/96 Swift 测试、0 失败，新增 `testMeasuredHypothesesProduceDistinctAppleCoreImageRegionalPixels` 在 Apple Core Image 上通过，iOS Simulator App 构建成功。
+
+## 仍未完成的摄影验收
+
+1. Apple 合成像素测试证明目标到区域渲染的表达链不再必然收敛，但不能替代七张私有手机原图的真实全分辨率 Core Image 成片。
+2. 现有 GitHub Actions 不具备经确认的私有图片安全传输通道，且本轮明确暂停 Build 35，因此新生成器尚未取得七组 iPhone D/E1/E2 证据，不能宣称已产生专业摄影成片。
+3. 下一次经授权的内部诊断构建必须用既有批量取证入口导出七张原图的 D/E1/E2 全分辨率结果、目标、实际参数、技术状态和目标探索判定；只有人工盲测至少存在值得选择的候选，才能把 `candidate_generation_failed` 改为成功。
+
