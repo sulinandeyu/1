@@ -1311,6 +1311,11 @@ struct AestheticPhotographyPlan: Equatable, Sendable {
     let shadowCoolTarget: Float
     let midtoneWarmTarget: Float
     let colorSeparationStrength: Float
+    let tonalStructure: AestheticTonalStructure
+    let groundLuminanceTarget: Float?
+    let vegetationLuminanceTarget: Float?
+    let skyLuminanceTarget: Float?
+    let architectureLuminanceTarget: Float?
     /// Desired ground/vegetation luminance relationship, derived only when both
     /// masks are reliable and the current pixels show a colour-rich region being
     /// visually dominated by a brighter low-saturation plane. This is not a
@@ -1323,7 +1328,7 @@ struct AestheticPhotographyPlan: Equatable, Sendable {
 
     var traceSummary: String {
         String(
-            format: "confidence=%.3f objective=%@ subjectDelta=%@ localContrast=%.3f shadowCool=%.3f midtoneWarm=%.3f colorSeparation=%.3f groundVegetationDelta=%@ intentStrength=%.3f intentStatus=%@ emphasize=[%@] subdue=[%@] protect=[%@] risks=[%@] rationale=[%@]",
+            format: "confidence=%.3f objective=%@ subjectDelta=%@ localContrast=%.3f shadowCool=%.3f midtoneWarm=%.3f colorSeparation=%.3f structure=%@ regionTargets={ground:%@,vegetation:%@,sky:%@,architecture:%@} groundVegetationDelta=%@ intentStrength=%.3f intentStatus=%@ emphasize=[%@] subdue=[%@] protect=[%@] risks=[%@] rationale=[%@]",
             confidence,
             primaryObjective,
             subjectBackgroundDeltaTarget.map { String(format: "%.3f", $0) } ?? "n/a",
@@ -1331,6 +1336,11 @@ struct AestheticPhotographyPlan: Equatable, Sendable {
             shadowCoolTarget,
             midtoneWarmTarget,
             colorSeparationStrength,
+            tonalStructure.rawValue,
+            groundLuminanceTarget.map { String(format: "%.3f", $0) } ?? "n/a",
+            vegetationLuminanceTarget.map { String(format: "%.3f", $0) } ?? "n/a",
+            skyLuminanceTarget.map { String(format: "%.3f", $0) } ?? "n/a",
+            architectureLuminanceTarget.map { String(format: "%.3f", $0) } ?? "n/a",
             groundVegetationLuminanceDeltaTarget.map { String(format: "%+.3f", $0) } ?? "n/a",
             measuredIntentStrength,
             intentSelectionStatus,
@@ -1419,7 +1429,10 @@ struct AestheticPhotographyPlanner {
         let colorSeparation = bounded(
             max(
                 max(mixedLightSeparation, regionalColorEvidence),
-                targetProfile.regionalColorSeparationTarget
+                max(
+                    targetProfile.regionalColorSeparationTarget,
+                    targetProfile.regionalIntent?.selectiveColorStrength ?? 0
+                )
             ) * portraitProtection,
             0...0.09
         )
@@ -1478,13 +1491,23 @@ struct AestheticPhotographyPlanner {
             hierarchyEvidence = 0
             groundVegetationDeltaTarget = nil
         }
+        let resolvedGroundVegetationTarget = targetProfile.regionalIntent?.groundVegetationDeltaTarget
+            ?? groundVegetationDeltaTarget
         let measuredIntentStrength = max(
             hierarchyEvidence,
-            bounded(colorSeparation / 0.09, 0...1) * 0.72
+            max(
+                bounded(colorSeparation / 0.09, 0...1) * 0.72,
+                targetProfile.regionalIntent.map { bounded($0.midtoneDepth / 0.12, 0...1) } ?? 0
+            )
         ).clamped(to: 0...1)
-        let intentSelectionStatus = groundVegetationDeltaTarget == nil
-            ? "technical-continuity-no-reliable-hierarchy"
-            : "measured-hierarchy-hypothesis-human-review-required"
+        let intentSelectionStatus: String
+        if let intent = targetProfile.regionalIntent {
+            intentSelectionStatus = "measured-\(intent.tonalStructure.rawValue)-hypothesis-human-review-required"
+        } else {
+            intentSelectionStatus = groundVegetationDeltaTarget == nil
+                ? "technical-continuity-no-reliable-hierarchy"
+                : "measured-hierarchy-hypothesis-human-review-required"
+        }
 
         var emphasized: [String] = []
         if understanding.subjectConfidence >= 0.58 {
@@ -1556,14 +1579,19 @@ struct AestheticPhotographyPlanner {
             shadowCoolTarget: shadowCool,
             midtoneWarmTarget: midtoneWarm,
             colorSeparationStrength: colorSeparation,
-            groundVegetationLuminanceDeltaTarget: groundVegetationDeltaTarget,
+            tonalStructure: targetProfile.regionalIntent?.tonalStructure ?? .continuity,
+            groundLuminanceTarget: targetProfile.regionalIntent?.groundLuminanceTarget,
+            vegetationLuminanceTarget: targetProfile.regionalIntent?.vegetationLuminanceTarget,
+            skyLuminanceTarget: targetProfile.regionalIntent?.skyLuminanceTarget,
+            architectureLuminanceTarget: targetProfile.regionalIntent?.architectureLuminanceTarget,
+            groundVegetationLuminanceDeltaTarget: resolvedGroundVegetationTarget,
             measuredIntentStrength: measuredIntentStrength,
             intentSelectionStatus: intentSelectionStatus,
             risks: Array(Set(risks)).sorted(),
             rationale: rationale + [String(
                 format: "PT-AESTHETIC-009：层级证据 %.3f，地面-植被目标 %@；只使用本图可靠蒙版内的亮度、饱和度与覆盖关系，审美偏好仍待人工确认。",
                 hierarchyEvidence,
-                groundVegetationDeltaTarget.map { String(format: "%+.3f", $0) } ?? "n/a"
+                resolvedGroundVegetationTarget.map { String(format: "%+.3f", $0) } ?? "n/a"
             )]
         )
     }
@@ -1603,7 +1631,10 @@ struct AdaptiveRegionalTonePlanner {
         ).map { statistics in
             // Preserve or gently lift an already colour-bearing region; its
             // relationship with the ground is solved separately below.
-            max(
+            if let explicit = aestheticPlan?.vegetationLuminanceTarget {
+                return explicit.clamped(to: 0.22...0.64)
+            }
+            return max(
                 statistics.averageLuminance - 0.01,
                 target.luminance - 0.035 - colorFocus * 0.24
             ).clamped(to: 0.22...0.62)
@@ -1630,8 +1661,9 @@ struct AdaptiveRegionalTonePlanner {
                     vegetationTarget + $0
                 }
             }
-            let desired = min(continuityDesired, relationshipDesired ?? continuityDesired)
-                .clamped(to: 0.21...0.62)
+            let desired = (aestheticPlan?.groundLuminanceTarget
+                ?? min(continuityDesired, relationshipDesired ?? continuityDesired))
+                .clamped(to: 0.20...0.62)
             let ev = exposureEV(from: statistics.averageLuminance, to: desired)
                 .clamped(to: -0.58...0.28) * response
             let recoverableShadow = max(0, statistics.shadowRatio - analysis.blackRatio)
@@ -1652,10 +1684,11 @@ struct AdaptiveRegionalTonePlanner {
             )
             if !adjustment.isNeutral { adjustments.append(adjustment) }
             evidence.append(String(
-                format: "ground measured=%.3f continuityTarget=%.3f relationshipTarget=%@ finalTarget=%.3f EV=%+.3f demand=%.3f response=%.3f range=0.12...0.82 noiseHeadroom=%.3f",
+                format: "ground measured=%.3f continuityTarget=%.3f relationshipTarget=%@ explicitTarget=%@ finalTarget=%.3f EV=%+.3f demand=%.3f response=%.3f range=0.12...0.82 noiseHeadroom=%.3f",
                 statistics.averageLuminance,
                 continuityDesired,
                 relationshipDesired.map { String(format: "%.3f", $0) } ?? "n/a",
+                (aestheticPlan?.groundLuminanceTarget).map { String(format: "%.3f", $0) } ?? "n/a",
                 desired,
                 ev,
                 expressionDemand,
@@ -1736,10 +1769,12 @@ struct AdaptiveRegionalTonePlanner {
             statistics: analysis.skyStatistics
         ) {
             // A nearly neutral bright sky is protected, not invented into blue.
-            let desired = min(
+            let continuityDesired = min(
                 statistics.averageLuminance,
                 max(target.luminance + 0.16, 0.72)
-            ).clamped(to: 0.62...0.9)
+            )
+            let desired = (aestheticPlan?.skyLuminanceTarget ?? continuityDesired)
+                .clamped(to: 0.60...0.9)
             let ev = exposureEV(from: statistics.averageLuminance, to: desired)
                 .clamped(to: -0.32...0.08) * 0.94
             let adjustment = ManualRegionalToneAdjustment(
@@ -1765,8 +1800,13 @@ struct AdaptiveRegionalTonePlanner {
             mask: analysis.architectureMask,
             statistics: analysis.architectureStatistics
         ) {
+            let desired = aestheticPlan?.architectureLuminanceTarget
+                ?? statistics.averageLuminance
+            let ev = exposureEV(from: statistics.averageLuminance, to: desired)
+                .clamped(to: -0.32...0.18) * noiseHeadroom
             let adjustment = ManualRegionalToneAdjustment(
                 region: .architecture,
+                exposureEV: ev,
                 highlightAmount: (1 - max(0, statistics.highlightRatio - 0.08) * 0.62)
                     .clamped(to: 0.74...1),
                 shadowAmount: (max(0, statistics.shadowRatio - analysis.blackRatio) * 0.1 * noiseHeadroom)
@@ -1779,8 +1819,8 @@ struct AdaptiveRegionalTonePlanner {
             )
             if !adjustment.isNeutral { adjustments.append(adjustment) }
             evidence.append(String(
-                format: "architecture measured=%.3f highlights=%.3f neutral/high endpoints protected",
-                statistics.averageLuminance, statistics.highlightRatio
+                format: "architecture measured=%.3f target=%.3f EV=%+.3f highlights=%.3f neutral/high endpoints protected",
+                statistics.averageLuminance, desired, ev, statistics.highlightRatio
             ))
         }
 

@@ -245,6 +245,22 @@ final class QualityCheckService {
         )
     }
 
+    /// PT-AESTHETIC-010: measures the actual Apple/Core Image candidate pixels,
+    /// not their planned parameters. Used only to reject a diagnostic target
+    /// exploration that rendered into nearly identical outputs.
+    func compareCandidateOutputs(
+        firstData: Data,
+        secondData: Data
+    ) throws -> ProcessingImpactMetrics {
+        guard
+            let first = CIImage(data: firstData, options: [.applyOrientationProperty: true]),
+            let second = CIImage(data: secondData, options: [.applyOrientationProperty: true])
+        else {
+            throw QualityValidationError.invalidImageData
+        }
+        return compareProcessingImpact(original: first, edited: second)
+    }
+
     func measureRegionImpacts(
         originalData: Data,
         editedData: Data,

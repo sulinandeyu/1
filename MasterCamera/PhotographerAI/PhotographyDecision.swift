@@ -154,6 +154,7 @@ enum PhotographyKnowledgeRuleID: String, Equatable, Hashable, Sendable {
     case measuredRegionalToneExpression = "PT-AESTHETIC-007"
     case measuredRegionalRenderFeedback = "PT-AESTHETIC-008"
     case measuredIntentSelection = "PT-AESTHETIC-009"
+    case renderedTargetExploration = "PT-AESTHETIC-010"
     case protectedRegionalBlend = "PT-QA-003"
     case parameterLifecycleAudit = "PT-QA-004"
     case attributedNeutralProtection = "PT-QA-005"
@@ -634,9 +635,86 @@ enum PhotographySelectionBasis: String, Equatable, Sendable {
 enum PhotographyCandidateGenerationOutcome: String, Equatable, Sendable {
     case incompleteRenderEvidence
     case candidateGenerationFailedTechnical
+    case candidateGenerationFailedInsufficientExploration
     case candidateGenerationFailedHumanReview
     case preferencePending
     case humanSupportedCandidateAvailable
+}
+
+struct PhotographyCandidatePairDifference: Equatable, Sendable {
+    let firstIdentifier: String
+    let secondIdentifier: String
+    let rgbMeanAbsoluteDifference: Float
+    let changedPixelRatio: Float
+    let maximumRegionalLuminanceDifference: Float
+    let maximumRegionalColorDifference: Float
+
+    var isSubstantivelyDistinct: Bool {
+        rgbMeanAbsoluteDifference >= 0.018
+            || maximumRegionalLuminanceDifference >= 0.035
+            || maximumRegionalColorDifference >= 0.025
+    }
+
+    var traceSummary: String {
+        String(
+            format: "%@/%@{rgbMAE=%.4f,changed=%.3f,maxRegionLuma=%.4f,maxRegionColor=%.4f,distinct=%@}",
+            firstIdentifier,
+            secondIdentifier,
+            rgbMeanAbsoluteDifference,
+            changedPixelRatio,
+            maximumRegionalLuminanceDifference,
+            maximumRegionalColorDifference,
+            isSubstantivelyDistinct ? "true" : "false"
+        )
+    }
+}
+
+enum PhotographyTargetExplorationStatus: String, Equatable, Sendable {
+    case effectivePendingHumanReview
+    case invalidInsufficientRenderedDifference
+    case incompleteRenderEvidence
+}
+
+struct PhotographyTargetExplorationAssessment: Equatable, Sendable {
+    let status: PhotographyTargetExplorationStatus
+    let pairDifferences: [PhotographyCandidatePairDifference]
+    let reason: String
+
+    var detailLine: String {
+        "[TARGET_EXPLORATION] rule=PT-AESTHETIC-010 status=\(status.rawValue) pairs=[\(pairDifferences.map(\.traceSummary).joined(separator: " | "))] reason=\(reason)"
+    }
+}
+
+struct PhotographyTargetExplorationValidator {
+    func assess(
+        expectedIdentifiers: [String],
+        pairDifferences: [PhotographyCandidatePairDifference]
+    ) -> PhotographyTargetExplorationAssessment {
+        let expectedPairs = max(0, expectedIdentifiers.count * (expectedIdentifiers.count - 1) / 2)
+        guard pairDifferences.count == expectedPairs else {
+            return PhotographyTargetExplorationAssessment(
+                status: .incompleteRenderEvidence,
+                pairDifferences: pairDifferences,
+                reason: "缺少同源真实渲染配对；不得判断目标空间是否有效。"
+            )
+        }
+        let distinctPairs = pairDifferences.filter(\.isSubstantivelyDistinct)
+        let experimentalPairIsDistinct = pairDifferences.first {
+            Set([$0.firstIdentifier, $0.secondIdentifier]) == Set(["E1", "E2"])
+        }?.isSubstantivelyDistinct == true
+        guard distinctPairs.count >= 2, experimentalPairIsDistinct else {
+            return PhotographyTargetExplorationAssessment(
+                status: .invalidInsufficientRenderedDifference,
+                pairDifferences: pairDifferences,
+                reason: "真实 Core Image 候选仍高度相似，属于 candidate_generation_failed；技术通过不能冒充三种摄影表达。"
+            )
+        }
+        return PhotographyTargetExplorationAssessment(
+            status: .effectivePendingHumanReview,
+            pairDifferences: pairDifferences,
+            reason: "真实像素达到目标探索差异门槛；仅证明候选不同，是否具有专业摄影价值仍需人工盲测。"
+        )
+    }
 }
 
 enum PhotographyCandidateSelectionOutcome: String, Equatable, Sendable {
@@ -667,7 +745,8 @@ struct PhotographyCandidateSetAssessment: Equatable, Sendable {
 struct PhotographyCandidateSetAssessor {
     func assess(
         expectedCandidateIdentifiers: [String],
-        evidence: [PhotographyCandidateReviewEvidence]
+        evidence: [PhotographyCandidateReviewEvidence],
+        explorationAssessment: PhotographyTargetExplorationAssessment? = nil
     ) -> PhotographyCandidateSetAssessment {
         var seen = Set<String>()
         let expected = expectedCandidateIdentifiers.filter { seen.insert($0).inserted }
@@ -689,6 +768,11 @@ struct PhotographyCandidateSetAssessor {
             selection = .selectionNotRun
             let missing = expected.filter { !Set(rendered).contains($0) }
             reason = "缺少真实渲染候选：\(missing.joined(separator: ","))；不得判断生成或选择能力。"
+        } else if explorationAssessment?.status == .invalidInsufficientRenderedDifference {
+            generation = .candidateGenerationFailedInsufficientExploration
+            selection = .selectionNotRun
+            reason = explorationAssessment?.reason
+                ?? "真实候选差异不足；属于 candidate_generation_failed。"
         } else if eligible.isEmpty {
             generation = .candidateGenerationFailedTechnical
             selection = .selectionNotRun

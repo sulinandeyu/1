@@ -234,8 +234,10 @@ final class DiagnosticBundleExporter {
         }
         let assessment = PhotographyCandidateSetAssessor().assess(
             expectedCandidateIdentifiers: expected,
-            evidence: records
+            evidence: records,
+            explorationAssessment: targetExplorationAssessment(from: photo)
         )
+        let exploration = targetExplorationAssessment(from: photo)
         return [
             "knowledgeRule": PhotographyKnowledgeRuleID.humanPreferenceCalibration.rawValue,
             "candidateGenerationSelectionRule": PhotographyKnowledgeRuleID.candidateGenerationSelectionSeparation.rawValue,
@@ -245,10 +247,36 @@ final class DiagnosticBundleExporter {
             "humanSupportedCandidates": assessment.humanSupportedCandidateIdentifiers,
             "candidateGenerationOutcome": assessment.generationOutcome.rawValue,
             "candidateSelectionOutcome": assessment.selectionOutcome.rawValue,
+            "targetExplorationStatus": exploration?.status.rawValue ?? "notRecorded",
+            "targetExplorationEvidence": photo.diagnosticCandidates
+                .flatMap(\.assessmentEvidence)
+                .first { $0.contains("[TARGET_EXPLORATION]") } ?? "not recorded",
             "automaticRankingResult": "not_run_for_D_E1_E2_diagnostic_hypotheses",
             "reason": assessment.reason,
             "warning": "Technical pass and engineering scores are not evidence of professional photographic preference."
         ]
+    }
+
+    private func targetExplorationAssessment(
+        from photo: CapturedPhoto
+    ) -> PhotographyTargetExplorationAssessment? {
+        guard let line = photo.diagnosticCandidates
+            .flatMap(\.assessmentEvidence)
+            .first(where: { $0.contains("[TARGET_EXPLORATION]") })
+        else { return nil }
+        let status: PhotographyTargetExplorationStatus
+        if line.contains("status=\(PhotographyTargetExplorationStatus.invalidInsufficientRenderedDifference.rawValue)") {
+            status = .invalidInsufficientRenderedDifference
+        } else if line.contains("status=\(PhotographyTargetExplorationStatus.effectivePendingHumanReview.rawValue)") {
+            status = .effectivePendingHumanReview
+        } else {
+            status = .incompleteRenderEvidence
+        }
+        return PhotographyTargetExplorationAssessment(
+            status: status,
+            pairDifferences: [],
+            reason: line
+        )
     }
 
     /// An exported candidate image must be the exact full-resolution stage that

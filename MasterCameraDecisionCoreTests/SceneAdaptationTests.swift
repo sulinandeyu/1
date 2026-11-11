@@ -2318,6 +2318,11 @@ final class SceneAdaptationTests: XCTestCase {
             height: 4,
             pixels: Data([0, 255, 255, 0, 255, 255, 255, 255, 255, 255, 255, 255, 0, 255, 255, 0])
         )
+        let groundMask = NormalizedPhotoMask(
+            width: 4,
+            height: 4,
+            pixels: Data([0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255])
+        )
         func analysis(yellowRatio: Float) -> PhotoAnalysis {
             fixture(
                 luminance: 0.52,
@@ -2651,7 +2656,16 @@ final class SceneAdaptationTests: XCTestCase {
             contrast: 0.66,
             saturation: 0.19,
             labels: ["outdoor"],
+            groundMask: groundMask,
             vegetationMask: vegetationMask,
+            groundStatistics: regionStatistics(
+                luminance: 0.692,
+                contrast: 0.61,
+                saturation: 0.073,
+                red: 0.55,
+                green: 0.54,
+                blue: 0.48
+            ),
             vegetationStatistics: regionStatistics(
                 luminance: 0.43,
                 contrast: 0.57,
@@ -2817,7 +2831,7 @@ final class SceneAdaptationTests: XCTestCase {
         )
     }
 
-    func testMeasuredAestheticHypothesesAreIndependentlySolvedFromCurrentPhoto() {
+    func testMeasuredAestheticHypothesesAreIndependentlySolvedFromCurrentPhoto() throws {
         let vegetationMask = NormalizedPhotoMask(
             width: 4,
             height: 4,
@@ -2883,6 +2897,71 @@ final class SceneAdaptationTests: XCTestCase {
         )
         XCTAssertEqual(hypotheses[0].targetQualityStatus, "uncertain_pending_render_and_human_review")
         XCTAssertTrue(hypotheses.allSatisfy { $0.profile.referenceInfluence == 0 })
+        XCTAssertEqual(hypotheses[0].profile.regionalIntent?.tonalStructure, .spatialHierarchy)
+        XCTAssertEqual(hypotheses[1].profile.regionalIntent?.tonalStructure, .restrainedDepth)
+        let e1Ground = try XCTUnwrap(hypotheses[0].profile.regionalIntent?.groundLuminanceTarget)
+        let e2Ground = try XCTUnwrap(hypotheses[1].profile.regionalIntent?.groundLuminanceTarget)
+        let e1Vegetation = try XCTUnwrap(hypotheses[0].profile.regionalIntent?.vegetationLuminanceTarget)
+        XCTAssertLessThan(e1Ground, e1Vegetation - 0.05)
+        XCTAssertGreaterThan(abs(e1Ground - e2Ground), 0.025)
+    }
+
+    func testRenderedTargetExplorationRejectsBuild34LikeSimilarCandidates() {
+        let assessment = PhotographyTargetExplorationValidator().assess(
+            expectedIdentifiers: ["D", "E1", "E2"],
+            pairDifferences: [
+                PhotographyCandidatePairDifference(
+                    firstIdentifier: "D", secondIdentifier: "E1",
+                    rgbMeanAbsoluteDifference: 0.0115, changedPixelRatio: 0.72,
+                    maximumRegionalLuminanceDifference: 0.021,
+                    maximumRegionalColorDifference: 0.012
+                ),
+                PhotographyCandidatePairDifference(
+                    firstIdentifier: "D", secondIdentifier: "E2",
+                    rgbMeanAbsoluteDifference: 0.0083, changedPixelRatio: 0.69,
+                    maximumRegionalLuminanceDifference: 0.018,
+                    maximumRegionalColorDifference: 0.010
+                ),
+                PhotographyCandidatePairDifference(
+                    firstIdentifier: "E1", secondIdentifier: "E2",
+                    rgbMeanAbsoluteDifference: 0.0044, changedPixelRatio: 0.55,
+                    maximumRegionalLuminanceDifference: 0.009,
+                    maximumRegionalColorDifference: 0.006
+                )
+            ]
+        )
+
+        XCTAssertEqual(assessment.status, .invalidInsufficientRenderedDifference)
+        XCTAssertTrue(assessment.reason.contains("candidate_generation_failed"))
+    }
+
+    func testRenderedTargetExplorationRequiresDistinctExperimentalIntents() {
+        let assessment = PhotographyTargetExplorationValidator().assess(
+            expectedIdentifiers: ["D", "E1", "E2"],
+            pairDifferences: [
+                PhotographyCandidatePairDifference(
+                    firstIdentifier: "D", secondIdentifier: "E1",
+                    rgbMeanAbsoluteDifference: 0.031, changedPixelRatio: 0.86,
+                    maximumRegionalLuminanceDifference: 0.061,
+                    maximumRegionalColorDifference: 0.030
+                ),
+                PhotographyCandidatePairDifference(
+                    firstIdentifier: "D", secondIdentifier: "E2",
+                    rgbMeanAbsoluteDifference: 0.027, changedPixelRatio: 0.84,
+                    maximumRegionalLuminanceDifference: 0.052,
+                    maximumRegionalColorDifference: 0.018
+                ),
+                PhotographyCandidatePairDifference(
+                    firstIdentifier: "E1", secondIdentifier: "E2",
+                    rgbMeanAbsoluteDifference: 0.022, changedPixelRatio: 0.79,
+                    maximumRegionalLuminanceDifference: 0.041,
+                    maximumRegionalColorDifference: 0.014
+                )
+            ]
+        )
+
+        XCTAssertEqual(assessment.status, .effectivePendingHumanReview)
+        XCTAssertTrue(assessment.reason.contains("人工盲测"))
     }
 
     func testMeasuredAestheticHypothesesChangeWithExposureNotSceneName() {

@@ -152,6 +152,11 @@ final class PhotoProcessingPipeline {
             problems: problemReport,
             isDiagnosticImport: photo.isDiagnosticImport
         )
+        let targetExplorationAssessment = evaluateTargetExploration(
+            measuredCandidate: measuredAestheticValidation,
+            experiments: aestheticTargetExperiments,
+            analysis: analysis
+        )
         let manualValidation = evaluateManualCandidate(
             originalData: photo.originalImageData,
             analysis: analysis,
@@ -203,6 +208,14 @@ final class PhotoProcessingPipeline {
             stageRecords.append(measuredStage)
         }
         stageRecords.append(contentsOf: aestheticTargetExperiments.map { $0.result.stage })
+        if photo.isDiagnosticImport {
+            stageRecords.append(ProcessingStageRecord(
+                name: "摄影目标空间真实像素验证",
+                durationMilliseconds: 0,
+                executed: targetExplorationAssessment.status != .incompleteRenderEvidence,
+                detail: targetExplorationAssessment.detailLine
+            ))
+        }
         if let manualStage = manualValidation?.stage {
             stageRecords.append(manualStage)
         }
@@ -234,6 +247,8 @@ final class PhotoProcessingPipeline {
                 finalRegionImpacts: finalRegionImpacts,
                 referenceValidationDetails: (referenceValidation?.details ?? [])
                     + (measuredAestheticValidation?.details ?? [])
+                    + aestheticTargetExperiments.flatMap { $0.result.details }
+                    + [targetExplorationAssessment.detailLine]
                     + (manualValidation?.details ?? []),
                 stages: stageRecords,
                 fallbackReason: finalEdit.fallbackReason
@@ -316,6 +331,7 @@ final class PhotoProcessingPipeline {
                 referenceValidation: referenceValidation,
                 measuredAestheticValidation: measuredAestheticValidation,
                 aestheticTargetExperiments: aestheticTargetExperiments,
+                targetExplorationAssessment: targetExplorationAssessment,
                 manualValidation: manualValidation
             )
             : []
@@ -347,6 +363,7 @@ final class PhotoProcessingPipeline {
         referenceValidation: ReferenceValidationCandidateResult?,
         measuredAestheticValidation: IsolatedDiagnosticCandidateResult?,
         aestheticTargetExperiments: [AestheticExperimentCandidateResult],
+        targetExplorationAssessment: PhotographyTargetExplorationAssessment,
         manualValidation: IsolatedDiagnosticCandidateResult?
     ) -> [DiagnosticCandidateEvidence] {
         let parameterPlan = finalDecision.parameterEvidence.map { item in
@@ -423,7 +440,7 @@ final class PhotoProcessingPipeline {
                 identifier: "D",
                 displayName: "逐图自动后期诊断候选",
                 preview: measuredAestheticValidation?.preview,
-                details: measuredAestheticValidation?.details,
+                details: (measuredAestheticValidation?.details ?? []) + [targetExplorationAssessment.detailLine],
                 stage: measuredAestheticValidation?.stage,
                 parameterLifecycle: measuredAestheticValidation?.parameterLifecycle ?? [],
                 nilReason: "D 诊断路径未启用"
@@ -434,7 +451,7 @@ final class PhotoProcessingPipeline {
                 identifier: experiment.identifier,
                 displayName: experiment.displayName,
                 preview: experiment.result.preview,
-                details: experiment.result.details,
+                details: experiment.result.details + [targetExplorationAssessment.detailLine],
                 stage: experiment.result.stage,
                 nilReason: "\(experiment.identifier) 目标实验未启用"
             )
@@ -510,6 +527,7 @@ final class PhotoProcessingPipeline {
                 || $0.contains("humanAestheticStatus=")
                 || $0.contains("不是审美结论")
                 || $0.contains("有限反馈=")
+                || $0.contains("[TARGET_EXPLORATION]")
         }
         return DiagnosticCandidateEvidence(
             identifier: identifier,
@@ -967,6 +985,64 @@ final class PhotoProcessingPipeline {
                 )
             )
         }
+    }
+
+    /// PT-AESTHETIC-010: validates the actual full-resolution Core Image
+    /// outputs. Parameter plans and target names are intentionally ignored.
+    private func evaluateTargetExploration(
+        measuredCandidate: IsolatedDiagnosticCandidateResult?,
+        experiments: [AestheticExperimentCandidateResult],
+        analysis: PhotoAnalysis
+    ) -> PhotographyTargetExplorationAssessment {
+        var images: [(String, Data)] = []
+        if let data = measuredCandidate?.preview?.imageData {
+            images.append(("D", data))
+        }
+        for experiment in experiments {
+            if let data = experiment.result.preview?.imageData {
+                images.append((experiment.identifier, data))
+            }
+        }
+        var differences: [PhotographyCandidatePairDifference] = []
+        guard images.count == 3 else {
+            return PhotographyTargetExplorationValidator().assess(
+                expectedIdentifiers: ["D", "E1", "E2"],
+                pairDifferences: differences
+            )
+        }
+        for firstIndex in 0..<(images.count - 1) {
+            for secondIndex in (firstIndex + 1)..<images.count {
+                let first = images[firstIndex]
+                let second = images[secondIndex]
+                do {
+                    let impact = try qualityService.compareCandidateOutputs(
+                        firstData: first.1,
+                        secondData: second.1
+                    )
+                    let regional = try qualityService.measureRegionImpacts(
+                        originalData: first.1,
+                        editedData: second.1,
+                        analysis: analysis
+                    )
+                    differences.append(PhotographyCandidatePairDifference(
+                        firstIdentifier: first.0,
+                        secondIdentifier: second.0,
+                        rgbMeanAbsoluteDifference: impact.normalizedMeanAbsoluteRGBDifference,
+                        changedPixelRatio: impact.changedPixelRatio,
+                        maximumRegionalLuminanceDifference: regional.map { abs($0.luminanceDelta) }.max() ?? 0,
+                        maximumRegionalColorDifference: regional.map(\.colorDelta).max() ?? 0
+                    ))
+                } catch {
+                    AppLogger.imageEngine.error(
+                        "摄影目标真实像素差异测量失败 \(first.0)/\(second.0)：\(error.localizedDescription)"
+                    )
+                }
+            }
+        }
+        return PhotographyTargetExplorationValidator().assess(
+            expectedIdentifiers: ["D", "E1", "E2"],
+            pairDifferences: differences
+        )
     }
 
     /// PT-AESTHETIC-005/006: E1 and E2 are independently solved target

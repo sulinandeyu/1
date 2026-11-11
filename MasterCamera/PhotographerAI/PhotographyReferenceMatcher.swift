@@ -326,6 +326,45 @@ struct PhotographyReferenceMatcher: Sendable {
 /// A reference-guided target is still a per-image measured target. Reference
 /// statistics may only make a small, explainable correction to the baseline;
 /// white balance, HSL, curves and local masks remain computed from the source.
+enum AestheticTonalStructure: String, Equatable, Sendable {
+    case continuity
+    case spatialHierarchy
+    case restrainedDepth
+    case referenceCalibration
+}
+
+/// PT-AESTHETIC-010. Region targets are explicit relationships measured from
+/// this source image. They are not scene presets: a target is nil whenever the
+/// corresponding mask/statistics are not reliable, and every non-nil value is
+/// recomputed from the current image's luminance, colour and safety headroom.
+struct AestheticRegionalTargetIntent: Equatable, Sendable {
+    let tonalStructure: AestheticTonalStructure
+    let groundLuminanceTarget: Float?
+    let vegetationLuminanceTarget: Float?
+    let skyLuminanceTarget: Float?
+    let architectureLuminanceTarget: Float?
+    let groundVegetationDeltaTarget: Float?
+    let selectiveColorStrength: Float
+    let midtoneDepth: Float
+
+    var traceSummary: String {
+        func value(_ number: Float?) -> String {
+            number.map { String(format: "%.3f", $0) } ?? "n/a"
+        }
+        return String(
+            format: "structure=%@ ground=%@ vegetation=%@ sky=%@ architecture=%@ groundVegetationDelta=%@ selectiveColor=%.3f midtoneDepth=%.3f",
+            tonalStructure.rawValue,
+            value(groundLuminanceTarget),
+            value(vegetationLuminanceTarget),
+            value(skyLuminanceTarget),
+            value(architectureLuminanceTarget),
+            value(groundVegetationDeltaTarget),
+            selectiveColorStrength,
+            midtoneDepth
+        )
+    }
+}
+
 struct PhotographyTargetProfile: Equatable, Sendable {
     let hypothesisIdentifier: String
     let baselineTarget: AdaptivePhotographyTarget
@@ -335,8 +374,35 @@ struct PhotographyTargetProfile: Equatable, Sendable {
     let localContrastTarget: Float
     let regionalColorSeparationTarget: Float
     let subjectBackgroundDeltaTarget: Float?
+    let regionalIntent: AestheticRegionalTargetIntent?
     let rationale: [String]
     let preservedProperties: [String]
+
+    init(
+        hypothesisIdentifier: String,
+        baselineTarget: AdaptivePhotographyTarget,
+        resolvedTarget: AdaptivePhotographyTarget,
+        referenceMatch: PhotographyReferenceMatchResult,
+        referenceInfluence: Float,
+        localContrastTarget: Float,
+        regionalColorSeparationTarget: Float,
+        subjectBackgroundDeltaTarget: Float?,
+        regionalIntent: AestheticRegionalTargetIntent? = nil,
+        rationale: [String],
+        preservedProperties: [String]
+    ) {
+        self.hypothesisIdentifier = hypothesisIdentifier
+        self.baselineTarget = baselineTarget
+        self.resolvedTarget = resolvedTarget
+        self.referenceMatch = referenceMatch
+        self.referenceInfluence = referenceInfluence
+        self.localContrastTarget = localContrastTarget
+        self.regionalColorSeparationTarget = regionalColorSeparationTarget
+        self.subjectBackgroundDeltaTarget = subjectBackgroundDeltaTarget
+        self.regionalIntent = regionalIntent
+        self.rationale = rationale
+        self.preservedProperties = preservedProperties
+    }
 
     var referenceApplied: Bool {
         referenceInfluence > 0 && referenceMatch.isApplicable
@@ -481,29 +547,86 @@ struct AestheticTargetHypothesisGenerator {
             let yellowDominance = max(0, yellowEvidence - greenEvidence * 0.35)
             let saturationHeadroom = ((0.46 - vegetation.averageSaturation) / 0.46)
                 .clamped(to: 0...1)
-            return (max(coexistence * 0.72, yellowDominance * 0.48) * saturationHeadroom * 0.065)
-                .clamped(to: 0...0.055)
+            return (max(coexistence * 0.72, yellowDominance * 0.48) * saturationHeadroom * 0.15)
+                .clamped(to: 0...0.13)
         }()
         let portraitColorProtection: Float = source.containsPersonEvidence ? 0.25 : 1
-        let e1SaturationLift = min(0.016, colorSeparationEvidence * 0.30) * portraitColorProtection
-        let e2SaturationLift = min(0.010, colorSeparationEvidence * 0.20) * portraitColorProtection
+        // Global saturation stays deliberately small. The expressive colour
+        // difference is a mask-backed relationship, not a whole-image boost.
+        let e1SaturationLift = min(0.012, colorSeparationEvidence * 0.12) * portraitColorProtection
+        let e2SaturationLift = min(0.006, colorSeparationEvidence * 0.06) * portraitColorProtection
 
         let recoverableHighlight = max(0, source.highlightRatio - source.whiteRatio)
         let endpointPressure = (
             recoverableHighlight * 0.14 + max(0, source.whiteRatio - 0.035) * 0.10
         ).clamped(to: 0...0.035)
         let spatialDepthOpportunity = (
-            max(0, source.averageLuminance - 0.46) * 0.105
-                + usableRegionalCoverage * 0.012
+            max(0, source.averageLuminance - 0.42) * 0.22
+                + usableRegionalCoverage * 0.035
         ) * noiseHeadroom * atmosphereHeadroom
         let e1LuminanceShift = -(endpointPressure + spatialDepthOpportunity)
-            .clamped(to: 0.010...0.052)
+            .clamped(to: 0.018...0.095)
         let e1Luminance = (continuity.resolvedTarget.luminance + e1LuminanceShift)
             .clamped(to: 0.25...0.68)
         let e1Contrast = max(
             continuity.resolvedTarget.contrast,
-            source.contrastRange - max(0, source.contrastRange - 0.70) * 0.38
-        ).clamped(to: 0.50...0.79)
+            source.contrastRange - max(0, source.contrastRange - 0.70) * 0.24
+        ).clamped(to: 0.50...0.82)
+
+        let reliableGround = source.groundMask?.qualityAssessment.isUsable == true
+            ? source.groundStatistics : nil
+        let reliableVegetation = source.vegetationMask?.qualityAssessment.isUsable == true
+            ? source.vegetationStatistics : nil
+        let reliableSky = source.skyMask?.qualityAssessment.isUsable == true
+            ? source.skyStatistics : nil
+        let reliableArchitecture = source.architectureMask?.qualityAssessment.isUsable == true
+            ? source.architectureStatistics : nil
+        let hierarchyEvidence: Float = {
+            guard let ground = reliableGround, let vegetation = reliableVegetation else { return 0 }
+            let luminanceDominance = max(0, ground.averageLuminance - vegetation.averageLuminance)
+                .clamped(to: 0...0.28) / 0.28
+            let colorAdvantage = max(0, vegetation.averageSaturation - ground.averageSaturation)
+                .clamped(to: 0...0.28) / 0.28
+            let coverageBalance = min(
+                source.groundMask?.activeCoverage ?? 0,
+                source.vegetationMask?.activeCoverage ?? 0
+            ) / max(0.001, max(
+                source.groundMask?.activeCoverage ?? 0,
+                source.vegetationMask?.activeCoverage ?? 0
+            ))
+            return (luminanceDominance * 0.42 + colorAdvantage * 0.38 + coverageBalance * 0.20)
+                .clamped(to: 0...1) * noiseHeadroom
+        }()
+        let spatialHierarchyDepth = (0.055 + hierarchyEvidence * 0.115 + colorSeparationEvidence * 0.20)
+            .clamped(to: 0.055...0.18)
+        let e1VegetationTarget = reliableVegetation.map { statistics in
+            (statistics.averageLuminance + 0.012 + hierarchyEvidence * 0.018)
+                .clamped(to: 0.24...0.64)
+        }
+        let e1GroundTarget = reliableGround.map { ground in
+            let relationship = e1VegetationTarget.map { $0 - spatialHierarchyDepth }
+            let measuredDepth = ground.averageLuminance - (0.045 + hierarchyEvidence * 0.08)
+            return min(relationship ?? measuredDepth, measuredDepth).clamped(to: 0.20...0.60)
+        }
+        let e1SkyTarget = reliableSky.map { statistics in
+            min(statistics.averageLuminance, max(e1Luminance + 0.17, 0.69))
+                .clamped(to: 0.62...0.90)
+        }
+        let e1ArchitectureTarget = reliableArchitecture.map { statistics in
+            (statistics.averageLuminance - hierarchyEvidence * 0.018)
+                .clamped(to: 0.22...0.68)
+        }
+        let e1RegionalIntent = AestheticRegionalTargetIntent(
+            tonalStructure: .spatialHierarchy,
+            groundLuminanceTarget: e1GroundTarget,
+            vegetationLuminanceTarget: e1VegetationTarget,
+            skyLuminanceTarget: e1SkyTarget,
+            architectureLuminanceTarget: e1ArchitectureTarget,
+            groundVegetationDeltaTarget: (e1GroundTarget != nil && e1VegetationTarget != nil)
+                ? -spatialHierarchyDepth : nil,
+            selectiveColorStrength: colorSeparationEvidence * portraitColorProtection,
+            midtoneDepth: spatialDepthOpportunity.clamped(to: 0.018...0.095)
+        )
         let e1Target = AdaptivePhotographyTarget(
             luminance: e1Luminance,
             luminanceMinimum: (e1Luminance - 0.040).clamped(to: 0.20...0.66),
@@ -535,7 +658,11 @@ struct AestheticTargetHypothesisGenerator {
                 .clamped(to: source.contrastRange...(source.contrastRange + 0.055)),
             regionalColorSeparationTarget: colorSeparationEvidence,
             subjectBackgroundDeltaTarget: continuity.subjectBackgroundDeltaTarget,
-            rationale: [e1Target.rationale, "强调现有空间关系，不创建原图不存在的光源、颜色或主体。"],
+            regionalIntent: e1RegionalIntent,
+            rationale: [
+                e1Target.rationale,
+                "区域目标=\(e1RegionalIntent.traceSummary)。只重组本图已有空间与颜色关系，不创建光源、颜色或主体。"
+            ],
             preservedProperties: continuity.preservedProperties
         )
 
@@ -544,14 +671,47 @@ struct AestheticTargetHypothesisGenerator {
                 * noiseHeadroom
                 * atmosphereHeadroom
         ).clamped(to: 0...0.26)
-        let e2AdditionalDepth = (0.018 + lowKeyHeadroom * 0.13 + usableRegionalCoverage * 0.008)
-            .clamped(to: 0.018...0.060)
+        let e2AdditionalDepth = (0.045 + lowKeyHeadroom * 0.26 + usableRegionalCoverage * 0.022)
+            .clamped(to: 0.045...0.125)
         let e2Luminance = (continuity.resolvedTarget.luminance - e2AdditionalDepth)
             .clamped(to: 0.24...0.63)
         let e2Contrast = max(
             continuity.resolvedTarget.contrast,
-            source.contrastRange - max(0, source.contrastRange - 0.68) * 0.46
-        ).clamped(to: 0.48...0.765)
+            source.contrastRange - max(0, source.contrastRange - 0.68) * 0.34
+        ).clamped(to: 0.48...0.80)
+        let restrainedDepthStrength = (
+            0.035 + lowKeyHeadroom * 0.18 + usableRegionalCoverage * 0.025
+        ).clamped(to: 0.035...0.11) * noiseHeadroom
+        let e2VegetationTarget = reliableVegetation.map { statistics in
+            (statistics.averageLuminance - restrainedDepthStrength * 0.38)
+                .clamped(to: 0.22...0.58)
+        }
+        let e2GroundTarget = reliableGround.map { statistics in
+            (statistics.averageLuminance - restrainedDepthStrength)
+                .clamped(to: 0.20...0.57)
+        }
+        let e2SkyTarget = reliableSky.map { statistics in
+            min(statistics.averageLuminance, max(e2Luminance + 0.20, 0.66))
+                .clamped(to: 0.60...0.86)
+        }
+        let e2ArchitectureTarget = reliableArchitecture.map { statistics in
+            (statistics.averageLuminance - restrainedDepthStrength * 0.55)
+                .clamped(to: 0.20...0.62)
+        }
+        let e2Delta: Float? = {
+            guard let ground = e2GroundTarget, let vegetation = e2VegetationTarget else { return nil }
+            return ground - vegetation
+        }()
+        let e2RegionalIntent = AestheticRegionalTargetIntent(
+            tonalStructure: .restrainedDepth,
+            groundLuminanceTarget: e2GroundTarget,
+            vegetationLuminanceTarget: e2VegetationTarget,
+            skyLuminanceTarget: e2SkyTarget,
+            architectureLuminanceTarget: e2ArchitectureTarget,
+            groundVegetationDeltaTarget: e2Delta,
+            selectiveColorStrength: colorSeparationEvidence * 0.46 * portraitColorProtection,
+            midtoneDepth: restrainedDepthStrength
+        )
         let e2Target = AdaptivePhotographyTarget(
             luminance: e2Luminance,
             luminanceMinimum: (e2Luminance - 0.045).clamped(to: 0.19...0.61),
@@ -581,7 +741,11 @@ struct AestheticTargetHypothesisGenerator {
                 .clamped(to: source.contrastRange...(source.contrastRange + 0.040)),
             regionalColorSeparationTarget: colorSeparationEvidence * 0.82,
             subjectBackgroundDeltaTarget: continuity.subjectBackgroundDeltaTarget,
-            rationale: [e2Target.rationale, "暗调假设只有技术可行性，不代表自动审美优胜；必须盲测。"],
+            regionalIntent: e2RegionalIntent,
+            rationale: [
+                e2Target.rationale,
+                "区域目标=\(e2RegionalIntent.traceSummary)。暗调假设只有技术可行性，不代表自动审美优胜；必须盲测。"
+            ],
             preservedProperties: continuity.preservedProperties
         )
 
