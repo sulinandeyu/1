@@ -2832,6 +2832,11 @@ final class SceneAdaptationTests: XCTestCase {
     }
 
     func testMeasuredAestheticHypothesesAreIndependentlySolvedFromCurrentPhoto() throws {
+        let groundMask = NormalizedPhotoMask(
+            width: 4,
+            height: 4,
+            pixels: Data([255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0])
+        )
         let vegetationMask = NormalizedPhotoMask(
             width: 4,
             height: 4,
@@ -2842,7 +2847,16 @@ final class SceneAdaptationTests: XCTestCase {
             contrast: 0.831,
             saturation: 0.168,
             labels: ["outdoor"],
+            groundMask: groundMask,
             vegetationMask: vegetationMask,
+            groundStatistics: regionStatistics(
+                luminance: 0.692,
+                contrast: 0.587,
+                saturation: 0.073,
+                red: 0.55,
+                green: 0.54,
+                blue: 0.48
+            ),
             vegetationStatistics: regionStatistics(
                 luminance: 0.43,
                 contrast: 0.57,
@@ -2862,7 +2876,7 @@ final class SceneAdaptationTests: XCTestCase {
                 status: .available,
                 reason: nil,
                 skyCoverage: 0.104,
-                groundCoverage: 0.328,
+                groundCoverage: groundMask.activeCoverage,
                 vegetationCoverage: vegetationMask.activeCoverage,
                 waterCoverage: 0,
                 architectureCoverage: 0.015
