@@ -11,6 +11,8 @@
 
 正式 B、正常拍照和原图保存没有修改；未上传 Build 34。
 
+Apple 工程验证：摄影代码提交 `0e2f600b`（最终报告格式提交 `f6666064`）对应 [iOS Build #101](https://github.com/sulinandeyu/1/actions/runs/42942854695)，93/93 项 Swift 测试通过，iOS Simulator `BUILD SUCCEEDED`。这只证明状态契约、诊断导出和原有工程可编译，不替代七图真实 Core Image 成片与人工审美验收。
+
 ## 七张原图与隔离状态
 
 清单：`PhoneValidationDataset/cross_scene_split.json`
