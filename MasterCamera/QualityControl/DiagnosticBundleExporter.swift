@@ -6,12 +6,16 @@ import UIKit
 /// exported through the native share sheet without adding a third-party archive
 /// dependency.  Every rendered image is tied to the same source SHA-256.
 final class DiagnosticBundleExporter {
+    static func sourceSHA256(_ data: Data) -> String {
+        SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+    }
+
     func makeArchive(for photo: CapturedPhoto) throws -> URL {
         guard photo.isDiagnosticImport else {
             throw DiagnosticBundleExportError.notDiagnosticImport
         }
 
-        let sourceHash = sha256(photo.originalImageData)
+        let sourceHash = Self.sourceSHA256(photo.originalImageData)
         var entries: [DiagnosticExportEntry] = []
         var usedPaths = Set<String>()
 
@@ -130,7 +134,7 @@ final class DiagnosticBundleExporter {
                 "path": entry.path,
                 "role": entry.role,
                 "bytes": entry.data.count,
-                "sha256": sha256(entry.data)
+                "sha256": Self.sourceSHA256(entry.data)
             ]
         }
         let metadata: [String: Any] = [
@@ -452,8 +456,214 @@ final class DiagnosticBundleExporter {
         return String(value.prefix(96))
     }
 
-    private func sha256(_ data: Data) -> String {
-        SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+    private static let fileTimestamp: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyyMMdd_HHmmss"
+        return formatter
+    }()
+}
+
+struct DiagnosticBatchArchive: Identifiable, Sendable {
+    let id = UUID()
+    let url: URL
+    let requestedCount: Int
+    let completedCount: Int
+    let failedCount: Int
+}
+
+struct DiagnosticBatchProgress: Equatable, Sendable {
+    let completedCount: Int
+    let totalCount: Int
+    let currentItem: Int
+    let failureCount: Int
+
+    var title: String { "正在批量生成真实候选" }
+    var subtitle: String {
+        "第 \(currentItem)/\(totalCount) 张 · 已完成 \(completedCount) 张 · 失败 \(failureCount) 张"
+    }
+}
+
+struct DiagnosticBatchCase: Sendable {
+    let index: Int
+    let sourceHash: String
+    let archiveURL: URL
+    let candidates: [DiagnosticBatchCandidateSummary]
+    let blindImages: [DiagnosticBatchImageFile]
+}
+
+struct DiagnosticBatchCandidateSummary: Codable, Sendable {
+    let identifier: String
+    let states: [String]
+    let qualityStatus: String
+    let humanAestheticStatus: String
+}
+
+struct DiagnosticBatchImageFile: Sendable {
+    let identifier: String
+    let fileURL: URL
+    let technicalStatus: String
+    let eligibleForPreference: Bool
+}
+
+struct DiagnosticBatchFailure: Codable, Sendable {
+    let index: Int
+    let sourceHash: String?
+    let reason: String
+}
+
+/// Combines already-created per-photo evidence archives without loading their
+/// full-resolution contents back into memory. Each nested ZIP remains a
+/// self-contained, same-source A/B/D/E1/E2/M evidence package.
+final class DiagnosticBatchBundleExporter {
+    func makeArchive(
+        requestedCount: Int,
+        cases: [DiagnosticBatchCase],
+        failures: [DiagnosticBatchFailure]
+    ) throws -> DiagnosticBatchArchive {
+        let caseRecords: [[String: Any]] = cases.map { item in
+            [
+                "index": item.index,
+                "sourceSha256": item.sourceHash,
+                "archive": casePath(item),
+                "candidateStatus": item.candidates.map { candidate in
+                    [
+                        "identifier": candidate.identifier,
+                        "states": candidate.states,
+                        "qualityStatus": candidate.qualityStatus,
+                        "humanAestheticStatus": candidate.humanAestheticStatus
+                    ]
+                },
+                "blindImages": item.blindImages.map { image in
+                    [
+                        "identifier": image.identifier,
+                        "path": blindImagePath(image, in: item),
+                        "technicalStatus": image.technicalStatus,
+                        "eligibleForPreference": image.eligibleForPreference
+                    ]
+                }
+            ]
+        }
+        let failureRecords: [[String: Any]] = failures.map { failure in
+            [
+                "index": failure.index,
+                "sourceSha256": failure.sourceHash ?? "unavailable",
+                "reason": failure.reason
+            ]
+        }
+        let manifest: [String: Any] = [
+            "schemaVersion": 1,
+            "createdAt": ISO8601DateFormatter().string(from: Date()),
+            "evidenceOrigin": "iPhone production PhotoProcessingPipeline and Apple Core Image",
+            "evidenceScope": "internal diagnostic batch; not macOS Runner evidence and not Windows simulation",
+            "requestedCount": requestedCount,
+            "completedCount": cases.count,
+            "failedCount": failures.count,
+            "processingPolicy": "serial; each full-resolution case is exported and released before the next case",
+            "formalAlgorithmB": "unchanged",
+            "humanPreference": "notEvaluated; this archive does not fabricate votes",
+            "cases": caseRecords,
+            "failures": failureRecords
+        ]
+        let manifestData = try JSONSerialization.data(
+            withJSONObject: manifest,
+            options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+        )
+        let readme = """
+        小苏相机批量摄影候选取证包
+
+        - 每个 cases/.../diagnostic.zip 对应一张独立原图。
+        - 子 ZIP 内包含同源 A/B/D/E1/E2/M 全分辨率图像、实际参数、蒙版与质检证据。
+        - 图像由 iPhone 上的生产 PhotoProcessingPipeline 与 Apple Core Image 串行生成。
+        - 技术失败候选仍保留取证，但不得视为正式可用候选。
+        - 本文件不包含、推断或伪造任何人工摄影偏好。
+        - 正式 B、普通拍照和原图保存流程未被批量取证改变。
+        """
+
+        let memoryEntries = [
+            DiagnosticExportEntry(path: "batch_manifest.json", data: manifestData, role: "batch manifest"),
+            DiagnosticExportEntry(path: "README.txt", data: Data(readme.utf8), role: "human-readable guide"),
+            DiagnosticExportEntry(
+                path: "blind-compare.html",
+                data: Data(blindCompareHTML(cases: cases).utf8),
+                role: "direct-open human preference page"
+            )
+        ]
+        var fileEntries = cases.map { item in
+            DiagnosticFileExportEntry(
+                path: casePath(item),
+                fileURL: item.archiveURL,
+                role: "per-photo complete diagnostic archive"
+            )
+        }
+        fileEntries.append(contentsOf: cases.flatMap { item in
+            item.blindImages.map { image in
+                DiagnosticFileExportEntry(
+                    path: blindImagePath(image, in: item),
+                    fileURL: image.fileURL,
+                    role: "full-resolution blind comparison image"
+                )
+            }
+        })
+        let stamp = Self.fileTimestamp.string(from: Date())
+        let destination = FileManager.default.temporaryDirectory
+            .appendingPathComponent("XiaoSuCamera_BatchDiagnostic_\(stamp)_\(cases.count)of\(requestedCount).zip")
+        try? FileManager.default.removeItem(at: destination)
+        try NativeZipArchiveWriter.write(entries: memoryEntries, fileEntries: fileEntries, to: destination)
+        return DiagnosticBatchArchive(
+            url: destination,
+            requestedCount: requestedCount,
+            completedCount: cases.count,
+            failedCount: failures.count
+        )
+    }
+
+    private func casePath(_ item: DiagnosticBatchCase) -> String {
+        String(format: "cases/%02d_%@/diagnostic.zip", item.index, String(item.sourceHash.prefix(12)))
+    }
+
+    private func blindImagePath(_ image: DiagnosticBatchImageFile, in item: DiagnosticBatchCase) -> String {
+        let stem: String
+        switch image.identifier {
+        case "A": stem = "A_original.jpg"
+        case "D": stem = "D_automatic.jpg"
+        case "E1": stem = "E1_spatial_emphasis.jpg"
+        case "E2": stem = "E2_restrained_depth.jpg"
+        default: stem = "\(image.identifier)_evidence.jpg"
+        }
+        return String(format: "blind/case_%02d_%@/%@", item.index, String(item.sourceHash.prefix(12)), stem)
+    }
+
+    private func blindCompareHTML(cases: [DiagnosticBatchCase]) -> String {
+        let payload: [[String: Any]] = cases.map { item in
+            let original = item.blindImages.first { $0.identifier == "A" }
+            return [
+                "caseId": String(format: "case_%02d", item.index),
+                "sourceSha256": item.sourceHash,
+                "original": original.map { blindImagePath($0, in: item) } ?? "",
+                "candidates": item.blindImages.filter { $0.identifier != "A" }.map { image in
+                    [
+                        "id": image.identifier,
+                        "image": blindImagePath(image, in: item),
+                        "technicalStatus": image.technicalStatus,
+                        "eligible": image.eligibleForPreference
+                    ] as [String: Any]
+                }
+            ]
+        }
+        let json = (try? JSONSerialization.data(
+            withJSONObject: payload,
+            options: [.sortedKeys, .withoutEscapingSlashes]
+        )).flatMap { String(data: $0, encoding: .utf8) } ?? "[]"
+        return """
+        <!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+        <title>小苏相机跨场景候选盲测</title><style>
+        body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;margin:0;background:#101114;color:#f4f4f4}main{max-width:1500px;margin:auto;padding:24px}select,button,textarea{font:inherit;padding:10px;border-radius:9px;border:1px solid #555;background:#202228;color:#fff}button{cursor:pointer}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:18px}.card{background:#191b20;padding:12px;border-radius:14px}.card img{width:100%;max-height:68vh;object-fit:contain;background:#000}.failed{border:2px solid #d85b5b}.eligible{border:2px solid #4d9c72}.badge{font-size:13px;color:#ccc;min-height:38px}.actions{display:flex;flex-wrap:wrap;gap:10px;margin:20px 0}.warn{color:#ffcc80}textarea{width:100%;min-height:80px;box-sizing:border-box}pre{white-space:pre-wrap;background:#17181c;padding:12px;border-radius:10px}
+        </style></head><body><main><h1>7 图 D/E1/E2 真实候选盲测</h1><p class="warn">只有技术合格候选可被选为最好。技术失败图仍显示用于诊断，不代表可进入正式 B。页面不会自动填写或伪造人工偏好。</p>
+        <label>照片：<select id="case"></select></label><section><h2>原图</h2><img id="original" style="max-width:520px;max-height:60vh;object-fit:contain;background:#000"></section><h2>匿名候选</h2><div id="candidates" class="grid"></div>
+        <div class="actions"><button data-special="all_bad">全部不好</button><button data-special="difference_not_obvious">差异不明显</button></div><textarea id="issues" placeholder="记录偏色、肤色、黑位、光晕、过饱和、局部错误或其他原因"></textarea><div class="actions"><button id="download">下载人工评价 JSON</button></div><pre id="status"></pre>
+        <script>const cases=\(json);let current=null,order=[],results=[];const $=id=>document.getElementById(id);function shuffle(x){return [...x].sort(()=>Math.random()-.5)}function render(){current=cases.find(x=>x.caseId===$('case').value);$('original').src=current.original;order=shuffle(current.candidates);$('candidates').innerHTML='';order.forEach((c,i)=>{const d=document.createElement('div');d.className='card '+(c.eligible?'eligible':'failed');const b=c.eligible?`<button data-win="${i}">选择候选 ${i+1}</button>`:'<strong>技术失败，仅供查看，不可选</strong>';d.innerHTML=`<h3>候选 ${i+1}</h3><img src="${c.image}"><p class="badge">技术状态：${c.technicalStatus}</p>${b}`;$('candidates').appendChild(d)});document.querySelectorAll('[data-win]').forEach(b=>b.onclick=()=>record('best',order[Number(b.dataset.win)]));$('status').textContent=`SHA-256：${current.sourceSha256}\n尚未记录本图人工评价。`;}function record(choice,winner){const entry={schemaVersion:1,caseId:current.caseId,sourceSha256:current.sourceSha256,recordedAt:new Date().toISOString(),blindOrder:order.map(x=>({slot:order.indexOf(x)+1,technicalStatus:x.technicalStatus,eligible:x.eligible})),choice,winner:winner?winner.id:null,issues:$('issues').value.trim(),source:'iphone_batch_core_image_blind_review'};results=results.filter(x=>x.caseId!==current.caseId);results.push(entry);$('status').textContent=`已记录 ${results.length}/${cases.length} 条。本图选择：${choice}${winner?'；揭盲='+winner.id:''}`;}document.querySelectorAll('[data-special]').forEach(b=>b.onclick=()=>record(b.dataset.special,null));$('download').onclick=()=>{const blob=new Blob([JSON.stringify({schemaVersion:1,createdAt:new Date().toISOString(),humanEntered:true,results},null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='xiaosu-human-preference.json';a.click();URL.revokeObjectURL(a.href)};cases.forEach((c,i)=>{const o=document.createElement('option');o.value=c.caseId;o.textContent=`照片 ${i+1}`;$('case').appendChild(o)});$('case').onchange=render;if(cases.length)render();</script></main></body></html>
+        """
     }
 
     private static let fileTimestamp: DateFormatter = {
@@ -467,6 +677,12 @@ final class DiagnosticBundleExporter {
 private struct DiagnosticExportEntry {
     let path: String
     let data: Data
+    let role: String
+}
+
+private struct DiagnosticFileExportEntry {
+    let path: String
+    let fileURL: URL
     let role: String
 }
 
@@ -492,8 +708,12 @@ private enum NativeZipArchiveWriter {
         let offset: UInt32
     }
 
-    static func write(entries: [DiagnosticExportEntry], to url: URL) throws {
-        guard entries.count <= Int(UInt16.max) else {
+    static func write(
+        entries: [DiagnosticExportEntry],
+        fileEntries: [DiagnosticFileExportEntry] = [],
+        to url: URL
+    ) throws {
+        guard entries.count + fileEntries.count <= Int(UInt16.max) else {
             throw DiagnosticBundleExportError.archiveTooLarge
         }
 
@@ -551,6 +771,50 @@ private enum NativeZipArchiveWriter {
                 header.append(name)
                 try writeChunk(header)
                 try writeChunk(entry.data)
+                centralRecords.append(CentralRecord(name: name, crc32: crc, size: size, offset: offset))
+            }
+
+            for entry in fileEntries {
+                let attributes = try FileManager.default.attributesOfItem(atPath: entry.fileURL.path)
+                guard let fileSizeNumber = attributes[.size] as? NSNumber else {
+                    throw CocoaError(.fileReadUnknown)
+                }
+                let fileSize64 = fileSizeNumber.uint64Value
+                guard fileSize64 <= UInt64(UInt32.max), outputOffset <= UInt64(UInt32.max) else {
+                    throw DiagnosticBundleExportError.archiveTooLarge
+                }
+                let name = Data(entry.path.utf8)
+                guard name.count <= Int(UInt16.max) else {
+                    throw DiagnosticBundleExportError.archiveTooLarge
+                }
+                let crc = try CRC32.checksum(fileAt: entry.fileURL)
+                let size = UInt32(fileSize64)
+                let offset = UInt32(outputOffset)
+                var header = Data()
+                header.appendLE(UInt32(0x04034b50))
+                header.appendLE(UInt16(20))
+                header.appendLE(UInt16(0x0800))
+                header.appendLE(UInt16(0))
+                header.appendLE(dos.time)
+                header.appendLE(dos.date)
+                header.appendLE(crc)
+                header.appendLE(size)
+                header.appendLE(size)
+                header.appendLE(UInt16(name.count))
+                header.appendLE(UInt16(0))
+                header.append(name)
+                try writeChunk(header)
+
+                let input = try FileHandle(forReadingFrom: entry.fileURL)
+                do {
+                    while let chunk = try input.read(upToCount: 1_048_576), !chunk.isEmpty {
+                        try writeChunk(chunk)
+                    }
+                    try input.close()
+                } catch {
+                    try? input.close()
+                    throw error
+                }
                 centralRecords.append(CentralRecord(name: name, crc32: crc, size: size, offset: offset))
             }
 
@@ -625,6 +889,27 @@ private enum NativeZipArchiveWriter {
 private enum CRC32 {
     static func checksum(_ data: Data) -> UInt32 {
         var crc: UInt32 = 0xffffffff
+        crc = update(crc, with: data)
+        return crc ^ 0xffffffff
+    }
+
+    static func checksum(fileAt url: URL) throws -> UInt32 {
+        let handle = try FileHandle(forReadingFrom: url)
+        var crc: UInt32 = 0xffffffff
+        do {
+            while let chunk = try handle.read(upToCount: 1_048_576), !chunk.isEmpty {
+                crc = update(crc, with: chunk)
+            }
+            try handle.close()
+        } catch {
+            try? handle.close()
+            throw error
+        }
+        return crc ^ 0xffffffff
+    }
+
+    private static func update(_ current: UInt32, with data: Data) -> UInt32 {
+        var crc = current
         for byte in data {
             var value = (crc ^ UInt32(byte)) & 0xff
             for _ in 0..<8 {
@@ -632,7 +917,7 @@ private enum CRC32 {
             }
             crc = (crc >> 8) ^ value
         }
-        return crc ^ 0xffffffff
+        return crc
     }
 }
 

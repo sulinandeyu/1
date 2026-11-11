@@ -4,6 +4,7 @@ import SwiftUI
 struct CameraView: View {
     @StateObject private var viewModel = CameraViewModel()
     @State private var selectedSample: PhotosPickerItem?
+    @State private var selectedBatchSamples: [PhotosPickerItem] = []
 
     var body: some View {
         GeometryReader { geometry in
@@ -33,7 +34,10 @@ struct CameraView: View {
                 }
 
                 if viewModel.processingState.isProcessing {
-                    processingOverlay(viewModel.processingState)
+                    processingOverlay(
+                        viewModel.processingState,
+                        batchProgress: viewModel.diagnosticBatchProgress
+                    )
                 }
             }
         }
@@ -46,6 +50,9 @@ struct CameraView: View {
                 onSave: viewModel.saveCapturedPhoto,
                 onRetake: viewModel.dismissPreview
             )
+        }
+        .sheet(item: $viewModel.diagnosticBatchArchive) { archive in
+            DiagnosticShareSheet(activityItems: [archive.url])
         }
         .onChange(of: selectedSample) { _, newValue in
             guard let newValue else { return }
@@ -61,6 +68,11 @@ struct CameraView: View {
                     viewModel.reportImportFailure("导入样片失败：\(error.localizedDescription)")
                 }
             }
+        }
+        .onChange(of: selectedBatchSamples) { _, newValue in
+            guard !newValue.isEmpty else { return }
+            viewModel.processImportedPhotoBatch(newValue)
+            selectedBatchSamples = []
         }
     }
 
@@ -203,10 +215,17 @@ struct CameraView: View {
 
                 Spacer()
 
-                controlButton(icon: "wand.and.stars", title: "自动")
-                .foregroundStyle(Color(red: 0.76, green: 0.88, blue: 1))
-                .accessibilityElement(children: .combine)
-                .accessibilityLabel("自动场景优化已开启")
+                PhotosPicker(
+                    selection: $selectedBatchSamples,
+                    maxSelectionCount: 7,
+                    selectionBehavior: .ordered,
+                    matching: .images
+                ) {
+                    controlButton(icon: "square.stack.3d.up", title: "批量取证")
+                        .foregroundStyle(Color(red: 0.76, green: 0.88, blue: 1))
+                }
+                .disabled(viewModel.processingState.isProcessing)
+                .accessibilityLabel("批量选择最多七张原图并生成诊断证据")
             }
         }
         .padding(.horizontal, 16)
@@ -305,7 +324,10 @@ struct CameraView: View {
         }
     }
 
-    private func processingOverlay(_ state: ProcessingState) -> some View {
+    private func processingOverlay(
+        _ state: ProcessingState,
+        batchProgress: DiagnosticBatchProgress?
+    ) -> some View {
         VStack(spacing: 16) {
             ProgressView()
                 .progressViewStyle(.circular)
@@ -313,10 +335,10 @@ struct CameraView: View {
                 .tint(.white)
 
             VStack(spacing: 6) {
-                Text(state.title)
+                Text(batchProgress?.title ?? state.title)
                     .font(.headline)
 
-                Text(state.subtitle)
+                Text(batchProgress?.subtitle ?? state.subtitle)
                     .font(.callout)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)

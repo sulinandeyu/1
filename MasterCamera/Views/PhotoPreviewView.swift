@@ -471,7 +471,7 @@ private struct DiagnosticArchiveShareItem: Identifiable {
     let url: URL
 }
 
-private struct DiagnosticShareSheet: UIViewControllerRepresentable {
+struct DiagnosticShareSheet: UIViewControllerRepresentable {
     let activityItems: [Any]
 
     func makeUIViewController(context: Context) -> UIActivityViewController {
