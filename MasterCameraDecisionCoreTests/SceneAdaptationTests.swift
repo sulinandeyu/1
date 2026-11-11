@@ -2318,11 +2318,6 @@ final class SceneAdaptationTests: XCTestCase {
             height: 4,
             pixels: Data([0, 255, 255, 0, 255, 255, 255, 255, 255, 255, 255, 255, 0, 255, 255, 0])
         )
-        let groundMask = NormalizedPhotoMask(
-            width: 4,
-            height: 4,
-            pixels: Data([0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255])
-        )
         func analysis(yellowRatio: Float) -> PhotoAnalysis {
             fixture(
                 luminance: 0.52,
@@ -2651,6 +2646,11 @@ final class SceneAdaptationTests: XCTestCase {
             height: 4,
             pixels: Data([0, 255, 255, 0, 255, 255, 255, 255, 255, 255, 255, 255, 0, 255, 255, 0])
         )
+        let groundMask = NormalizedPhotoMask(
+            width: 4,
+            height: 4,
+            pixels: Data([0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255])
+        )
         let analysis = fixture(
             luminance: 0.57,
             contrast: 0.66,
@@ -2964,6 +2964,122 @@ final class SceneAdaptationTests: XCTestCase {
         XCTAssertTrue(assessment.reason.contains("人工盲测"))
     }
 
+    func testMeasuredHypothesesProduceDistinctAppleCoreImageRegionalPixels() throws {
+        let groundMask = NormalizedPhotoMask(
+            width: 4,
+            height: 4,
+            pixels: Data([255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0])
+        )
+        let vegetationMask = NormalizedPhotoMask(
+            width: 4,
+            height: 4,
+            pixels: Data([0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255])
+        )
+        let analysis = fixture(
+            luminance: 0.58,
+            contrast: 0.76,
+            saturation: 0.19,
+            labels: ["outdoor"],
+            groundMask: groundMask,
+            vegetationMask: vegetationMask,
+            groundStatistics: regionStatistics(
+                luminance: 0.67,
+                contrast: 0.55,
+                saturation: 0.08,
+                red: 0.67,
+                green: 0.65,
+                blue: 0.60
+            ),
+            vegetationStatistics: regionStatistics(
+                luminance: 0.42,
+                contrast: 0.61,
+                saturation: 0.26,
+                red: 0.45,
+                green: 0.41,
+                blue: 0.21,
+                yellowColorRatio: 0.48,
+                greenColorRatio: 0.20
+            ),
+            shadowRatio: 0.06,
+            highlightRatio: 0.19,
+            blackRatio: 0.01,
+            whiteRatio: 0.03,
+            noiseEstimate: 0.035,
+            segmentation: SceneSegmentationDiagnostics(
+                status: .available,
+                reason: nil,
+                skyCoverage: 0,
+                groundCoverage: groundMask.activeCoverage,
+                vegetationCoverage: vegetationMask.activeCoverage,
+                waterCoverage: 0,
+                architectureCoverage: 0
+            )
+        )
+        let problems = detector.detect(in: analysis)
+        let hypotheses = AestheticTargetHypothesisGenerator().makeHypotheses(
+            analysis: analysis,
+            problems: problems
+        )
+        XCTAssertEqual(hypotheses.count, 2)
+
+        let width = 96
+        let height = 64
+        let groundImage = constantImage(width: width, height: height / 2, red: 0.67, green: 0.65, blue: 0.60)
+        let vegetationImage = constantImage(width: width, height: height / 2, red: 0.45, green: 0.41, blue: 0.21)
+            .transformed(by: CGAffineTransform(translationX: 0, y: CGFloat(height / 2)))
+        let source = vegetationImage.composited(over: groundImage)
+            .cropped(to: CGRect(x: 0, y: 0, width: width, height: height))
+        let groundCI = constantImage(width: width, height: height / 2, value: 1)
+        let vegetationCI = constantImage(width: width, height: height / 2, value: 1)
+            .transformed(by: CGAffineTransform(translationX: 0, y: CGFloat(height / 2)))
+        let processor = DiagnosticRegionalToneProcessor()
+
+        func render(_ profile: PhotographyTargetProfile) throws -> CIImage {
+            let aestheticPlan = AestheticPhotographyPlanner().makePlan(
+                analysis: analysis,
+                problems: problems,
+                targetProfile: profile
+            )
+            let regionalPlan = try XCTUnwrap(AdaptiveRegionalTonePlanner().makePlan(
+                analysis: analysis,
+                target: profile.resolvedTarget,
+                aestheticPlan: aestheticPlan
+            ))
+            var output = source
+            for adjustment in regionalPlan.adjustments {
+                let mask: CIImage
+                switch adjustment.region {
+                case .ground:
+                    mask = groundCI
+                case .vegetation:
+                    mask = vegetationCI
+                default:
+                    continue
+                }
+                output = processor.apply(to: output, semanticMask: mask, adjustment: adjustment)
+            }
+            return output
+        }
+
+        let e1 = try render(hypotheses[0].profile)
+        let e2 = try render(hypotheses[1].profile)
+        let e1Bytes = try rgba8(e1)
+        let e2Bytes = try rgba8(e2)
+        let rgbMAE = normalizedRGBMAE(e1Bytes, e2Bytes)
+        let e1GroundLuma = try meanRGB(e1.cropped(to: CGRect(x: 0, y: 0, width: width, height: height / 2))).luminance
+        let e2GroundLuma = try meanRGB(e2.cropped(to: CGRect(x: 0, y: 0, width: width, height: height / 2))).luminance
+        let regionalDifference = abs(e1GroundLuma - e2GroundLuma)
+
+        XCTAssertTrue(
+            rgbMAE >= 0.018 || regionalDifference >= 0.035,
+            String(
+                format: "Apple Core Image output remained too similar: RGB MAE %.4f, ground luminance delta %.4f",
+                rgbMAE,
+                regionalDifference
+            )
+        )
+    }
+
     func testMeasuredAestheticHypothesesChangeWithExposureNotSceneName() {
         let bright = fixture(
             luminance: 0.66,
@@ -3238,6 +3354,20 @@ final class SceneAdaptationTests: XCTestCase {
         return abs(Int(lhs[offset]) - Int(rhs[offset]))
             + abs(Int(lhs[offset + 1]) - Int(rhs[offset + 1]))
             + abs(Int(lhs[offset + 2]) - Int(rhs[offset + 2]))
+    }
+
+    private func normalizedRGBMAE(_ lhs: [UInt8], _ rhs: [UInt8]) -> Float {
+        precondition(lhs.count == rhs.count)
+        guard !lhs.isEmpty else { return 0 }
+        var total: Float = 0
+        var channelCount: Float = 0
+        for offset in stride(from: 0, to: lhs.count, by: 4) {
+            total += Float(abs(Int(lhs[offset]) - Int(rhs[offset]))) / 255
+            total += Float(abs(Int(lhs[offset + 1]) - Int(rhs[offset + 1]))) / 255
+            total += Float(abs(Int(lhs[offset + 2]) - Int(rhs[offset + 2]))) / 255
+            channelCount += 3
+        }
+        return total / channelCount
     }
 
     private func rgbDistance(
