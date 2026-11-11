@@ -85,6 +85,11 @@ final class DiagnosticBundleExporter {
             "planned/executed/rejected/fallback/unavailable candidate evidence"
         )
         add(
+            "evidence/candidate_generation_and_selection.json",
+            try jsonData(candidateSetAssessmentObject(photo: photo)),
+            "separate candidate-generation and candidate-selection evidence"
+        )
+        add(
             "evidence/scene_analysis_and_targets.json",
             try jsonData(sceneAnalysisObject(photo: photo, sourceHash: sourceHash)),
             "scene analysis, masks, target and decision rationale"
@@ -180,6 +185,66 @@ final class DiagnosticBundleExporter {
         case "M": return "M_manual_render"
         default: return "\(identifier)_diagnostic"
         }
+    }
+
+    /// PT-PREF-002: D/E1/E2 are the three source-measured automatic target
+    /// hypotheses.  This evidence deliberately refuses to infer photographic
+    /// quality from a render success or an engineering proxy score.  A real
+    /// human blind review is required before generation or selection can be
+    /// called successful.
+    private func candidateSetAssessmentObject(photo: CapturedPhoto) -> [String: Any] {
+        let expected = ["D", "E1", "E2"]
+        let records = expected.map { identifier -> PhotographyCandidateReviewEvidence in
+            let candidate = photo.diagnosticCandidates.first { $0.identifier == identifier }
+            let rendered = candidate?.states.contains(.executed) == true
+                && Self.resolvedPreview(for: candidate, in: photo.processingStagePreviews) != nil
+            let qualityText = candidate?.qualityStatus?.lowercased() ?? ""
+            let technicalStatus: CandidateEvaluationStatus
+            if qualityText.contains("failed") || candidate?.states.contains(.rejected) == true {
+                technicalStatus = .rejected
+            } else if qualityText.contains("warning") {
+                technicalStatus = .warning
+            } else if qualityText.contains("passed") {
+                technicalStatus = .passed
+            } else {
+                technicalStatus = .skipped
+            }
+            let humanText = candidate?.humanAestheticStatus.lowercased() ?? ""
+            let preferenceStatus: PhotographyPreferenceEvidenceStatus
+            if humanText.contains("humansupported") || humanText.contains("human_supported") {
+                preferenceStatus = .humanSupported
+            } else if humanText.contains("humanrejected") || humanText.contains("human_rejected") {
+                preferenceStatus = .humanRejected
+            } else if humanText.contains("inconclusive") {
+                preferenceStatus = .inconclusive
+            } else {
+                preferenceStatus = .notEvaluated
+            }
+            return PhotographyCandidateReviewEvidence(
+                identifier: identifier,
+                rendered: rendered,
+                technicalStatus: technicalStatus,
+                preferenceStatus: preferenceStatus,
+                automaticallySelected: false
+            )
+        }
+        let assessment = PhotographyCandidateSetAssessor().assess(
+            expectedCandidateIdentifiers: expected,
+            evidence: records
+        )
+        return [
+            "knowledgeRule": PhotographyKnowledgeRuleID.humanPreferenceCalibration.rawValue,
+            "candidateGenerationSelectionRule": PhotographyKnowledgeRuleID.candidateGenerationSelectionSeparation.rawValue,
+            "expectedCandidates": assessment.expectedCandidateIdentifiers,
+            "renderedCandidates": assessment.renderedCandidateIdentifiers,
+            "technicallyEligibleCandidates": assessment.technicallyEligibleCandidateIdentifiers,
+            "humanSupportedCandidates": assessment.humanSupportedCandidateIdentifiers,
+            "candidateGenerationOutcome": assessment.generationOutcome.rawValue,
+            "candidateSelectionOutcome": assessment.selectionOutcome.rawValue,
+            "automaticRankingResult": "not_run_for_D_E1_E2_diagnostic_hypotheses",
+            "reason": assessment.reason,
+            "warning": "Technical pass and engineering scores are not evidence of professional photographic preference."
+        ]
     }
 
     /// An exported candidate image must be the exact full-resolution stage that

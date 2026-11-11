@@ -35,3 +35,6 @@ PhotographyDataset/reports/*contact-sheet*.jpg
 # Human preference exports may contain reviewer notes and local filenames.
 PhoneValidationDataset/evaluation/results/*.json
 !PhoneValidationDataset/evaluation/results/.gitkeep
+PhoneValidationDataset/evaluation/diagnostic_zips/
+PhoneValidationDataset/evaluation/candidate_exports/
+output/cross_scene_candidate_blind_test/

@@ -717,6 +717,93 @@ final class SceneAdaptationTests: XCTestCase {
         XCTAssertEqual(evaluation.preferenceEvidenceStatus, .notEvaluated)
     }
 
+    func testCandidateSetDoesNotCallTechnicalPassAestheticSuccess() {
+        let evidence = ["D", "E1", "E2"].map {
+            PhotographyCandidateReviewEvidence(
+                identifier: $0,
+                rendered: true,
+                technicalStatus: .passed,
+                preferenceStatus: .notEvaluated,
+                automaticallySelected: false
+            )
+        }
+
+        let result = PhotographyCandidateSetAssessor().assess(
+            expectedCandidateIdentifiers: ["D", "E1", "E2"],
+            evidence: evidence
+        )
+
+        XCTAssertEqual(result.generationOutcome, .preferencePending)
+        XCTAssertEqual(result.selectionOutcome, .selectionNotRun)
+        XCTAssertEqual(result.technicallyEligibleCandidateIdentifiers.count, 3)
+        XCTAssertTrue(result.humanSupportedCandidateIdentifiers.isEmpty)
+    }
+
+    func testCandidateSetSeparatesGenerationFailureFromSelectionFailure() {
+        let generationFailure = PhotographyCandidateSetAssessor().assess(
+            expectedCandidateIdentifiers: ["D", "E1", "E2"],
+            evidence: ["D", "E1", "E2"].map {
+                PhotographyCandidateReviewEvidence(
+                    identifier: $0,
+                    rendered: true,
+                    technicalStatus: .passed,
+                    preferenceStatus: .humanRejected,
+                    automaticallySelected: $0 == "D"
+                )
+            }
+        )
+        XCTAssertEqual(generationFailure.generationOutcome, .candidateGenerationFailedHumanReview)
+        XCTAssertEqual(generationFailure.selectionOutcome, .selectionNotRun)
+
+        let selectionFailure = PhotographyCandidateSetAssessor().assess(
+            expectedCandidateIdentifiers: ["D", "E1", "E2"],
+            evidence: [
+                PhotographyCandidateReviewEvidence(
+                    identifier: "D",
+                    rendered: true,
+                    technicalStatus: .passed,
+                    preferenceStatus: .humanRejected,
+                    automaticallySelected: true
+                ),
+                PhotographyCandidateReviewEvidence(
+                    identifier: "E1",
+                    rendered: true,
+                    technicalStatus: .passed,
+                    preferenceStatus: .humanSupported,
+                    automaticallySelected: false
+                ),
+                PhotographyCandidateReviewEvidence(
+                    identifier: "E2",
+                    rendered: true,
+                    technicalStatus: .passed,
+                    preferenceStatus: .inconclusive,
+                    automaticallySelected: false
+                )
+            ]
+        )
+        XCTAssertEqual(selectionFailure.generationOutcome, .humanSupportedCandidateAvailable)
+        XCTAssertEqual(selectionFailure.selectionOutcome, .candidateSelectionFailed)
+    }
+
+    func testCandidateSetRefusesAssessmentWhenRealRenderIsMissing() {
+        let result = PhotographyCandidateSetAssessor().assess(
+            expectedCandidateIdentifiers: ["D", "E1", "E2"],
+            evidence: [
+                PhotographyCandidateReviewEvidence(
+                    identifier: "D",
+                    rendered: true,
+                    technicalStatus: .passed,
+                    preferenceStatus: .notEvaluated,
+                    automaticallySelected: false
+                )
+            ]
+        )
+        XCTAssertEqual(result.generationOutcome, .incompleteRenderEvidence)
+        XCTAssertEqual(result.selectionOutcome, .selectionNotRun)
+        XCTAssertTrue(result.reason.contains("E1"))
+        XCTAssertTrue(result.reason.contains("E2"))
+    }
+
     func testProblemImprovementDoesNotRewardUnchangedImage() {
         let analysis = fixture(
             luminance: 0.21,

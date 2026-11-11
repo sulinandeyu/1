@@ -8,7 +8,7 @@ $manifestDirectory = Split-Path -Parent $resolvedManifest.Path
 Add-Type -AssemblyName System.Drawing
 
 $records = @(
-    Get-Content -LiteralPath $resolvedManifest.Path |
+    Get-Content -LiteralPath $resolvedManifest.Path -Encoding utf8 |
         Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
         ForEach-Object { $_ | ConvertFrom-Json }
 )

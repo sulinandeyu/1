@@ -158,6 +158,7 @@ enum PhotographyKnowledgeRuleID: String, Equatable, Hashable, Sendable {
     case parameterLifecycleAudit = "PT-QA-004"
     case attributedNeutralProtection = "PT-QA-005"
     case humanPreferenceCalibration = "PT-PREF-001"
+    case candidateGenerationSelectionSeparation = "PT-PREF-002"
 }
 
 /// PT-QA-005 is deliberately a small shared contract: the app performs pixel
@@ -624,6 +625,107 @@ enum PhotographyPreferenceEvidenceStatus: String, Equatable, Sendable {
 enum PhotographySelectionBasis: String, Equatable, Sendable {
     case engineeringProxyOnly
     case humanPreferenceCalibrated
+}
+
+/// PT-PREF-002: candidate generation and candidate selection are different
+/// failure modes.  Technical safety can reject a candidate, but it cannot say
+/// that a photograph is aesthetically worthwhile.  Likewise, a high engineering
+/// proxy score is not evidence that the preferred candidate was selected.
+enum PhotographyCandidateGenerationOutcome: String, Equatable, Sendable {
+    case incompleteRenderEvidence
+    case candidateGenerationFailedTechnical
+    case candidateGenerationFailedHumanReview
+    case preferencePending
+    case humanSupportedCandidateAvailable
+}
+
+enum PhotographyCandidateSelectionOutcome: String, Equatable, Sendable {
+    case selectionNotRun
+    case preferencePending
+    case candidateSelectionFailed
+    case humanSupportedSelection
+}
+
+struct PhotographyCandidateReviewEvidence: Equatable, Sendable {
+    let identifier: String
+    let rendered: Bool
+    let technicalStatus: CandidateEvaluationStatus
+    let preferenceStatus: PhotographyPreferenceEvidenceStatus
+    let automaticallySelected: Bool
+}
+
+struct PhotographyCandidateSetAssessment: Equatable, Sendable {
+    let expectedCandidateIdentifiers: [String]
+    let renderedCandidateIdentifiers: [String]
+    let technicallyEligibleCandidateIdentifiers: [String]
+    let humanSupportedCandidateIdentifiers: [String]
+    let generationOutcome: PhotographyCandidateGenerationOutcome
+    let selectionOutcome: PhotographyCandidateSelectionOutcome
+    let reason: String
+}
+
+struct PhotographyCandidateSetAssessor {
+    func assess(
+        expectedCandidateIdentifiers: [String],
+        evidence: [PhotographyCandidateReviewEvidence]
+    ) -> PhotographyCandidateSetAssessment {
+        var seen = Set<String>()
+        let expected = expectedCandidateIdentifiers.filter { seen.insert($0).inserted }
+        let expectedSet = Set(expected)
+        let relevant = evidence.filter { expectedSet.contains($0.identifier) }
+        let rendered = relevant.filter(\.rendered).map(\.identifier)
+        let eligible = relevant.filter {
+            $0.rendered && $0.technicalStatus != .rejected && $0.technicalStatus != .skipped
+        }
+        let supported = eligible.filter { $0.preferenceStatus == .humanSupported }
+        let selected = eligible.first(where: \.automaticallySelected)
+
+        let generation: PhotographyCandidateGenerationOutcome
+        let selection: PhotographyCandidateSelectionOutcome
+        let reason: String
+
+        if Set(rendered) != expectedSet {
+            generation = .incompleteRenderEvidence
+            selection = .selectionNotRun
+            let missing = expected.filter { !Set(rendered).contains($0) }
+            reason = "缺少真实渲染候选：\(missing.joined(separator: ","))；不得判断生成或选择能力。"
+        } else if eligible.isEmpty {
+            generation = .candidateGenerationFailedTechnical
+            selection = .selectionNotRun
+            reason = "全部真实候选被技术质检拒绝；属于候选生成技术失败，不能交给排序器。"
+        } else if eligible.allSatisfy({ $0.preferenceStatus == .humanRejected }) {
+            generation = .candidateGenerationFailedHumanReview
+            selection = .selectionNotRun
+            reason = "技术可用候选均被真实人工评价拒绝；属于 candidate_generation_failed。"
+        } else if supported.isEmpty {
+            generation = .preferencePending
+            selection = selected == nil ? .selectionNotRun : .preferencePending
+            reason = "存在技术可用候选，但没有真实人工偏好证据；不得声称生成成功或排序成功。"
+        } else if let selected {
+            generation = .humanSupportedCandidateAvailable
+            if selected.preferenceStatus == .humanSupported {
+                selection = .humanSupportedSelection
+                reason = "至少一个候选获人工支持，且自动选择命中了获支持候选。"
+            } else {
+                selection = .candidateSelectionFailed
+                reason = "存在人工支持候选，但自动选择未命中；属于 candidate_selection_failed。"
+            }
+        } else {
+            generation = .humanSupportedCandidateAvailable
+            selection = .selectionNotRun
+            reason = "至少一个候选获人工支持，但当前诊断候选集合没有执行自动排序。"
+        }
+
+        return PhotographyCandidateSetAssessment(
+            expectedCandidateIdentifiers: expected,
+            renderedCandidateIdentifiers: rendered,
+            technicallyEligibleCandidateIdentifiers: eligible.map(\.identifier),
+            humanSupportedCandidateIdentifiers: supported.map(\.identifier),
+            generationOutcome: generation,
+            selectionOutcome: selection,
+            reason: reason
+        )
+    }
 }
 
 struct PhotographyCandidateEvaluation: Equatable, Sendable {

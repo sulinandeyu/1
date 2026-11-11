@@ -120,6 +120,8 @@ Windows 同源诊断（仅用于发现风险，不等于 iOS 技术质检）：
 - 当前规则评分能排除部分技术错误，但没有证明可预测专业摄影偏好。
 - 本轮没有上传 Build 34、没有替换 B、没有合并正式分支。
 
+2026-11-11 复核：新增 `PT-PREF-002` 后，7 张图的当前状态进一步收紧为 `incomplete_render_evidence`。这意味着尚不能把问题判成生成失败或选择失败；详见 `docs/CANDIDATE_GENERATION_SELECTION_VALIDATION.md` 和可直接打开的 `output/cross_scene_candidate_blind_test/index.html`。
+
 ## 7. 可重复执行
 
 运行：
