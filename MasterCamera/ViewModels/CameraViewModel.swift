@@ -3,6 +3,7 @@ import Combine
 import CoreGraphics
 import Foundation
 import PhotosUI
+import SwiftUI
 
 @MainActor
 final class CameraViewModel: ObservableObject {
