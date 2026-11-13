@@ -542,6 +542,7 @@ final class CinematicColorGradingEngine {
         to image: CIImage,
         recipe: AutomaticEditingRecipe
     ) -> CIImage {
+        let intensity = recipe.colorGradeIntensity.clamped(to: 0...1)
         let luminance = image.applyingFilter("CIColorControls", parameters: [
             kCIInputSaturationKey: 0.0
         ])
