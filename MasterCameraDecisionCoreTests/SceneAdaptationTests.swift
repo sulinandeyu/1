@@ -1807,7 +1807,8 @@ final class SceneAdaptationTests: XCTestCase {
         let diagnostic = engine.makeDecision(
             for: analysis,
             problems: problems,
-            targetProfile: profile
+            targetProfile: profile,
+            enableMeasuredAestheticPlanning: true
         )
 
         XCTAssertNil(baseline.aestheticPlan)
@@ -3185,7 +3186,8 @@ final class SceneAdaptationTests: XCTestCase {
         let diagnostic = engine.makeDecision(
             for: analysis,
             problems: problems,
-            targetProfile: profile
+            targetProfile: profile,
+            enableMeasuredAestheticPlanning: true
         )
 
         XCTAssertEqual(formal.recipe.cinematicColorGradeMode, .legacy)
@@ -3216,7 +3218,8 @@ final class SceneAdaptationTests: XCTestCase {
         let diagnostic = engine.makeDecision(
             for: analysis,
             problems: problems,
-            targetProfile: profile
+            targetProfile: profile,
+            enableMeasuredAestheticPlanning: true
         )
 
         // The measured cinematic grade is a global operation.  Until it can
