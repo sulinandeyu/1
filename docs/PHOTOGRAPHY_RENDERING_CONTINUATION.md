@@ -129,3 +129,13 @@
 2. 现有 GitHub Actions 不具备经确认的私有图片安全传输通道，且本轮明确暂停 Build 35，因此新生成器尚未取得七组 iPhone D/E1/E2 证据，不能宣称已产生专业摄影成片。
 3. 下一次经授权的内部诊断构建必须用既有批量取证入口导出七张原图的 D/E1/E2 全分辨率结果、目标、实际参数、技术状态和目标探索判定；只有人工盲测至少存在值得选择的候选，才能把 `candidate_generation_failed` 改为成功。
 
+# 2026-11-13 冷调电影感内部诊断 Build 36
+
+- 独立分支：`codex/build35-cool-cinematic-diagnostics-20261113`；实际发布源码 SHA：`17badd171672f4dcf1c0d57d15c2be2b0536440b`。正式 B、普通拍照、原图保存和正式成片保存路径未修改。
+- 新增知识规则 `PT-AESTHETIC-011`，工程标准记录在 `PhotographyKnowledge/COOL_CINEMATIC_STANDARD.md`。诊断 D/E1/E2 只使用当前照片亮度、对比度、色彩、可靠区域统计、噪声和人物证据，不读取专业目标 T、反求参数或场景固定预设。
+- 诊断定位：D 为平衡冷调电影感，E1 加强可测量的空间层级，E2 加强克制暗调及环境降饱和；三者分别生成独立区域目标并进入原有 Core Image 全分辨率渲染。
+- 保留既有真渲染差异门控；若 D/E1/E2 的全分辨率 RGB、变化像素及可靠区域亮度/颜色不足，仍必须输出 `candidate_generation_failed_insufficient_exploration`，不会用参数差异冒充成片差异。
+- 首次 iOS Build #108 暴露 Swift 类型检查超时；拆分中性色环境证据表达式后，iOS Build #109（run `43380545396`）通过：96/96 Swift 测试、0 失败，iOS Simulator 构建成功。
+- TestFlight Release #47（run `43381223050`）已上传小苏相机 `1.0 (36)`；Verification #48（run `43381573300`）确认 `processingState=VALID`、`internalBuildState=IN_BETA_TESTING`、1 个内部测试组，日志输出 `TESTFLIGHT_INTERNAL_INSTALLABLE build=36`。
+- 当前边界：Apple 合成像素测试和内部构建已通过，但秋季道路真实全分辨率 D/E1/E2 的摄影审美仍未验收。下一步必须在 iPhone 用同一原图导出诊断 ZIP，先检查三候选真实差异和白车/建筑/天空/黄叶/道路关系，再决定是否进入七图批量取证。
+
