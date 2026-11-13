@@ -155,6 +155,7 @@ enum PhotographyKnowledgeRuleID: String, Equatable, Hashable, Sendable {
     case measuredRegionalRenderFeedback = "PT-AESTHETIC-008"
     case measuredIntentSelection = "PT-AESTHETIC-009"
     case renderedTargetExploration = "PT-AESTHETIC-010"
+    case measuredCoolCinematicStandard = "PT-AESTHETIC-011"
     case protectedRegionalBlend = "PT-QA-003"
     case parameterLifecycleAudit = "PT-QA-004"
     case attributedNeutralProtection = "PT-QA-005"

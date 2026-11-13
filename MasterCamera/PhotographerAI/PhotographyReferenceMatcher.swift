@@ -346,13 +346,18 @@ struct AestheticRegionalTargetIntent: Equatable, Sendable {
     let groundVegetationDeltaTarget: Float?
     let selectiveColorStrength: Float
     let midtoneDepth: Float
+    /// PT-AESTHETIC-011. These are measured target relationships, not filter
+    /// strengths. The planner converts them into bounded Core Image controls.
+    let environmentCoolStrength: Float
+    let warmAccentStrength: Float
+    let ambientDesaturationStrength: Float
 
     var traceSummary: String {
         func value(_ number: Float?) -> String {
             number.map { String(format: "%.3f", $0) } ?? "n/a"
         }
         return String(
-            format: "structure=%@ ground=%@ vegetation=%@ sky=%@ architecture=%@ groundVegetationDelta=%@ selectiveColor=%.3f midtoneDepth=%.3f",
+            format: "structure=%@ ground=%@ vegetation=%@ sky=%@ architecture=%@ groundVegetationDelta=%@ selectiveColor=%.3f midtoneDepth=%.3f environmentCool=%.3f warmAccent=%.3f ambientDesaturation=%.3f",
             tonalStructure.rawValue,
             value(groundLuminanceTarget),
             value(vegetationLuminanceTarget),
@@ -360,7 +365,10 @@ struct AestheticRegionalTargetIntent: Equatable, Sendable {
             value(architectureLuminanceTarget),
             value(groundVegetationDeltaTarget),
             selectiveColorStrength,
-            midtoneDepth
+            midtoneDepth,
+            environmentCoolStrength,
+            warmAccentStrength,
+            ambientDesaturationStrength
         )
     }
 }
@@ -489,6 +497,134 @@ struct PhotographyTargetProfile: Equatable, Sendable {
             preservedProperties: protections
         )
     }
+
+    /// PT-AESTHETIC-011: diagnostic-only balanced cool-cinematic target. The
+    /// aesthetic direction is a product constraint, while every magnitude and
+    /// every regional target is recomputed from this image's measured pixels.
+    /// It never reads a scene name, reference target T or inverse-solved values.
+    static func measuredCinematicDiagnostic(
+        analysis: PhotoAnalysis,
+        problems: PhotoProblemReport
+    ) -> PhotographyTargetProfile {
+        let continuity = measuredBaseline(analysis: analysis, problems: problems)
+        let source = analysis
+        let noiseHeadroom = (1 - source.noiseEstimate * 2.8).clamped(to: 0.28...1)
+        let ground = source.groundMask?.qualityAssessment.isUsable == true
+            ? source.groundStatistics : nil
+        let vegetation = source.vegetationMask?.qualityAssessment.isUsable == true
+            ? source.vegetationStatistics : nil
+        let sky = source.skyMask?.qualityAssessment.isUsable == true
+            ? source.skyStatistics : nil
+        let architecture = source.architectureMask?.qualityAssessment.isUsable == true
+            ? source.architectureStatistics : nil
+        let reliableCoverage = [
+            source.groundMask?.qualityAssessment.isUsable == true ? source.groundMask?.activeCoverage : nil,
+            source.vegetationMask?.qualityAssessment.isUsable == true ? source.vegetationMask?.activeCoverage : nil,
+            source.skyMask?.qualityAssessment.isUsable == true ? source.skyMask?.activeCoverage : nil,
+            source.architectureMask?.qualityAssessment.isUsable == true ? source.architectureMask?.activeCoverage : nil
+        ].compactMap { $0 }.reduce(0, +).clamped(to: 0...0.92)
+        let hierarchyEvidence: Float = {
+            guard let ground, let vegetation else { return 0 }
+            let luminanceDominance = ((ground.averageLuminance - vegetation.averageLuminance) / 0.25)
+                .clamped(to: 0...1)
+            let saturationAdvantage = ((vegetation.averageSaturation - ground.averageSaturation) / 0.24)
+                .clamped(to: 0...1)
+            return (luminanceDominance * 0.48 + saturationAdvantage * 0.52) * noiseHeadroom
+        }()
+        let warmAccentEvidence: Float = {
+            guard let vegetation else { return 0 }
+            let yellowPresence = (vegetation.yellowColorRatio / 0.38).clamped(to: 0...1)
+            let yellowDominance = ((vegetation.yellowColorRatio - vegetation.greenColorRatio * 0.42) / 0.34)
+                .clamped(to: 0...1)
+            let saturationHeadroom = ((0.48 - vegetation.averageSaturation) / 0.48)
+                .clamped(to: 0...1)
+            return ((yellowPresence * 0.52 + yellowDominance * 0.48) * saturationHeadroom * noiseHeadroom)
+                .clamped(to: 0...1)
+        }()
+        let neutralEnvironmentEvidence = (
+            ((0.28 - source.averageSaturation) / 0.28).clamped(to: 0...1) * 0.38
+                + ground.map { ((0.24 - $0.averageSaturation) / 0.24).clamped(to: 0...1) * 0.32 } ?? 0
+                + sky.map { ((0.18 - $0.averageSaturation) / 0.18).clamped(to: 0...1) * 0.18 } ?? 0
+                + reliableCoverage * 0.12
+        ).clamped(to: 0...1)
+        let portraitScale: Float = source.containsPersonEvidence ? 0.24 : 1
+        let balancedDepth = (
+            0.018
+                + max(0, source.averageLuminance - 0.46) * 0.16
+                + hierarchyEvidence * 0.025
+        ).clamped(to: 0.018...0.068) * noiseHeadroom
+        let targetLuminance = (continuity.resolvedTarget.luminance - balancedDepth)
+            .clamped(to: 0.25...0.68)
+        let vegetationTarget = vegetation.map {
+            ($0.averageLuminance + warmAccentEvidence * 0.008).clamped(to: 0.23...0.63)
+        }
+        let groundTarget = ground.map { statistics in
+            // Balanced D darkens the plane without forcing it below the
+            // vegetation. Stronger subject/background re-ordering belongs to
+            // E1, which keeps the three diagnostic intentions independent.
+            (statistics.averageLuminance - (0.055 + hierarchyEvidence * 0.055))
+                .clamped(to: 0.22...0.61)
+        }
+        let skyTarget = sky.map {
+            ($0.averageLuminance - min(0.035, max(0, $0.highlightRatio - 0.08) * 0.08))
+                .clamped(to: 0.62...0.9)
+        }
+        let architectureTarget = architecture.map {
+            ($0.averageLuminance - neutralEnvironmentEvidence * 0.012)
+                .clamped(to: 0.22...0.69)
+        }
+        let coolStrength = (0.12 + neutralEnvironmentEvidence * 0.30)
+            .clamped(to: 0.12...0.42) * portraitScale
+        let warmStrength = (warmAccentEvidence * 0.24)
+            .clamped(to: 0...0.24) * portraitScale
+        let desaturationStrength = (0.025 + neutralEnvironmentEvidence * 0.075)
+            .clamped(to: 0.025...0.10) * portraitScale
+        let intent = AestheticRegionalTargetIntent(
+            tonalStructure: .continuity,
+            groundLuminanceTarget: groundTarget,
+            vegetationLuminanceTarget: vegetationTarget,
+            skyLuminanceTarget: skyTarget,
+            architectureLuminanceTarget: architectureTarget,
+            groundVegetationDeltaTarget: (groundTarget != nil && vegetationTarget != nil)
+                ? groundTarget! - vegetationTarget! : nil,
+            selectiveColorStrength: warmStrength,
+            midtoneDepth: balancedDepth,
+            environmentCoolStrength: coolStrength,
+            warmAccentStrength: warmStrength,
+            ambientDesaturationStrength: desaturationStrength
+        )
+        let base = continuity.resolvedTarget
+        let resolved = AdaptivePhotographyTarget(
+            luminance: targetLuminance,
+            luminanceMinimum: (targetLuminance - 0.045).clamped(to: 0.20...0.66),
+            luminanceMaximum: (targetLuminance + 0.050).clamped(to: 0.30...0.74),
+            contrast: max(base.contrast, source.contrastRange - 0.025).clamped(to: 0.48...0.82),
+            shadowRatio: base.shadowRatio,
+            highlightRatio: base.highlightRatio,
+            saturation: (base.saturation - desaturationStrength * 0.025)
+                .clamped(to: 0.10...0.45),
+            atmosphereProtection: base.atmosphereProtection,
+            rationale: String(
+                format: "D 平衡冷调电影感由本图实测求得：层级证据 %.3f、暖色证据 %.3f、中性环境证据 %.3f、噪声余量 %.3f；目标亮度 %.3f。",
+                hierarchyEvidence, warmAccentEvidence, neutralEnvironmentEvidence,
+                noiseHeadroom, targetLuminance
+            )
+        )
+        return PhotographyTargetProfile(
+            hypothesisIdentifier: "D-balanced-cool-cinematic",
+            baselineTarget: continuity.baselineTarget,
+            resolvedTarget: resolved,
+            referenceMatch: .unavailable("D 不读取参考目标 T 或反求参数；只使用当前照片测量。"),
+            referenceInfluence: 0,
+            localContrastTarget: (source.contrastRange + 0.012 + reliableCoverage * 0.018 * noiseHeadroom)
+                .clamped(to: source.contrastRange...(source.contrastRange + 0.04)),
+            regionalColorSeparationTarget: warmStrength,
+            subjectBackgroundDeltaTarget: continuity.subjectBackgroundDeltaTarget,
+            regionalIntent: intent,
+            rationale: [resolved.rationale, "PT-AESTHETIC-011：冷灰环境、暖色重点和中性色保护是统一目标约束；幅度全部由当前照片测量。区域目标=\(intent.traceSummary)。"],
+            preservedProperties: continuity.preservedProperties
+        )
+    }
 }
 
 /// PT-AESTHETIC-005: diagnostic-only, source-measured alternatives to the D
@@ -515,7 +651,7 @@ struct AestheticTargetHypothesisGenerator {
         analysis: PhotoAnalysis,
         problems: PhotoProblemReport
     ) -> [AestheticTargetHypothesis] {
-        let continuity = PhotographyTargetProfile.measuredBaseline(
+        let continuity = PhotographyTargetProfile.measuredCinematicDiagnostic(
             analysis: analysis,
             problems: problems
         )
@@ -625,7 +761,13 @@ struct AestheticTargetHypothesisGenerator {
             groundVegetationDeltaTarget: (e1GroundTarget != nil && e1VegetationTarget != nil)
                 ? -spatialHierarchyDepth : nil,
             selectiveColorStrength: colorSeparationEvidence * portraitColorProtection,
-            midtoneDepth: spatialDepthOpportunity.clamped(to: 0.018...0.095)
+            midtoneDepth: max(0.055, spatialDepthOpportunity).clamped(to: 0.055...0.13),
+            environmentCoolStrength: (0.32 + hierarchyEvidence * 0.30)
+                .clamped(to: 0.32...0.62) * portraitColorProtection,
+            warmAccentStrength: (0.08 + colorSeparationEvidence * 1.55)
+                .clamped(to: 0.08...0.27) * portraitColorProtection,
+            ambientDesaturationStrength: (0.07 + hierarchyEvidence * 0.07)
+                .clamped(to: 0.07...0.14) * portraitColorProtection
         )
         let e1Target = AdaptivePhotographyTarget(
             luminance: e1Luminance,
@@ -710,7 +852,13 @@ struct AestheticTargetHypothesisGenerator {
             architectureLuminanceTarget: e2ArchitectureTarget,
             groundVegetationDeltaTarget: e2Delta,
             selectiveColorStrength: colorSeparationEvidence * 0.46 * portraitColorProtection,
-            midtoneDepth: restrainedDepthStrength
+            midtoneDepth: max(0.09, restrainedDepthStrength).clamped(to: 0.09...0.16),
+            environmentCoolStrength: (0.48 + lowKeyHeadroom * 0.85)
+                .clamped(to: 0.48...0.72) * portraitColorProtection,
+            warmAccentStrength: (0.055 + colorSeparationEvidence * 1.05)
+                .clamped(to: 0.055...0.19) * portraitColorProtection,
+            ambientDesaturationStrength: (0.11 + lowKeyHeadroom * 0.22)
+                .clamped(to: 0.11...0.17) * portraitColorProtection
         )
         let e2Target = AdaptivePhotographyTarget(
             luminance: e2Luminance,
