@@ -3155,9 +3155,9 @@ final class SceneAdaptationTests: XCTestCase {
         let outputDark = try meanRGB(output.cropped(to: CGRect(x: 0, y: 0, width: width, height: height / 2)))
         let sourceBright = try meanRGB(source.cropped(to: CGRect(x: 0, y: height / 2, width: width, height: height / 2)))
         let outputBright = try meanRGB(output.cropped(to: CGRect(x: 0, y: height / 2, width: width, height: height / 2)))
-        let darkSeparation = (outputDark.blue - outputDark.red) - (sourceDark.blue - sourceDark.red)
+        let darkSeparation = (outputDark.b - outputDark.r) - (sourceDark.b - sourceDark.r)
         let brightSeparation = abs(
-            (outputBright.blue - outputBright.red) - (sourceBright.blue - sourceBright.red)
+            (outputBright.b - outputBright.r) - (sourceBright.b - sourceBright.r)
         )
 
         XCTAssertGreaterThan(darkSeparation, 0.006)
