@@ -351,13 +351,21 @@ struct AestheticRegionalTargetIntent: Equatable, Sendable {
     let environmentCoolStrength: Float
     let warmAccentStrength: Float
     let ambientDesaturationStrength: Float
+    /// PT-AESTHETIC-012 explicit tonal-colour relationships. These are target
+    /// magnitudes derived from current-image evidence; they are not LUT values.
+    let shadowCoolTarget: Float
+    let midtoneCoolTarget: Float
+    let highlightWarmTarget: Float
+    let neutralHighlightProtectionTarget: Float
+    let warmCoolSeparationTarget: Float
+    let softHighlightTarget: Float
 
     var traceSummary: String {
         func value(_ number: Float?) -> String {
             number.map { String(format: "%.3f", $0) } ?? "n/a"
         }
         return String(
-            format: "structure=%@ ground=%@ vegetation=%@ sky=%@ architecture=%@ groundVegetationDelta=%@ selectiveColor=%.3f midtoneDepth=%.3f environmentCool=%.3f warmAccent=%.3f ambientDesaturation=%.3f",
+            format: "structure=%@ ground=%@ vegetation=%@ sky=%@ architecture=%@ groundVegetationDelta=%@ selectiveColor=%.3f midtoneDepth=%.3f environmentCool=%.3f warmAccent=%.3f ambientDesaturation=%.3f tonalColor={shadowCool:%.3f,midtoneCool:%.3f,highlightWarm:%.3f,neutralProtect:%.3f,warmCool:%.3f,softHighlight:%.3f}",
             tonalStructure.rawValue,
             value(groundLuminanceTarget),
             value(vegetationLuminanceTarget),
@@ -368,7 +376,13 @@ struct AestheticRegionalTargetIntent: Equatable, Sendable {
             midtoneDepth,
             environmentCoolStrength,
             warmAccentStrength,
-            ambientDesaturationStrength
+            ambientDesaturationStrength,
+            shadowCoolTarget,
+            midtoneCoolTarget,
+            highlightWarmTarget,
+            neutralHighlightProtectionTarget,
+            warmCoolSeparationTarget,
+            softHighlightTarget
         )
     }
 }
@@ -588,6 +602,11 @@ struct PhotographyTargetProfile: Equatable, Sendable {
             .clamped(to: 0...0.24) * portraitScale
         let desaturationStrength = (0.025 + neutralEnvironmentEvidence * 0.075)
             .clamped(to: 0.025...0.10) * portraitScale
+        let neutralProtection = source.neutralColorStatistics.map {
+            ($0.isReliable ? 0.58 + $0.confidence * 0.34 : 0.48)
+                .clamped(to: 0.48...0.92)
+        } ?? 0.52
+        let tonalCoolScale = portraitScale * noiseHeadroom
         let intent = AestheticRegionalTargetIntent(
             tonalStructure: .continuity,
             groundLuminanceTarget: groundTarget,
@@ -600,7 +619,17 @@ struct PhotographyTargetProfile: Equatable, Sendable {
             midtoneDepth: balancedDepth,
             environmentCoolStrength: coolStrength,
             warmAccentStrength: warmStrength,
-            ambientDesaturationStrength: desaturationStrength
+            ambientDesaturationStrength: desaturationStrength,
+            shadowCoolTarget: (coolStrength * (0.72 + hierarchyEvidence * 0.18) * tonalCoolScale)
+                .clamped(to: 0...0.48),
+            midtoneCoolTarget: (coolStrength * (0.48 + neutralEnvironmentEvidence * 0.18) * tonalCoolScale)
+                .clamped(to: 0...0.36),
+            highlightWarmTarget: (warmStrength * 0.18 * portraitScale).clamped(to: 0...0.045),
+            neutralHighlightProtectionTarget: neutralProtection,
+            warmCoolSeparationTarget: (warmAccentEvidence * neutralEnvironmentEvidence * portraitScale)
+                .clamped(to: 0...0.32),
+            softHighlightTarget: (0.32 + max(0, source.highlightRatio - source.whiteRatio) * 1.6)
+                .clamped(to: 0.32...0.72)
         )
         let base = continuity.resolvedTarget
         let resolved = AdaptivePhotographyTarget(
@@ -776,7 +805,17 @@ struct AestheticTargetHypothesisGenerator {
             warmAccentStrength: (0.08 + colorSeparationEvidence * 1.55)
                 .clamped(to: 0.08...0.27) * portraitColorProtection,
             ambientDesaturationStrength: (0.07 + hierarchyEvidence * 0.07)
-                .clamped(to: 0.07...0.14) * portraitColorProtection
+                .clamped(to: 0.07...0.14) * portraitColorProtection,
+            shadowCoolTarget: (0.22 + hierarchyEvidence * 0.22)
+                .clamped(to: 0.22...0.44) * portraitColorProtection,
+            midtoneCoolTarget: (0.15 + hierarchyEvidence * 0.16)
+                .clamped(to: 0.15...0.31) * portraitColorProtection,
+            highlightWarmTarget: (0.012 + colorSeparationEvidence * 0.10)
+                .clamped(to: 0.012...0.04) * portraitColorProtection,
+            neutralHighlightProtectionTarget: 0.78,
+            warmCoolSeparationTarget: (0.10 + colorSeparationEvidence * 1.1)
+                .clamped(to: 0.10...0.32) * portraitColorProtection,
+            softHighlightTarget: (0.40 + recoverableHighlight * 1.2).clamped(to: 0.40...0.74)
         )
         let e1Target = AdaptivePhotographyTarget(
             luminance: e1Luminance,
@@ -867,7 +906,17 @@ struct AestheticTargetHypothesisGenerator {
             warmAccentStrength: (0.055 + colorSeparationEvidence * 1.05)
                 .clamped(to: 0.055...0.19) * portraitColorProtection,
             ambientDesaturationStrength: (0.11 + lowKeyHeadroom * 0.22)
-                .clamped(to: 0.11...0.17) * portraitColorProtection
+                .clamped(to: 0.11...0.17) * portraitColorProtection,
+            shadowCoolTarget: (0.30 + lowKeyHeadroom * 0.72)
+                .clamped(to: 0.30...0.50) * portraitColorProtection,
+            midtoneCoolTarget: (0.22 + lowKeyHeadroom * 0.50)
+                .clamped(to: 0.22...0.38) * portraitColorProtection,
+            highlightWarmTarget: (0.008 + colorSeparationEvidence * 0.07)
+                .clamped(to: 0.008...0.03) * portraitColorProtection,
+            neutralHighlightProtectionTarget: 0.84,
+            warmCoolSeparationTarget: (0.08 + colorSeparationEvidence * 0.88)
+                .clamped(to: 0.08...0.25) * portraitColorProtection,
+            softHighlightTarget: (0.48 + recoverableHighlight * 1.35).clamped(to: 0.48...0.78)
         )
         let e2Target = AdaptivePhotographyTarget(
             luminance: e2Luminance,

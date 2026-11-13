@@ -416,7 +416,7 @@ struct PhotographyParameterEvidence: Equatable, Sendable {
         case .localContrast: return recipe.localContrastAmount
         case .midtoneContrast: return recipe.upperMidtoneSeparation
         case .shadowColor: return recipe.shadowCoolAmount
-        case .midtoneColor: return recipe.midtoneWarmAmount
+        case .midtoneColor: return max(recipe.midtoneCoolAmount, recipe.midtoneWarmAmount)
         case .highlightColor: return recipe.highlightWarmAmount
         case .localExposure: return recipe.subjectExposureEV
         case .localHighlights: return abs(recipe.highlightZoneExposureEV)

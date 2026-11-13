@@ -2921,6 +2921,9 @@ final class SceneAdaptationTests: XCTestCase {
         XCTAssertEqual(balanced.regionalIntent?.tonalStructure, .continuity)
         XCTAssertGreaterThan(balanced.regionalIntent?.environmentCoolStrength ?? 0, 0.12)
         XCTAssertGreaterThan(balanced.regionalIntent?.warmAccentStrength ?? 0, 0.05)
+        XCTAssertGreaterThan(balanced.regionalIntent?.midtoneCoolTarget ?? 0, 0.05)
+        XCTAssertGreaterThan(balanced.regionalIntent?.neutralHighlightProtectionTarget ?? 0, 0.45)
+        XCTAssertGreaterThan(balanced.regionalIntent?.warmCoolSeparationTarget ?? 0, 0.02)
         XCTAssertGreaterThan(hypotheses[0].profile.regionalIntent?.environmentCoolStrength ?? 0, balanced.regionalIntent?.environmentCoolStrength ?? 0)
         XCTAssertGreaterThan(hypotheses[1].profile.regionalIntent?.ambientDesaturationStrength ?? 0, hypotheses[0].profile.regionalIntent?.ambientDesaturationStrength ?? 0)
         let e1Ground = try XCTUnwrap(hypotheses[0].profile.regionalIntent?.groundLuminanceTarget)
@@ -3119,6 +3122,111 @@ final class SceneAdaptationTests: XCTestCase {
                 dE1RegionalDifference
             )
         )
+    }
+
+    func testMeasuredCoolCinematicGradeSeparatesDarkEnvironmentAndProtectsBrightNeutral() throws {
+        let width = 96
+        let height = 64
+        let dark = constantImage(
+            width: width,
+            height: height / 2,
+            red: 0.30,
+            green: 0.30,
+            blue: 0.30
+        )
+        let bright = constantImage(
+            width: width,
+            height: height / 2,
+            red: 0.88,
+            green: 0.88,
+            blue: 0.88
+        ).transformed(by: CGAffineTransform(translationX: 0, y: CGFloat(height / 2)))
+        let source = bright.composited(over: dark)
+            .cropped(to: CGRect(x: 0, y: 0, width: width, height: height))
+        var recipe = AutomaticEditingRecipe.naturalEnhancement
+        recipe.cinematicColorGradeMode = .measuredCoolCinematic
+        recipe.colorGradeIntensity = 0.52
+        recipe.shadowCoolAmount = 0.42
+        recipe.midtoneCoolAmount = 0.30
+        recipe.neutralHighlightProtection = 0.90
+
+        let output = CinematicColorGradingEngine().apply(to: source, recipe: recipe)
+        let sourceDark = try meanRGB(source.cropped(to: CGRect(x: 0, y: 0, width: width, height: height / 2)))
+        let outputDark = try meanRGB(output.cropped(to: CGRect(x: 0, y: 0, width: width, height: height / 2)))
+        let sourceBright = try meanRGB(source.cropped(to: CGRect(x: 0, y: height / 2, width: width, height: height / 2)))
+        let outputBright = try meanRGB(output.cropped(to: CGRect(x: 0, y: height / 2, width: width, height: height / 2)))
+        let darkSeparation = (outputDark.blue - outputDark.red) - (sourceDark.blue - sourceDark.red)
+        let brightSeparation = abs(
+            (outputBright.blue - outputBright.red) - (sourceBright.blue - sourceBright.red)
+        )
+
+        XCTAssertGreaterThan(darkSeparation, 0.006)
+        XCTAssertLessThan(brightSeparation, darkSeparation * 0.55)
+    }
+
+    func testMeasuredCinematicDecisionUsesDiagnosticGradeWithoutChangingFormalBMode() {
+        let analysis = fixture(
+            luminance: 0.61,
+            contrast: 0.78,
+            saturation: 0.18,
+            labels: ["outdoor"],
+            shadowRatio: 0.06,
+            highlightRatio: 0.22,
+            blackRatio: 0.01,
+            whiteRatio: 0.04,
+            noiseEstimate: 0.03
+        )
+        let problems = detector.detect(in: analysis)
+        let formal = engine.makeDecision(for: analysis, problems: problems)
+        let profile = PhotographyTargetProfile.measuredCinematicDiagnostic(
+            analysis: analysis,
+            problems: problems
+        )
+        let diagnostic = engine.makeDecision(
+            for: analysis,
+            problems: problems,
+            targetProfile: profile
+        )
+
+        XCTAssertEqual(formal.recipe.cinematicColorGradeMode, .legacy)
+        XCTAssertEqual(diagnostic.recipe.cinematicColorGradeMode, .measuredCoolCinematic)
+        XCTAssertGreaterThan(diagnostic.recipe.colorGradeIntensity, 0.08)
+        XCTAssertGreaterThan(diagnostic.recipe.midtoneCoolAmount, 0.02)
+        XCTAssertGreaterThan(diagnostic.recipe.neutralHighlightProtection, 0.45)
+    }
+
+    func testMeasuredCinematicDiagnosticDisablesGlobalGradeWhenPersonEvidenceExists() {
+        let analysis = fixture(
+            luminance: 0.54,
+            contrast: 0.70,
+            saturation: 0.17,
+            labels: ["portrait", "person", "indoor"],
+            faceCount: 1,
+            shadowRatio: 0.11,
+            highlightRatio: 0.10,
+            blackRatio: 0.02,
+            whiteRatio: 0.02,
+            noiseEstimate: 0.04
+        )
+        let problems = detector.detect(in: analysis)
+        let profile = PhotographyTargetProfile.measuredCinematicDiagnostic(
+            analysis: analysis,
+            problems: problems
+        )
+        let diagnostic = engine.makeDecision(
+            for: analysis,
+            problems: problems,
+            targetProfile: profile
+        )
+
+        // The measured cinematic grade is a global operation.  Until it can
+        // exclude the protected person matte it must not tint skin at all.
+        XCTAssertEqual(diagnostic.recipe.cinematicColorGradeMode, .legacy)
+        XCTAssertEqual(diagnostic.recipe.colorGradeIntensity, 0, accuracy: 0.0001)
+        XCTAssertEqual(diagnostic.recipe.shadowCoolAmount, 0, accuracy: 0.0001)
+        XCTAssertEqual(diagnostic.recipe.midtoneCoolAmount, 0, accuracy: 0.0001)
+        XCTAssertEqual(diagnostic.recipe.highlightWarmAmount, 0, accuracy: 0.0001)
+        XCTAssertEqual(diagnostic.recipe.colorContrast, 0, accuracy: 0.0001)
     }
 
     func testMeasuredAestheticHypothesesChangeWithExposureNotSceneName() {

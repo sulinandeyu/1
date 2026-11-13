@@ -127,6 +127,7 @@ final class PhotographyDecisionEngine {
             recipe.hsl = .neutral
             recipe.colorGradeIntensity = min(recipe.colorGradeIntensity, 0.12)
             recipe.shadowCoolAmount = min(recipe.shadowCoolAmount, 0.025)
+            recipe.midtoneCoolAmount = min(recipe.midtoneCoolAmount, 0.02)
             recipe.midtoneWarmAmount = min(recipe.midtoneWarmAmount, 0.04)
             recipe.highlightWarmAmount = min(recipe.highlightWarmAmount, 0.05)
             recipe.colorContrast = min(recipe.colorContrast, 0.05)
@@ -138,6 +139,7 @@ final class PhotographyDecisionEngine {
         case .uncertain:
             recipe.colorGradeIntensity = min(recipe.colorGradeIntensity, 0.2)
             recipe.shadowCoolAmount = min(recipe.shadowCoolAmount, 0.06)
+            recipe.midtoneCoolAmount = min(recipe.midtoneCoolAmount, 0.045)
             recipe.midtoneWarmAmount = min(recipe.midtoneWarmAmount, 0.09)
             recipe.highlightWarmAmount = min(recipe.highlightWarmAmount, 0.12)
             recipe.colorContrast = min(recipe.colorContrast, 0.09)
@@ -265,11 +267,17 @@ final class PhotographyDecisionEngine {
         recipe.tintShift = recipe.tintShift.clamped(to: -2...2)
         recipe.saturation = min(recipe.saturation, 1)
         recipe.vibrance = min(recipe.vibrance, 0.055)
-        recipe.colorGradeIntensity = min(recipe.colorGradeIntensity, 0.055)
-        recipe.shadowCoolAmount = min(recipe.shadowCoolAmount, 0.025)
-        recipe.midtoneWarmAmount = min(recipe.midtoneWarmAmount, 0.025)
-        recipe.highlightWarmAmount = min(recipe.highlightWarmAmount, 0.03)
-        recipe.colorContrast = min(recipe.colorContrast, 0.025)
+        // The current colour-grade engine is global. Until it can exclude a
+        // reliable person/skin matte and composite the source-relative person
+        // back, even a weak cinematic grade can contaminate real skin hue.
+        recipe.colorGradeIntensity = 0
+        recipe.shadowCoolAmount = 0
+        recipe.midtoneCoolAmount = 0
+        recipe.midtoneWarmAmount = 0
+        recipe.highlightWarmAmount = 0
+        recipe.colorContrast = 0
+        recipe.cinematicColorGradeMode = .legacy
+        recipe.neutralHighlightProtection = 0
         recipe.hsl.orangeHue = 0
         recipe.hsl.orangeLuminance = 0
         recipe.hsl.orangeSaturation = 0
@@ -299,15 +307,33 @@ final class PhotographyDecisionEngine {
 
         if isOvercast {
             let neutralCoverage = analysis.architectureMask?.activeCoverage ?? 0
-            let gradeLimit: Float = max(0.04, 0.065 - neutralCoverage * 0.06)
-            let coolLimit: Float = max(0.012, 0.025 - neutralCoverage * 0.03)
             recipe.temperatureShift = recipe.temperatureShift.clamped(to: -25...25)
             recipe.tintShift = recipe.tintShift.clamped(to: -1.5...1.5)
-            recipe.colorGradeIntensity = min(recipe.colorGradeIntensity, gradeLimit)
-            recipe.shadowCoolAmount = min(recipe.shadowCoolAmount, coolLimit)
-            recipe.midtoneWarmAmount = min(recipe.midtoneWarmAmount, 0.025)
-            recipe.highlightWarmAmount = min(recipe.highlightWarmAmount, 0.03)
-            recipe.colorContrast = min(recipe.colorContrast, 0.035)
+            if recipe.cinematicColorGradeMode == .measuredCoolCinematic {
+                // PT-AESTHETIC-012: a low-chroma overcast sky is not evidence for
+                // blue-sky saturation, but it also must not cancel a measured
+                // cool-grey shadow/midtone relationship. Protect bright neutrals
+                // locally and keep the grade within bounded diagnostic limits.
+                recipe.colorGradeIntensity = min(recipe.colorGradeIntensity, 0.56)
+                recipe.shadowCoolAmount = min(recipe.shadowCoolAmount, 0.46)
+                recipe.midtoneCoolAmount = min(recipe.midtoneCoolAmount, 0.34)
+                recipe.midtoneWarmAmount = min(recipe.midtoneWarmAmount, 0.02)
+                recipe.highlightWarmAmount = min(recipe.highlightWarmAmount, 0.025)
+                recipe.neutralHighlightProtection = max(
+                    recipe.neutralHighlightProtection,
+                    min(0.94, 0.74 + neutralCoverage * 0.35)
+                )
+                recipe.colorContrast = min(recipe.colorContrast, 0.07)
+            } else {
+                let gradeLimit: Float = max(0.04, 0.065 - neutralCoverage * 0.06)
+                let coolLimit: Float = max(0.012, 0.025 - neutralCoverage * 0.03)
+                recipe.colorGradeIntensity = min(recipe.colorGradeIntensity, gradeLimit)
+                recipe.shadowCoolAmount = min(recipe.shadowCoolAmount, coolLimit)
+                recipe.midtoneCoolAmount = min(recipe.midtoneCoolAmount, coolLimit)
+                recipe.midtoneWarmAmount = min(recipe.midtoneWarmAmount, 0.025)
+                recipe.highlightWarmAmount = min(recipe.highlightWarmAmount, 0.03)
+                recipe.colorContrast = min(recipe.colorContrast, 0.035)
+            }
             recipe.hsl.cyanSaturation = min(0, max(recipe.hsl.cyanSaturation, -0.035))
             recipe.hsl.blueSaturation = min(0, max(recipe.hsl.blueSaturation, -0.035))
             recipe.hsl.greenSaturation = min(0.01, recipe.hsl.greenSaturation)
@@ -324,11 +350,22 @@ final class PhotographyDecisionEngine {
             recipe.tintShift = recipe.tintShift.clamped(to: -2.5...2.5)
             recipe.saturation = min(recipe.saturation, 1.005)
             recipe.vibrance = min(recipe.vibrance, 0.075)
-            recipe.colorGradeIntensity = min(recipe.colorGradeIntensity, 0.09)
-            recipe.shadowCoolAmount = min(recipe.shadowCoolAmount, 0.04)
-            recipe.midtoneWarmAmount = min(recipe.midtoneWarmAmount, 0.035)
-            recipe.highlightWarmAmount = min(recipe.highlightWarmAmount, 0.045)
-            recipe.colorContrast = min(recipe.colorContrast, 0.045)
+            if recipe.cinematicColorGradeMode == .measuredCoolCinematic {
+                recipe.colorGradeIntensity = min(recipe.colorGradeIntensity, 0.48)
+                recipe.shadowCoolAmount = min(recipe.shadowCoolAmount, 0.40)
+                recipe.midtoneCoolAmount = min(recipe.midtoneCoolAmount, 0.28)
+                recipe.midtoneWarmAmount = min(recipe.midtoneWarmAmount, 0.02)
+                recipe.highlightWarmAmount = min(recipe.highlightWarmAmount, 0.025)
+                recipe.neutralHighlightProtection = max(recipe.neutralHighlightProtection, 0.82)
+                recipe.colorContrast = min(recipe.colorContrast, 0.065)
+            } else {
+                recipe.colorGradeIntensity = min(recipe.colorGradeIntensity, 0.09)
+                recipe.shadowCoolAmount = min(recipe.shadowCoolAmount, 0.04)
+                recipe.midtoneCoolAmount = min(recipe.midtoneCoolAmount, 0.035)
+                recipe.midtoneWarmAmount = min(recipe.midtoneWarmAmount, 0.035)
+                recipe.highlightWarmAmount = min(recipe.highlightWarmAmount, 0.045)
+                recipe.colorContrast = min(recipe.colorContrast, 0.045)
+            }
             actions.append(PhotographyAction(
                 title: "白色与灰色材质保护",
                 reason: "画面包含大面积低色度或建筑中性色，限制全局色偏，避免白车、灰墙和阴天天空被染色。"
@@ -1314,6 +1351,11 @@ struct AestheticPhotographyPlan: Equatable, Sendable {
     let environmentCoolStrength: Float
     let warmAccentStrength: Float
     let ambientDesaturationStrength: Float
+    let midtoneCoolTarget: Float
+    let highlightWarmTarget: Float
+    let neutralHighlightProtectionTarget: Float
+    let warmCoolSeparationTarget: Float
+    let softHighlightTarget: Float
     let tonalStructure: AestheticTonalStructure
     let groundLuminanceTarget: Float?
     let vegetationLuminanceTarget: Float?
@@ -1331,7 +1373,7 @@ struct AestheticPhotographyPlan: Equatable, Sendable {
 
     var traceSummary: String {
         String(
-            format: "confidence=%.3f objective=%@ subjectDelta=%@ localContrast=%.3f shadowCool=%.3f midtoneWarm=%.3f colorSeparation=%.3f environmentCool=%.3f warmAccent=%.3f ambientDesaturation=%.3f structure=%@ regionTargets={ground:%@,vegetation:%@,sky:%@,architecture:%@} groundVegetationDelta=%@ intentStrength=%.3f intentStatus=%@ emphasize=[%@] subdue=[%@] protect=[%@] risks=[%@] rationale=[%@]",
+            format: "confidence=%.3f objective=%@ subjectDelta=%@ localContrast=%.3f shadowCool=%.3f midtoneWarm=%.3f colorSeparation=%.3f environmentCool=%.3f warmAccent=%.3f ambientDesaturation=%.3f tonalColor={midtoneCool:%.3f,highlightWarm:%.3f,neutralProtect:%.3f,warmCool:%.3f,softHighlight:%.3f} structure=%@ regionTargets={ground:%@,vegetation:%@,sky:%@,architecture:%@} groundVegetationDelta=%@ intentStrength=%.3f intentStatus=%@ emphasize=[%@] subdue=[%@] protect=[%@] risks=[%@] rationale=[%@]",
             confidence,
             primaryObjective,
             subjectBackgroundDeltaTarget.map { String(format: "%.3f", $0) } ?? "n/a",
@@ -1342,6 +1384,11 @@ struct AestheticPhotographyPlan: Equatable, Sendable {
             environmentCoolStrength,
             warmAccentStrength,
             ambientDesaturationStrength,
+            midtoneCoolTarget,
+            highlightWarmTarget,
+            neutralHighlightProtectionTarget,
+            warmCoolSeparationTarget,
+            softHighlightTarget,
             tonalStructure.rawValue,
             groundLuminanceTarget.map { String(format: "%.3f", $0) } ?? "n/a",
             vegetationLuminanceTarget.map { String(format: "%.3f", $0) } ?? "n/a",
@@ -1605,6 +1652,11 @@ struct AestheticPhotographyPlanner {
             environmentCoolStrength: environmentCoolStrength,
             warmAccentStrength: warmAccentStrength,
             ambientDesaturationStrength: ambientDesaturationStrength,
+            midtoneCoolTarget: regionalIntent?.midtoneCoolTarget ?? 0,
+            highlightWarmTarget: regionalIntent?.highlightWarmTarget ?? 0,
+            neutralHighlightProtectionTarget: regionalIntent?.neutralHighlightProtectionTarget ?? 0,
+            warmCoolSeparationTarget: regionalIntent?.warmCoolSeparationTarget ?? 0,
+            softHighlightTarget: regionalIntent?.softHighlightTarget ?? 0,
             tonalStructure: targetProfile.regionalIntent?.tonalStructure ?? .continuity,
             groundLuminanceTarget: targetProfile.regionalIntent?.groundLuminanceTarget,
             vegetationLuminanceTarget: targetProfile.regionalIntent?.vegetationLuminanceTarget,
@@ -2268,11 +2320,11 @@ struct AdaptivePhotographyParameterSolver {
             // because `aestheticPlan` is absent from the formal B path.
             recipe.saturation = min(
                 recipe.saturation,
-                1 - aestheticPlan.ambientDesaturationStrength * 0.10
+                1 - aestheticPlan.ambientDesaturationStrength * 0.28
             )
             recipe.vibrance = min(
                 recipe.vibrance,
-                0.045 + aestheticPlan.warmAccentStrength * 0.12
+                0.035 + aestheticPlan.warmAccentStrength * 0.10
             )
         }
         if !hasPerson,
@@ -2297,16 +2349,15 @@ struct AdaptivePhotographyParameterSolver {
             let ambientDesaturation = aestheticPlan?.ambientDesaturationStrength ?? 0
             recipe.hsl.yellowSaturation = bounded(
                 yellowSaturationHeadroom
-                    * (0.28 + plannedColorSeparation * 0.52 + warmAccent * 0.65)
+                    * (0.34 + plannedColorSeparation * 0.72 + warmAccent * 0.92)
                     * yellowStrength,
-                0...0.14
+                0...0.20
             )
             recipe.hsl.yellowLuminance = bounded(
                 max(0, analysis.averageLuminance - vegetation.averageLuminance)
-                    * (0.08 + plannedColorSeparation * 0.12)
-                    * yellowStrength,
+                    * (0.08 + plannedColorSeparation * 0.16),
                 0...0.045
-            )
+            ) * yellowStrength
             let measuredYellowDominance = max(0, vegetation.yellowColorRatio - vegetation.greenColorRatio)
             recipe.hsl.greenSaturation = bounded(
                 (0.27 - vegetation.averageSaturation) * 0.14
@@ -2347,37 +2398,100 @@ struct AdaptivePhotographyParameterSolver {
             recipe.skyHighlightAmount = 1
             recipe.skySaturation = 1
         }
+        if let aestheticPlan {
+            // Cool-cinematic colour hierarchy: cyan/blue density is controlled
+            // separately from the warm accent. Hue is left unchanged unless the
+            // current image actually contains enough cool colour to support it.
+            let coolPresence = max(
+                analysis.skyStatistics?.averageSaturation ?? 0,
+                max(0, analysis.blueAverage - analysis.redAverage)
+            )
+            recipe.hsl.cyanSaturation = bounded(
+                recipe.hsl.cyanSaturation
+                    - aestheticPlan.ambientDesaturationStrength * 0.16
+                    + coolPresence * aestheticPlan.environmentCoolStrength * 0.035,
+                -0.075...0.045
+            )
+            recipe.hsl.blueSaturation = bounded(
+                recipe.hsl.blueSaturation
+                    - aestheticPlan.ambientDesaturationStrength * 0.18
+                    + coolPresence * aestheticPlan.environmentCoolStrength * 0.04,
+                -0.085...0.055
+            )
+        }
 
-        // Colour grading is enabled only when the measured channel relationship has
-        // enough headroom. It is never populated from a style or scene preset.
+        // PT-AESTHETIC-012. The formal B path keeps the legacy grade untouched.
+        // Diagnostic D/E uses explicit tonal-colour targets so the requested
+        // cool-neutral environment is not multiplied down twice into an invisible
+        // bias. Every amount below comes from this image's measured plan.
         let channelSpread = max(
             abs(analysis.redAverage - analysis.blueAverage),
             abs(analysis.greenAverage - (analysis.redAverage + analysis.blueAverage) * 0.5)
         )
         let gradeHeadroom = max(0, 0.075 - channelSpread) * (1 - target.atmosphereProtection)
         let measuredGrade = bounded(gradeHeadroom * 0.35, 0...0.025)
-        let aestheticGradeDemand = max(
-            aestheticPlan?.colorSeparationStrength ?? 0,
-            (aestheticPlan?.environmentCoolStrength ?? 0) * 0.085
-        )
-        recipe.colorGradeIntensity = bounded(
-            max(measuredGrade, aestheticGradeDemand),
-            0...0.065
-        )
-        recipe.shadowCoolAmount = aestheticPlan?.shadowCoolTarget ?? bounded(
-            max(0, analysis.redAverage - analysis.blueAverage) * 0.08 * recipe.colorGradeIntensity,
-            0...0.012
-        )
-        recipe.midtoneWarmAmount = aestheticPlan?.midtoneWarmTarget ?? bounded(
-            max(0, analysis.blueAverage - analysis.redAverage) * 0.07 * recipe.colorGradeIntensity,
-            0...0.012
-        )
-        recipe.highlightWarmAmount = 0
-        recipe.colorContrast = bounded(
-            recipe.colorGradeIntensity * 0.5
-                + (aestheticPlan?.environmentCoolStrength ?? 0) * 0.012,
-            0...0.026
-        )
+        if let aestheticPlan {
+            recipe.cinematicColorGradeMode = .measuredCoolCinematic
+            let portraitScale: Float = hasPerson ? 0.28 : 1
+            let gradeDemand = (
+                0.22
+                    + aestheticPlan.environmentCoolStrength * 0.46
+                    + aestheticPlan.warmCoolSeparationTarget * 0.32
+            ) * portraitScale
+            recipe.colorGradeIntensity = bounded(gradeDemand, 0.08...0.62)
+            recipe.shadowCoolAmount = bounded(
+                max(aestheticPlan.shadowCoolTarget, aestheticPlan.environmentCoolStrength * 0.48),
+                0...0.52
+            )
+            recipe.midtoneCoolAmount = bounded(
+                max(aestheticPlan.midtoneCoolTarget, aestheticPlan.environmentCoolStrength * 0.34),
+                0...0.40
+            )
+            // Warm emphasis is selective orange/yellow HSL first. A global warm
+            // midtone would undo the measured cool-grey environment.
+            recipe.midtoneWarmAmount = 0
+            recipe.highlightWarmAmount = bounded(aestheticPlan.highlightWarmTarget, 0...0.05)
+            recipe.neutralHighlightProtection = bounded(
+                aestheticPlan.neutralHighlightProtectionTarget,
+                0.45...0.94
+            )
+            recipe.colorContrast = bounded(
+                0.018
+                    + aestheticPlan.warmCoolSeparationTarget * 0.10
+                    + aestheticPlan.colorSeparationStrength * 0.06,
+                0.018...0.075
+            )
+            recipe.highlightRollOff = max(
+                recipe.highlightRollOff,
+                aestheticPlan.softHighlightTarget * 0.42
+            )
+        } else {
+            recipe.cinematicColorGradeMode = .legacy
+            let aestheticGradeDemand = max(
+                aestheticPlan?.colorSeparationStrength ?? 0,
+                (aestheticPlan?.environmentCoolStrength ?? 0) * 0.085
+            )
+            recipe.colorGradeIntensity = bounded(
+                max(measuredGrade, aestheticGradeDemand),
+                0...0.065
+            )
+            recipe.shadowCoolAmount = aestheticPlan?.shadowCoolTarget ?? bounded(
+                max(0, analysis.redAverage - analysis.blueAverage) * 0.08 * recipe.colorGradeIntensity,
+                0...0.012
+            )
+            recipe.midtoneCoolAmount = 0
+            recipe.midtoneWarmAmount = aestheticPlan?.midtoneWarmTarget ?? bounded(
+                max(0, analysis.blueAverage - analysis.redAverage) * 0.07 * recipe.colorGradeIntensity,
+                0...0.012
+            )
+            recipe.highlightWarmAmount = 0
+            recipe.neutralHighlightProtection = 0
+            recipe.colorContrast = bounded(
+                recipe.colorGradeIntensity * 0.5
+                    + (aestheticPlan?.environmentCoolStrength ?? 0) * 0.012,
+                0...0.026
+            )
+        }
         recipe.grainAmount = 0
 
         actions.append(PhotographyAction(
@@ -2789,11 +2903,14 @@ struct PhotographyCandidatePlanner {
             recipe.tintShift = recipe.tintShift.clamped(to: -2...2)
             recipe.saturation = min(recipe.saturation, 1)
             recipe.vibrance = min(recipe.vibrance, 0.055)
-            recipe.colorGradeIntensity = min(recipe.colorGradeIntensity, 0.055)
-            recipe.shadowCoolAmount = min(recipe.shadowCoolAmount, 0.025)
-            recipe.midtoneWarmAmount = min(recipe.midtoneWarmAmount, 0.025)
-            recipe.highlightWarmAmount = min(recipe.highlightWarmAmount, 0.03)
-            recipe.colorContrast = min(recipe.colorContrast, 0.025)
+            recipe.colorGradeIntensity = 0
+            recipe.shadowCoolAmount = 0
+            recipe.midtoneCoolAmount = 0
+            recipe.midtoneWarmAmount = 0
+            recipe.highlightWarmAmount = 0
+            recipe.colorContrast = 0
+            recipe.cinematicColorGradeMode = .legacy
+            recipe.neutralHighlightProtection = 0
             recipe.hsl.orangeHue = 0
             recipe.hsl.orangeLuminance = 0
             recipe.hsl.orangeSaturation = 0
@@ -2802,11 +2919,22 @@ struct PhotographyCandidatePlanner {
         if analysis.photographyContext.lightingConditions.contains(.overcast) {
             recipe.temperatureShift = recipe.temperatureShift.clamped(to: -25...25)
             recipe.tintShift = recipe.tintShift.clamped(to: -1.5...1.5)
-            recipe.colorGradeIntensity = min(recipe.colorGradeIntensity, 0.065)
-            recipe.shadowCoolAmount = min(recipe.shadowCoolAmount, 0.025)
-            recipe.midtoneWarmAmount = min(recipe.midtoneWarmAmount, 0.025)
-            recipe.highlightWarmAmount = min(recipe.highlightWarmAmount, 0.03)
-            recipe.colorContrast = min(recipe.colorContrast, 0.035)
+            if recipe.cinematicColorGradeMode == .measuredCoolCinematic {
+                recipe.colorGradeIntensity = min(recipe.colorGradeIntensity, 0.56)
+                recipe.shadowCoolAmount = min(recipe.shadowCoolAmount, 0.46)
+                recipe.midtoneCoolAmount = min(recipe.midtoneCoolAmount, 0.34)
+                recipe.midtoneWarmAmount = min(recipe.midtoneWarmAmount, 0.02)
+                recipe.highlightWarmAmount = min(recipe.highlightWarmAmount, 0.025)
+                recipe.neutralHighlightProtection = max(recipe.neutralHighlightProtection, 0.78)
+                recipe.colorContrast = min(recipe.colorContrast, 0.07)
+            } else {
+                recipe.colorGradeIntensity = min(recipe.colorGradeIntensity, 0.065)
+                recipe.shadowCoolAmount = min(recipe.shadowCoolAmount, 0.025)
+                recipe.midtoneCoolAmount = min(recipe.midtoneCoolAmount, 0.025)
+                recipe.midtoneWarmAmount = min(recipe.midtoneWarmAmount, 0.025)
+                recipe.highlightWarmAmount = min(recipe.highlightWarmAmount, 0.03)
+                recipe.colorContrast = min(recipe.colorContrast, 0.035)
+            }
             recipe.hsl.cyanSaturation = min(0, max(recipe.hsl.cyanSaturation, -0.035))
             recipe.hsl.blueSaturation = min(0, max(recipe.hsl.blueSaturation, -0.035))
             recipe.hsl.greenSaturation = min(0.01, recipe.hsl.greenSaturation)

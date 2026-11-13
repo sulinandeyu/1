@@ -215,3 +215,14 @@
 - 已增强区域安全证据：诊断输出记录区域处理前后死黑比例、高光比例、细节能量比，并使用标准区域名称连接现有蒙版光晕检查。
 - Windows 已执行：Python 3.14 下 `PhotographyInverseSolver/test_inverse_solver.py` 3/3 通过；`git diff --check` 通过。Windows 不能运行 Core Image，不能据此判定 R3-I 成功。
 - 待完成：推送独立分支触发远程 macOS `swift test` 与 iOS Simulator build；根据实际 RGB 偏差修复映射；未取得真实 Apple R3-I 前，不宣称已接近 T，也不上传 Build 31。
+
+# 2026-11-13 — Build 36 冷调电影感核心整改（Apple 验证待执行）
+
+- 已读取 Build 36 真机 ZIP 与既有 A/T/R3-W 证据；确认 D/E 的颜色分级参数实际近零，差异主要来自道路曝光与曲线。
+- 已增加 `PT-AESTHETIC-012`：诊断专用测量驱动阴影冷、中间调冷、弱暖高光、中性亮部保护及冷暖分离；正式 B 保持 legacy 分级。
+- 已将新目标直接接入既有 `AdaptivePhotographyParameterSolver` 和 `CinematicColorGradingEngine`，不新增平行渲染器。
+- 已增加人物硬保护：全局电影分级无法排除人物蒙版时完全关闭，不得以弱强度污染肤色。
+- Windows 真实图像投影显示秋季道路相对旧 D 有可见冷灰与道路层次，但仍显著浅于 T；建筑基本可用、阴天植被偏重、室内过冷，证明规则目标尚不能安全泛化。
+- Python 像素测试 `6/6` 通过；Windows 投影不等同于 Core Image/iPhone 验收。
+- 详细证据与阶段结论见 `docs/BUILD36_CINEMATIC_CORE_OVERHAUL.md`。
+- 下一步：提交独立分支并运行远程 Apple Swift/Core Image 像素测试及 Simulator 构建；不上传 Build 37。

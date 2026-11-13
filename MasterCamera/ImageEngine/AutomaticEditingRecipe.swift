@@ -392,6 +392,13 @@ struct RegionalPixelAdjustment: Equatable, Sendable {
     }
 }
 
+enum CinematicColorGradeMode: String, Equatable, Sendable {
+    /// Existing production/B mathematics. Do not change its pixel semantics.
+    case legacy
+    /// PT-AESTHETIC-012 diagnostic-only measured cool-cinematic separation.
+    case measuredCoolCinematic
+}
+
 struct AutomaticEditingRecipe: Equatable, Sendable {
     var exposureEV: Float
     var highlightAmount: Float
@@ -415,10 +422,13 @@ struct AutomaticEditingRecipe: Equatable, Sendable {
     var toneCurveAmount: Float
     var toneCurveStyle: ToneCurveStyle
     var shadowCoolAmount: Float
+    var midtoneCoolAmount: Float
     var midtoneWarmAmount: Float
     var highlightWarmAmount: Float
     var colorGradeIntensity: Float
     var colorContrast: Float
+    var cinematicColorGradeMode: CinematicColorGradeMode
+    var neutralHighlightProtection: Float
     var noiseReductionAmount: Float
     var sharpeningAmount: Float
     var skinTextureProtection: Float
@@ -461,10 +471,13 @@ struct AutomaticEditingRecipe: Equatable, Sendable {
         toneCurveAmount: 0.0,
         toneCurveStyle: .neutral,
         shadowCoolAmount: 0.0,
+        midtoneCoolAmount: 0.0,
         midtoneWarmAmount: 0.0,
         highlightWarmAmount: 0.0,
         colorGradeIntensity: 0.0,
         colorContrast: 0.0,
+        cinematicColorGradeMode: .legacy,
+        neutralHighlightProtection: 0.0,
         noiseReductionAmount: 0.0,
         sharpeningAmount: 0.0,
         skinTextureProtection: 0.0,
@@ -508,10 +521,13 @@ struct AutomaticEditingRecipe: Equatable, Sendable {
         toneCurveAmount: 0.08,
         toneCurveStyle: .softHighlights,
         shadowCoolAmount: 0.0,
+        midtoneCoolAmount: 0.0,
         midtoneWarmAmount: 0.0,
         highlightWarmAmount: 0.0,
         colorGradeIntensity: 0.0,
         colorContrast: 0.0,
+        cinematicColorGradeMode: .legacy,
+        neutralHighlightProtection: 0.0,
         noiseReductionAmount: 0.006,
         sharpeningAmount: 0.08,
         skinTextureProtection: 0.0,
@@ -556,10 +572,13 @@ struct AutomaticEditingRecipe: Equatable, Sendable {
             toneCurveAmount: toneCurveAmount.clamped(to: 0.0...1.0),
             toneCurveStyle: toneCurveStyle,
             shadowCoolAmount: shadowCoolAmount.clamped(to: 0.0...1.0),
+            midtoneCoolAmount: midtoneCoolAmount.clamped(to: 0.0...1.0),
             midtoneWarmAmount: midtoneWarmAmount.clamped(to: 0.0...1.0),
             highlightWarmAmount: highlightWarmAmount.clamped(to: 0.0...1.0),
             colorGradeIntensity: colorGradeIntensity.clamped(to: 0.0...1.0),
             colorContrast: colorContrast.clamped(to: 0.0...0.5),
+            cinematicColorGradeMode: cinematicColorGradeMode,
+            neutralHighlightProtection: neutralHighlightProtection.clamped(to: 0.0...1.0),
             noiseReductionAmount: noiseReductionAmount.clamped(to: 0.0...0.06),
             sharpeningAmount: sharpeningAmount.clamped(to: 0.0...0.22),
             skinTextureProtection: skinTextureProtection.clamped(to: 0.0...0.8),
@@ -583,7 +602,7 @@ struct AutomaticEditingRecipe: Equatable, Sendable {
 
     var traceSummary: String {
         String(
-            format: "tone=%@/%.3f cinematic=%@/%@ exposure=%.3f highlight=%.3f shadow=%.3f contrast=%.3f saturation=%.3f vibrance=%.3f wb=%.0f/%.2f grade=%.3f/%.3f/%.3f/%.3f hsl=o%.3f,y%.3f,g%.3f,c%.3f,b%.3f local=subject%.3f,face%.3f,sky%.3f/%.3f/%.3f detail=%.3f/%.3f",
+            format: "tone=%@/%.3f cinematic=%@/%@ exposure=%.3f highlight=%.3f shadow=%.3f contrast=%.3f saturation=%.3f vibrance=%.3f wb=%.0f/%.2f grade=%@/%.3f/shadow%.3f/midCool%.3f/midWarm%.3f/highlight%.3f/neutralProtect%.3f hsl=o%.3f,y%.3f,g%.3f,c%.3f,b%.3f local=subject%.3f,face%.3f,sky%.3f/%.3f/%.3f detail=%.3f/%.3f",
             toneCurveStyle.rawValue,
             toneCurveAmount,
             cinematicIntensity.rawValue,
@@ -596,10 +615,13 @@ struct AutomaticEditingRecipe: Equatable, Sendable {
             vibrance,
             temperatureShift,
             tintShift,
+            cinematicColorGradeMode.rawValue,
             colorGradeIntensity,
             shadowCoolAmount,
+            midtoneCoolAmount,
             midtoneWarmAmount,
             highlightWarmAmount,
+            neutralHighlightProtection,
             hsl.orangeSaturation,
             hsl.yellowSaturation,
             hsl.greenSaturation,
@@ -647,6 +669,15 @@ extension AutomaticEditingRecipe {
         append("tint", previous.tintShift, tintShift)
         append("saturation", previous.saturation, saturation)
         append("vibrance", previous.vibrance, vibrance)
+        append("colorGradeIntensity", previous.colorGradeIntensity, colorGradeIntensity)
+        append("shadowCool", previous.shadowCoolAmount, shadowCoolAmount)
+        append("midtoneCool", previous.midtoneCoolAmount, midtoneCoolAmount)
+        append("midtoneWarm", previous.midtoneWarmAmount, midtoneWarmAmount)
+        append("highlightWarm", previous.highlightWarmAmount, highlightWarmAmount)
+        append("neutralHighlightProtection", previous.neutralHighlightProtection, neutralHighlightProtection)
+        if previous.cinematicColorGradeMode != cinematicColorGradeMode {
+            result.append("cinematicColorGradeMode:\(previous.cinematicColorGradeMode.rawValue)->\(cinematicColorGradeMode.rawValue)")
+        }
         append("yellowSaturation", previous.hsl.yellowSaturation, hsl.yellowSaturation)
         append("yellowLuminance", previous.hsl.yellowLuminance, hsl.yellowLuminance)
         append("greenSaturation", previous.hsl.greenSaturation, hsl.greenSaturation)
@@ -777,10 +808,13 @@ struct ManualPhotographyParameters: Equatable, Sendable {
         recipe.upperMidtoneSeparation = 0
         recipe.highlightRollOff = 0
         recipe.shadowCoolAmount = 0
+        recipe.midtoneCoolAmount = 0
         recipe.midtoneWarmAmount = 0
         recipe.highlightWarmAmount = 0
         recipe.colorGradeIntensity = 0
         recipe.colorContrast = 0
+        recipe.cinematicColorGradeMode = .legacy
+        recipe.neutralHighlightProtection = 0
         recipe.skinTextureProtection = 0
         recipe.vignetteIntensity = 0
         recipe.subjectExposureEV = 0

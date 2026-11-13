@@ -273,11 +273,14 @@ struct PhotoDiagnosticSection: Identifiable, Equatable, Sendable {
                 PhotoDiagnosticItem(
                     label: "摄影调色",
                     value: String(
-                        format: "强度 %.2f · 暗部冷 %.2f · 中间调暖 %.2f · 高光暖 %.2f · 色彩对比 %.2f",
+                        format: "模式 %@ · 强度 %.2f · 暗部冷 %.2f · 中间调冷 %.2f · 中间调暖 %.2f · 高光暖 %.2f · 中性色保护 %.2f · 色彩对比 %.2f",
+                        decision.recipe.cinematicColorGradeMode.rawValue,
                         decision.recipe.colorGradeIntensity,
                         decision.recipe.shadowCoolAmount,
+                        decision.recipe.midtoneCoolAmount,
                         decision.recipe.midtoneWarmAmount,
                         decision.recipe.highlightWarmAmount,
+                        decision.recipe.neutralHighlightProtection,
                         decision.recipe.colorContrast
                     )
                 ),

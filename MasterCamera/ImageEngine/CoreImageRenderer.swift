@@ -566,7 +566,13 @@ final class CoreImageRenderer {
         if recipe.vibrance > 0.001 { modules.append("自然饱和度") }
         if recipe.hsl != .neutral { modules.append("分区 HSL") }
         if recipe.luminanceMaskStrength > 0.001 { modules.append("亮度蒙版高光/阴影") }
-        if recipe.colorGradeIntensity > 0.001 { modules.append("阴影/中间调/高光色彩协调") }
+        if recipe.colorGradeIntensity > 0.001 {
+            modules.append(
+                recipe.cinematicColorGradeMode == .measuredCoolCinematic
+                    ? "实测冷灰阴影/中间调/高光协调"
+                    : "阴影/中间调/高光色彩协调"
+            )
+        }
         if recipe.subjectExposureEV > 0.001 || recipe.faceExposureEV > 0.001 { modules.append("主体/人脸补光") }
         if manualRegionalAdjustments.isEmpty {
             modules.append(contentsOf: regionalExecutionDetails(for: recipe, analysis: analysis)

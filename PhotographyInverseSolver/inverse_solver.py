@@ -254,6 +254,53 @@ def apply_color_controls(linear: np.ndarray, brightness: float, contrast: float,
     return np.clip((colored - 0.5) * contrast + 0.5 + brightness, 0, 1)
 
 
+def apply_measured_cool_cinematic_grade(
+    encoded_rgb: np.ndarray,
+    intensity: float,
+    shadow_cool: float,
+    midtone_cool: float,
+    highlight_warm: float,
+    neutral_highlight_protection: float,
+    color_contrast: float,
+) -> np.ndarray:
+    """Windows projection of PT-AESTHETIC-012's Core Image diagnostic grade.
+
+    This mirrors the public arithmetic used by `CinematicColorGradingEngine` in
+    extended-linear sRGB. Core Image's undocumented filter details still require
+    Apple pixel tests, so callers must label its output as a projection rather
+    than an iPhone/Core Image result.
+    """
+    linear = srgb_to_linear(encoded_rgb.astype(np.float32))
+    luma = np.sum(linear * np.array([0.2126, 0.7152, 0.0722], np.float32), axis=-1)
+    shadow_mask = np.power(np.clip(1.0 - luma, 0, 1), 2.0)
+    highlight_mask = np.power(np.clip(luma, 0, 1), 2.15)
+    raw_midtone_mask = np.clip(4.0 * luma - 4.0 * luma * luma, 0, 1)
+    protected_highlight = np.clip(highlight_mask * neutral_highlight_protection, 0, 1)
+    midtone_mask = raw_midtone_mask * (1.0 - protected_highlight)
+
+    def bias(values: np.ndarray, vector: tuple[float, float, float], amount: float, mask: np.ndarray) -> np.ndarray:
+        candidate = values + np.array(vector, np.float32) * np.float32(amount)
+        alpha = np.clip(mask[..., None], 0, 1).astype(np.float32)
+        return candidate * alpha + values * (1.0 - alpha)
+
+    output = linear
+    if shadow_cool > 1e-6:
+        output = bias(output, (-0.075, 0.006, 0.085), intensity * shadow_cool, shadow_mask)
+    if midtone_cool > 1e-6:
+        output = bias(output, (-0.052, 0.004, 0.062), intensity * midtone_cool, midtone_mask)
+    if highlight_warm > 1e-6:
+        amount = intensity * highlight_warm * (1.0 - neutral_highlight_protection * 0.82)
+        output = bias(output, (0.045, 0.008, -0.032), amount, highlight_mask)
+    if color_contrast > 1e-6:
+        output = apply_color_controls(
+            output,
+            brightness=0.0,
+            contrast=1.0 + color_contrast * 0.04,
+            saturation=1.0 + color_contrast * 0.10,
+        )
+    return np.clip(linear_to_srgb(output), 0, 1).astype(np.float32)
+
+
 def render_global(encoded_rgb: np.ndarray, params: np.ndarray) -> np.ndarray:
     exposure, brightness, contrast, black_point = params[:4]
     linear = srgb_to_linear(encoded_rgb) * np.float32(2.0 ** float(exposure))

@@ -482,6 +482,10 @@ final class CinematicColorGradingEngine {
         let intensity = recipe.colorGradeIntensity
         guard intensity > 0.001 else { return image }
 
+        if recipe.cinematicColorGradeMode == .measuredCoolCinematic {
+            return applyMeasuredCoolCinematic(to: image, recipe: recipe)
+        }
+
         let luminance = image.applyingFilter("CIColorControls", parameters: [
             kCIInputSaturationKey: 0.0
         ])
@@ -523,6 +527,100 @@ final class CinematicColorGradingEngine {
             output = output.applyingFilter("CIColorControls", parameters: [
                 kCIInputSaturationKey: 1 + (recipe.colorContrast * 0.08),
                 kCIInputContrastKey: 1 + (recipe.colorContrast * 0.035)
+            ])
+        }
+        return output.cropped(to: image.extent)
+    }
+
+    /// PT-AESTHETIC-012. Unlike the legacy grade, this path treats the master
+    /// intensity and each tonal-zone amount as independently measured controls.
+    /// It is enabled only for isolated D/E diagnostics; production B remains on
+    /// the legacy branch above. Bright neutral surfaces are protected by removing
+    /// the highlight mask from the cool-midtone mask instead of globally cancelling
+    /// the intended colour relationship.
+    private func applyMeasuredCoolCinematic(
+        to image: CIImage,
+        recipe: AutomaticEditingRecipe
+    ) -> CIImage {
+        let luminance = image.applyingFilter("CIColorControls", parameters: [
+            kCIInputSaturationKey: 0.0
+        ])
+        let shadowMask = luminance
+            .applyingFilter("CIColorInvert")
+            .applyingFilter("CIGammaAdjust", parameters: ["inputPower": 2.0])
+        let highlightMask = luminance
+            .applyingFilter("CIGammaAdjust", parameters: ["inputPower": 2.15])
+        let rawMidtoneMask = luminance.applyingFilter("CIColorPolynomial", parameters: [
+            "inputRedCoefficients": CIVector(x: 0, y: 4, z: -4, w: 0),
+            "inputGreenCoefficients": CIVector(x: 0, y: 4, z: -4, w: 0),
+            "inputBlueCoefficients": CIVector(x: 0, y: 4, z: -4, w: 0)
+        ])
+        let protection = CGFloat(recipe.neutralHighlightProtection.clamped(to: 0...1))
+        let protectedHighlightMask = highlightMask.applyingFilter("CIColorMatrix", parameters: [
+            "inputRVector": CIVector(x: protection, y: 0, z: 0, w: 0),
+            "inputGVector": CIVector(x: 0, y: protection, z: 0, w: 0),
+            "inputBVector": CIVector(x: 0, y: 0, z: protection, w: 0)
+        ])
+        let inverseProtection = protectedHighlightMask.applyingFilter("CIColorInvert")
+        let midtoneMask = rawMidtoneMask.applyingFilter("CIMultiplyCompositing", parameters: [
+            kCIInputBackgroundImageKey: inverseProtection
+        ]).cropped(to: image.extent)
+
+        var output = image
+        if recipe.shadowCoolAmount > 0.001 {
+            let amount = CGFloat(intensity * recipe.shadowCoolAmount)
+            let cool = output.applyingFilter("CIColorMatrix", parameters: [
+                "inputBiasVector": CIVector(
+                    x: -0.075 * amount,
+                    y: 0.006 * amount,
+                    z: 0.085 * amount,
+                    w: 0
+                )
+            ])
+            output = blend(cool, over: output, mask: shadowMask)
+        }
+        if recipe.midtoneCoolAmount > 0.001 {
+            let amount = CGFloat(intensity * recipe.midtoneCoolAmount)
+            let cool = output.applyingFilter("CIColorMatrix", parameters: [
+                "inputBiasVector": CIVector(
+                    x: -0.052 * amount,
+                    y: 0.004 * amount,
+                    z: 0.062 * amount,
+                    w: 0
+                )
+            ])
+            output = blend(cool, over: output, mask: midtoneMask)
+        }
+        if recipe.midtoneWarmAmount > 0.001 {
+            let amount = CGFloat(intensity * recipe.midtoneWarmAmount)
+            let warm = output.applyingFilter("CIColorMatrix", parameters: [
+                "inputBiasVector": CIVector(
+                    x: 0.055 * amount,
+                    y: 0.010 * amount,
+                    z: -0.040 * amount,
+                    w: 0
+                )
+            ])
+            output = blend(warm, over: output, mask: midtoneMask)
+        }
+        if recipe.highlightWarmAmount > 0.001 {
+            // This is intentionally weak: warm emphasis belongs primarily to the
+            // measured orange/yellow HSL controls, while white cars/walls stay neutral.
+            let amount = CGFloat(intensity * recipe.highlightWarmAmount) * (1 - protection * 0.82)
+            let warm = output.applyingFilter("CIColorMatrix", parameters: [
+                "inputBiasVector": CIVector(
+                    x: 0.045 * amount,
+                    y: 0.008 * amount,
+                    z: -0.032 * amount,
+                    w: 0
+                )
+            ])
+            output = blend(warm, over: output, mask: highlightMask)
+        }
+        if recipe.colorContrast > 0.001 {
+            output = output.applyingFilter("CIColorControls", parameters: [
+                kCIInputSaturationKey: 1 + recipe.colorContrast * 0.10,
+                kCIInputContrastKey: 1 + recipe.colorContrast * 0.04
             ])
         }
         return output.cropped(to: image.extent)

@@ -5,6 +5,7 @@ import numpy as np
 from inverse_solver import (
     GLOBAL_NEUTRAL,
     LOCAL_NEUTRAL,
+    apply_measured_cool_cinematic_grade,
     apply_local_controls,
     apply_hsl,
     cinematic_outputs,
@@ -16,6 +17,24 @@ from inverse_solver import (
 
 
 class InverseSolverTests(unittest.TestCase):
+    def test_measured_cool_grade_separates_dark_neutral_and_protects_bright_neutral(self):
+        source = np.zeros((32, 32, 3), np.float32)
+        source[:16] = 0.30
+        source[16:] = 0.88
+        output = apply_measured_cool_cinematic_grade(
+            source,
+            intensity=0.52,
+            shadow_cool=0.42,
+            midtone_cool=0.30,
+            highlight_warm=0.0,
+            neutral_highlight_protection=0.90,
+            color_contrast=0.0,
+        )
+        dark_shift = float(np.mean(output[:16, :, 2] - output[:16, :, 0]))
+        bright_shift = float(np.mean(output[16:, :, 2] - output[16:, :, 0]))
+        self.assertGreater(dark_shift, 0.006)
+        self.assertLess(abs(bright_shift), dark_shift * 0.55)
+
     def test_srgb_round_trip(self):
         values = np.linspace(0, 1, 1024, dtype=np.float32)
         restored = linear_to_srgb(srgb_to_linear(values))

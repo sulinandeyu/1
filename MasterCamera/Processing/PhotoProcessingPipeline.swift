@@ -2035,6 +2035,7 @@ final class PhotoProcessingPipeline {
             recipe.tintShift *= 0.2
             recipe.colorGradeIntensity = min(recipe.colorGradeIntensity, 0.04)
             recipe.shadowCoolAmount = min(recipe.shadowCoolAmount, 0.015)
+            recipe.midtoneCoolAmount = min(recipe.midtoneCoolAmount, 0.015)
             recipe.midtoneWarmAmount = min(recipe.midtoneWarmAmount, 0.015)
             recipe.highlightWarmAmount = min(recipe.highlightWarmAmount, 0.02)
             recipe.colorContrast = min(recipe.colorContrast, 0.02)
@@ -2056,6 +2057,7 @@ final class PhotoProcessingPipeline {
             recipe.hsl.orangeSaturation = 0
             recipe.colorGradeIntensity = min(recipe.colorGradeIntensity, 0.025)
             recipe.shadowCoolAmount = min(recipe.shadowCoolAmount, 0.01)
+            recipe.midtoneCoolAmount = min(recipe.midtoneCoolAmount, 0.008)
             recipe.midtoneWarmAmount = min(recipe.midtoneWarmAmount, 0.01)
             recipe.highlightWarmAmount = min(recipe.highlightWarmAmount, 0.015)
             recipe.noiseReductionAmount = min(recipe.noiseReductionAmount, 0.012)
