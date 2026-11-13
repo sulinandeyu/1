@@ -2913,6 +2913,16 @@ final class SceneAdaptationTests: XCTestCase {
         XCTAssertTrue(hypotheses.allSatisfy { $0.profile.referenceInfluence == 0 })
         XCTAssertEqual(hypotheses[0].profile.regionalIntent?.tonalStructure, .spatialHierarchy)
         XCTAssertEqual(hypotheses[1].profile.regionalIntent?.tonalStructure, .restrainedDepth)
+        let balanced = PhotographyTargetProfile.measuredCinematicDiagnostic(
+            analysis: source,
+            problems: detector.detect(in: source)
+        )
+        XCTAssertEqual(balanced.hypothesisIdentifier, "D-balanced-cool-cinematic")
+        XCTAssertEqual(balanced.regionalIntent?.tonalStructure, .continuity)
+        XCTAssertGreaterThan(balanced.regionalIntent?.environmentCoolStrength ?? 0, 0.12)
+        XCTAssertGreaterThan(balanced.regionalIntent?.warmAccentStrength ?? 0, 0.05)
+        XCTAssertGreaterThan(hypotheses[0].profile.regionalIntent?.environmentCoolStrength ?? 0, balanced.regionalIntent?.environmentCoolStrength ?? 0)
+        XCTAssertGreaterThan(hypotheses[1].profile.regionalIntent?.ambientDesaturationStrength ?? 0, hypotheses[0].profile.regionalIntent?.ambientDesaturationStrength ?? 0)
         let e1Ground = try XCTUnwrap(hypotheses[0].profile.regionalIntent?.groundLuminanceTarget)
         let e2Ground = try XCTUnwrap(hypotheses[1].profile.regionalIntent?.groundLuminanceTarget)
         let e1Vegetation = try XCTUnwrap(hypotheses[0].profile.regionalIntent?.vegetationLuminanceTarget)
@@ -3077,12 +3087,21 @@ final class SceneAdaptationTests: XCTestCase {
 
         let e1 = try render(hypotheses[0].profile)
         let e2 = try render(hypotheses[1].profile)
+        let dProfile = PhotographyTargetProfile.measuredCinematicDiagnostic(
+            analysis: analysis,
+            problems: problems
+        )
+        let d = try render(dProfile)
         let e1Bytes = try rgba8(e1)
         let e2Bytes = try rgba8(e2)
+        let dBytes = try rgba8(d)
         let rgbMAE = normalizedRGBMAE(e1Bytes, e2Bytes)
+        let dE1RGBMAE = normalizedRGBMAE(dBytes, e1Bytes)
         let e1GroundLuma = try meanRGB(e1.cropped(to: CGRect(x: 0, y: 0, width: width, height: height / 2))).luminance
         let e2GroundLuma = try meanRGB(e2.cropped(to: CGRect(x: 0, y: 0, width: width, height: height / 2))).luminance
+        let dGroundLuma = try meanRGB(d.cropped(to: CGRect(x: 0, y: 0, width: width, height: height / 2))).luminance
         let regionalDifference = abs(e1GroundLuma - e2GroundLuma)
+        let dE1RegionalDifference = abs(dGroundLuma - e1GroundLuma)
 
         XCTAssertTrue(
             rgbMAE >= 0.018 || regionalDifference >= 0.035,
@@ -3090,6 +3109,14 @@ final class SceneAdaptationTests: XCTestCase {
                 format: "Apple Core Image output remained too similar: RGB MAE %.4f, ground luminance delta %.4f",
                 rgbMAE,
                 regionalDifference
+            )
+        )
+        XCTAssertTrue(
+            dE1RGBMAE >= 0.018 || dE1RegionalDifference >= 0.035,
+            String(
+                format: "D/E1 Apple Core Image output remained too similar: RGB MAE %.4f, ground luminance delta %.4f",
+                dE1RGBMAE,
+                dE1RegionalDifference
             )
         )
     }
@@ -3177,26 +3204,22 @@ final class SceneAdaptationTests: XCTestCase {
         let landscape = source(faceCount: 0)
         let portrait = source(faceCount: 1)
         let generator = AestheticTargetHypothesisGenerator()
-        let landscapeTarget = generator.makeHypotheses(
+        let landscapeProfile = generator.makeHypotheses(
             analysis: landscape,
             problems: detector.detect(in: landscape)
-        )[0].profile.resolvedTarget.saturation
-        let portraitTarget = generator.makeHypotheses(
+        )[0].profile
+        let portraitProfile = generator.makeHypotheses(
             analysis: portrait,
             problems: detector.detect(in: portrait)
-        )[0].profile.resolvedTarget.saturation
-        let landscapeBaseline = PhotographyTargetProfile.measuredBaseline(
-            analysis: landscape,
-            problems: detector.detect(in: landscape)
-        ).resolvedTarget.saturation
-        let portraitBaseline = PhotographyTargetProfile.measuredBaseline(
-            analysis: portrait,
-            problems: detector.detect(in: portrait)
-        ).resolvedTarget.saturation
+        )[0].profile
 
         XCTAssertGreaterThan(
-            landscapeTarget - landscapeBaseline,
-            portraitTarget - portraitBaseline
+            landscapeProfile.regionalIntent?.warmAccentStrength ?? 0,
+            portraitProfile.regionalIntent?.warmAccentStrength ?? 0
+        )
+        XCTAssertGreaterThan(
+            landscapeProfile.regionalIntent?.environmentCoolStrength ?? 0,
+            portraitProfile.regionalIntent?.environmentCoolStrength ?? 0
         )
     }
 

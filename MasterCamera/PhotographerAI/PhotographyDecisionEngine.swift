@@ -11,7 +11,7 @@ final class PhotographyDecisionEngine {
         let context = analysis.photographyContext
         let planningProfile = targetProfile ?? (
             enableMeasuredAestheticPlanning
-                ? PhotographyTargetProfile.measuredBaseline(
+                ? PhotographyTargetProfile.measuredCinematicDiagnostic(
                     analysis: analysis,
                     problems: problems
                 )
@@ -1311,6 +1311,9 @@ struct AestheticPhotographyPlan: Equatable, Sendable {
     let shadowCoolTarget: Float
     let midtoneWarmTarget: Float
     let colorSeparationStrength: Float
+    let environmentCoolStrength: Float
+    let warmAccentStrength: Float
+    let ambientDesaturationStrength: Float
     let tonalStructure: AestheticTonalStructure
     let groundLuminanceTarget: Float?
     let vegetationLuminanceTarget: Float?
@@ -1328,7 +1331,7 @@ struct AestheticPhotographyPlan: Equatable, Sendable {
 
     var traceSummary: String {
         String(
-            format: "confidence=%.3f objective=%@ subjectDelta=%@ localContrast=%.3f shadowCool=%.3f midtoneWarm=%.3f colorSeparation=%.3f structure=%@ regionTargets={ground:%@,vegetation:%@,sky:%@,architecture:%@} groundVegetationDelta=%@ intentStrength=%.3f intentStatus=%@ emphasize=[%@] subdue=[%@] protect=[%@] risks=[%@] rationale=[%@]",
+            format: "confidence=%.3f objective=%@ subjectDelta=%@ localContrast=%.3f shadowCool=%.3f midtoneWarm=%.3f colorSeparation=%.3f environmentCool=%.3f warmAccent=%.3f ambientDesaturation=%.3f structure=%@ regionTargets={ground:%@,vegetation:%@,sky:%@,architecture:%@} groundVegetationDelta=%@ intentStrength=%.3f intentStatus=%@ emphasize=[%@] subdue=[%@] protect=[%@] risks=[%@] rationale=[%@]",
             confidence,
             primaryObjective,
             subjectBackgroundDeltaTarget.map { String(format: "%.3f", $0) } ?? "n/a",
@@ -1336,6 +1339,9 @@ struct AestheticPhotographyPlan: Equatable, Sendable {
             shadowCoolTarget,
             midtoneWarmTarget,
             colorSeparationStrength,
+            environmentCoolStrength,
+            warmAccentStrength,
+            ambientDesaturationStrength,
             tonalStructure.rawValue,
             groundLuminanceTarget.map { String(format: "%.3f", $0) } ?? "n/a",
             vegetationLuminanceTarget.map { String(format: "%.3f", $0) } ?? "n/a",
@@ -1426,23 +1432,40 @@ struct AestheticPhotographyPlanner {
                 relationshipEvidence
             )
         }()
+        let regionalIntent = targetProfile.regionalIntent
+        let warmAccentStrength = bounded(
+            regionalIntent?.warmAccentStrength ?? 0,
+            0...0.28
+        ) * portraitProtection
+        let environmentCoolStrength = bounded(
+            regionalIntent?.environmentCoolStrength ?? 0,
+            0...0.75
+        ) * portraitProtection
+        let ambientDesaturationStrength = bounded(
+            regionalIntent?.ambientDesaturationStrength ?? 0,
+            0...0.20
+        ) * portraitProtection
         let colorSeparation = bounded(
             max(
                 max(mixedLightSeparation, regionalColorEvidence),
                 max(
-                    targetProfile.regionalColorSeparationTarget,
-                    targetProfile.regionalIntent?.selectiveColorStrength ?? 0
+                    max(targetProfile.regionalColorSeparationTarget, warmAccentStrength),
+                    regionalIntent?.selectiveColorStrength ?? 0
                 )
             ) * portraitProtection,
-            0...0.09
+            0...0.18
+        )
+        let coolingHeadroom = bounded(
+            0.45 + max(0, channelWarmth) * 2.6 + colorHeadroom * 1.8,
+            0.35...1
         )
         let shadowCool = bounded(
-            max(0, channelWarmth) * 0.10 * colorSeparation,
-            0...0.018
+            environmentCoolStrength * coolingHeadroom * 0.065,
+            0...0.045
         )
         let midtoneWarm = bounded(
-            max(0, -channelWarmth) * 0.08 * colorSeparation,
-            0...0.014
+            warmAccentStrength * max(0, -channelWarmth) * 0.035,
+            0...0.010
         )
 
         // PT-AESTHETIC-009: choose a *relationship* from this image rather than
@@ -1496,7 +1519,7 @@ struct AestheticPhotographyPlanner {
         let measuredIntentStrength = max(
             hierarchyEvidence,
             max(
-                bounded(colorSeparation / 0.09, 0...1) * 0.72,
+                bounded(colorSeparation / 0.18, 0...1) * 0.72,
                 targetProfile.regionalIntent.map { bounded($0.midtoneDepth / 0.12, 0...1) } ?? 0
             )
         ).clamped(to: 0...1)
@@ -1579,6 +1602,9 @@ struct AestheticPhotographyPlanner {
             shadowCoolTarget: shadowCool,
             midtoneWarmTarget: midtoneWarm,
             colorSeparationStrength: colorSeparation,
+            environmentCoolStrength: environmentCoolStrength,
+            warmAccentStrength: warmAccentStrength,
+            ambientDesaturationStrength: ambientDesaturationStrength,
             tonalStructure: targetProfile.regionalIntent?.tonalStructure ?? .continuity,
             groundLuminanceTarget: targetProfile.regionalIntent?.groundLuminanceTarget,
             vegetationLuminanceTarget: targetProfile.regionalIntent?.vegetationLuminanceTarget,
@@ -1625,6 +1651,8 @@ struct AdaptiveRegionalTonePlanner {
         let noiseHeadroom = (1 - analysis.noiseEstimate * 2.8).clamped(to: 0.28...1)
         let endpointPressure = max(0, analysis.contrastRange - 0.72)
         let colorFocus = aestheticPlan?.colorSeparationStrength ?? 0
+        let warmAccent = aestheticPlan?.warmAccentStrength ?? 0
+        let ambientDesaturation = aestheticPlan?.ambientDesaturationStrength ?? 0
         let measuredVegetationTarget: Float? = reliableStatistics(
             mask: analysis.vegetationMask,
             statistics: analysis.vegetationStatistics
@@ -1729,13 +1757,15 @@ struct AdaptiveRegionalTonePlanner {
             hsl.yellowSaturation = (
                 yellowEvidence
                     * saturationHeadroom
-                    * (0.06 + colorFocus * 1.2 + measuredColorSeparation * 0.12)
+                    * (0.06 + colorFocus * 1.05 + warmAccent * 0.72 + measuredColorSeparation * 0.12)
             )
-                .clamped(to: 0...0.17)
+                .clamped(to: 0...0.20)
             hsl.yellowLuminance = (yellowEvidence * max(0, 0.42 - statistics.averageLuminance) * 0.08)
                 .clamped(to: 0...0.035)
-            hsl.greenSaturation = (-(yellowEvidence - greenEvidence).clamped(to: 0...1) * 0.045)
-                .clamped(to: -0.045...0)
+            hsl.greenSaturation = (
+                -(yellowEvidence - greenEvidence).clamped(to: 0...1) * 0.055
+                    - ambientDesaturation * 0.16
+            ).clamped(to: -0.085...0)
             let adjustment = ManualRegionalToneAdjustment(
                 region: .vegetation,
                 exposureEV: ev,
@@ -1784,7 +1814,9 @@ struct AdaptiveRegionalTonePlanner {
                     .clamped(to: 0.55...1),
                 highlightRollOff: max(0, statistics.highlightRatio - 0.1)
                     .clamped(to: 0...0.18),
-                saturation: statistics.averageSaturation < 0.08 ? 1 : 0.99,
+                saturation: statistics.averageSaturation < 0.08
+                    ? 1
+                    : (1 - ambientDesaturation * 0.08).clamped(to: 0.97...1),
                 luminanceLowerBound: 0.55,
                 luminanceUpperBound: 1,
                 luminanceFeather: 0.14
@@ -2230,6 +2262,19 @@ struct AdaptivePhotographyParameterSolver {
         // HSL is rebuilt from measured regional colour. No scene name is allowed
         // to inject a stock orange/teal/green treatment.
         recipe.hsl = .neutral
+        if let aestheticPlan {
+            // PT-AESTHETIC-011: reduce environmental colour density while the
+            // warm accent is rebuilt selectively below. This is diagnostic-only
+            // because `aestheticPlan` is absent from the formal B path.
+            recipe.saturation = min(
+                recipe.saturation,
+                1 - aestheticPlan.ambientDesaturationStrength * 0.10
+            )
+            recipe.vibrance = min(
+                recipe.vibrance,
+                0.045 + aestheticPlan.warmAccentStrength * 0.12
+            )
+        }
         if !hasPerson,
            analysis.subjectPriorityProfile.confidence >= 0.54 || !analysis.semanticObjectRegions.isEmpty,
            let subject = reliableSubjectStatistics(analysis) {
@@ -2245,14 +2290,16 @@ struct AdaptivePhotographyParameterSolver {
             let yellowSaturationHeadroom = max(0, 0.34 - vegetation.averageSaturation)
             let yellowStrength = bounded(yellowEvidence / 0.22, 0...1)
             let plannedColorSeparation = bounded(
-                (aestheticPlan?.colorSeparationStrength ?? 0) / 0.09,
+                (aestheticPlan?.colorSeparationStrength ?? 0) / 0.18,
                 0...1
             )
+            let warmAccent = aestheticPlan?.warmAccentStrength ?? 0
+            let ambientDesaturation = aestheticPlan?.ambientDesaturationStrength ?? 0
             recipe.hsl.yellowSaturation = bounded(
                 yellowSaturationHeadroom
-                    * (0.28 + plannedColorSeparation * 0.52)
+                    * (0.28 + plannedColorSeparation * 0.52 + warmAccent * 0.65)
                     * yellowStrength,
-                0...0.095
+                0...0.14
             )
             recipe.hsl.yellowLuminance = bounded(
                 max(0, analysis.averageLuminance - vegetation.averageLuminance)
@@ -2263,8 +2310,9 @@ struct AdaptivePhotographyParameterSolver {
             let measuredYellowDominance = max(0, vegetation.yellowColorRatio - vegetation.greenColorRatio)
             recipe.hsl.greenSaturation = bounded(
                 (0.27 - vegetation.averageSaturation) * 0.14
-                    - measuredYellowDominance * plannedColorSeparation * 0.045,
-                -0.045...0.035
+                    - measuredYellowDominance * plannedColorSeparation * 0.06
+                    - ambientDesaturation * 0.12,
+                -0.085...0.035
             )
             recipe.hsl.greenLuminance = bounded(
                 (analysis.averageLuminance - 0.045 - vegetation.averageLuminance) * 0.08,
@@ -2273,10 +2321,17 @@ struct AdaptivePhotographyParameterSolver {
         }
         if let sky = analysis.skyStatistics,
            analysis.skyMask?.qualityAssessment.isUsable == true {
+            let ambientDesaturation = aestheticPlan?.ambientDesaturationStrength ?? 0
             let skyColorHeadroom = (0.28 - sky.averageSaturation) * 0.12
             let allowedBlueGain = isOvercast ? min(0, skyColorHeadroom) : skyColorHeadroom
-            recipe.hsl.cyanSaturation = bounded(allowedBlueGain * 0.6, -0.035...0.035)
-            recipe.hsl.blueSaturation = bounded(allowedBlueGain, -0.045...0.045)
+            recipe.hsl.cyanSaturation = bounded(
+                allowedBlueGain * 0.6 - ambientDesaturation * 0.08,
+                -0.055...0.035
+            )
+            recipe.hsl.blueSaturation = bounded(
+                allowedBlueGain - ambientDesaturation * 0.10,
+                -0.065...0.045
+            )
             let skyTarget = bounded(
                 analysis.averageLuminance + (isOvercast ? 0.12 : 0.08),
                 0.48...0.72
@@ -2286,7 +2341,7 @@ struct AdaptivePhotographyParameterSolver {
                 1 - max(0, sky.highlightRatio - 0.08) * 1.1,
                 0.58...1
             )
-            recipe.skySaturation = 1 + recipe.hsl.blueSaturation * 0.35
+            recipe.skySaturation = 1 + recipe.hsl.blueSaturation * 0.45
         } else {
             recipe.skyExposureEV = 0
             recipe.skyHighlightAmount = 1
@@ -2301,9 +2356,13 @@ struct AdaptivePhotographyParameterSolver {
         )
         let gradeHeadroom = max(0, 0.075 - channelSpread) * (1 - target.atmosphereProtection)
         let measuredGrade = bounded(gradeHeadroom * 0.35, 0...0.025)
+        let aestheticGradeDemand = max(
+            aestheticPlan?.colorSeparationStrength ?? 0,
+            (aestheticPlan?.environmentCoolStrength ?? 0) * 0.085
+        )
         recipe.colorGradeIntensity = bounded(
-            max(measuredGrade, aestheticPlan?.colorSeparationStrength ?? 0),
-            0...0.035
+            max(measuredGrade, aestheticGradeDemand),
+            0...0.065
         )
         recipe.shadowCoolAmount = aestheticPlan?.shadowCoolTarget ?? bounded(
             max(0, analysis.redAverage - analysis.blueAverage) * 0.08 * recipe.colorGradeIntensity,
@@ -2314,7 +2373,11 @@ struct AdaptivePhotographyParameterSolver {
             0...0.012
         )
         recipe.highlightWarmAmount = 0
-        recipe.colorContrast = bounded(recipe.colorGradeIntensity * 0.5, 0...0.014)
+        recipe.colorContrast = bounded(
+            recipe.colorGradeIntensity * 0.5
+                + (aestheticPlan?.environmentCoolStrength ?? 0) * 0.012,
+            0...0.026
+        )
         recipe.grainAmount = 0
 
         actions.append(PhotographyAction(
