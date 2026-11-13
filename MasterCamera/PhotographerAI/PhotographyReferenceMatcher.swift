@@ -541,11 +541,20 @@ struct PhotographyTargetProfile: Equatable, Sendable {
             return ((yellowPresence * 0.52 + yellowDominance * 0.48) * saturationHeadroom * noiseHeadroom)
                 .clamped(to: 0...1)
         }()
+        let globalNeutralEvidence = ((0.28 - source.averageSaturation) / 0.28)
+            .clamped(to: 0...1) * 0.38
+        let groundNeutralEvidence: Float = ground.map { statistics in
+            ((0.24 - statistics.averageSaturation) / 0.24).clamped(to: 0...1) * 0.32
+        } ?? 0
+        let skyNeutralEvidence: Float = sky.map { statistics in
+            ((0.18 - statistics.averageSaturation) / 0.18).clamped(to: 0...1) * 0.18
+        } ?? 0
+        let coverageNeutralEvidence = reliableCoverage * 0.12
         let neutralEnvironmentEvidence = (
-            ((0.28 - source.averageSaturation) / 0.28).clamped(to: 0...1) * 0.38
-                + ground.map { ((0.24 - $0.averageSaturation) / 0.24).clamped(to: 0...1) * 0.32 } ?? 0
-                + sky.map { ((0.18 - $0.averageSaturation) / 0.18).clamped(to: 0...1) * 0.18 } ?? 0
-                + reliableCoverage * 0.12
+            globalNeutralEvidence
+                + groundNeutralEvidence
+                + skyNeutralEvidence
+                + coverageNeutralEvidence
         ).clamped(to: 0...1)
         let portraitScale: Float = source.containsPersonEvidence ? 0.24 : 1
         let balancedDepth = (
