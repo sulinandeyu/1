@@ -34,6 +34,9 @@
 | PT-QA-005 | `QualityCheckService.colorIntegrity` 将源图中性色按人物/主体/建筑保护区与实际有意影调区归因；诊断 UI/ZIP 导出两类覆盖率及位移 | 保护区继续使用原 `-0.065` 阈值；有意影调区改由区域阴影增长、纹理能量、色偏及蒙版边缘共同约束 | 不关闭检查、不提高阈值；空蒙版、未执行计划与保护区重叠均按保护区处理 | Build 33 全分辨率归因：道路占主要损失，白车/主体与建筑位移很小；真实 Core Image 新包仍待验证 |
 | PT-PREF-001 | `PhotographyCandidateEvaluation.preferenceEvidenceStatus/selectionBasis`、`PhoneValidationDataset/evaluation/blind-compare.html`、跨场景隔离清单 | 不产生像素；把工程代理选择与真实人工偏好分开记录，未来只在技术安全候选间校准轻量目标排序器 | 0 条人工记录时必须是 `notEvaluated`；不读取 T/反求参数；低置信度弃权 | 跨场景清单及通用 X/Y 盲测工具已建立；真实人工评价仍为 0，当前规则系统没有专业目标选择证据 |
 | PT-PREF-002 | `PhotographyCandidateSetAssessor`、`DiagnosticBundleExporter.candidateSetAssessmentObject`、七图盲测会话 | 不产生像素；分别记录候选生成证据和候选选择证据 | 缺少 D/E1/E2 任一真实 Core Image 图时不得判断；技术失败不得参选；无人评时固定 `preferencePending` | 契约测试已加入；当前七图仍缺本版三候选真机导出，不能宣称生成或选择成功 |
+| PT-V2-INTENT-001 | `SceneUnderstandingAdapterV2`、`PhotographyIntentGeneratorV2`：全图/区域亮度、对比、端点、颜色余量、中性色、人物与未知证据 | 不直接改像素；生成三种逐图关系目标，区域目标随当前测量重算 | 场景名称不提供参数；未知保持未知；空/低质量蒙版不生成语义局部目标 | Swift 契约测试与七图 Windows 投影待完成；真实视觉质量待 Apple/iPhone 盲测 |
+| PT-V2-LOOK-001 | `AdaptiveLookGeneratorV2`、`AutomaticPhotographyDirectorV2` | 复用 `AutomaticEditingRecipe`、`AdaptiveRegionalTonePlan` 与 `CoreImageRenderer` 完整分辨率链；记录 planned/executed/rejected | 人物关闭环境色彩分级并限制白平衡；中性色、端点、噪声和蒙版继续走既有安全门 | 诊断路径已接入；Apple 编译、像素执行与真机导出待验证 |
+| PT-V2-SELECT-001 | `AestheticCandidateSelectorV2`、V2 候选区域影响和 `QualityCheckService` | 不改像素；技术门后输出暂定 `V2-AUTO`，同时保留 V2-1/2/3 | 不奖励最大变化/最暗/最饱和；无人工偏好时必须标记 provisional/pending_human_review | 选择器测试与七图盲测待完成；没有证据可宣称专业审美选择成功 |
 | PT-LEARN-001 | `LearningEnhancementPrototype` 的模型/权重清单与 manifest | 仅允许本地研究推理；不进入 Xcode target | 代码、权重、训练数据三层许可都需满足 | DeepLPF 权重因 FiveK 研究许可被阻止分发 |
 | PT-LEARN-002 | `run_deeplpf_prototype.py` 的源图相对技术安全门 | 学习输出只作为隔离 C 候选；超限时拒绝 | 技术通过不等于审美通过；人物还需蒙版内比较 | 5 张真实手机图已运行，4 张被技术门拒绝 |
 | PT-LEARN-003 | `run_semantic_probe.py`；iOS 现有 DETR/Vision 分割 | 可靠语义仅限制/保护学习变换；未知区域走亮度/全局协调 | 禁止把 background 推断为天空/道路/建筑/植被 | Windows 5 图实测完成；iOS DETR 真机仍待验收 |

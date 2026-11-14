@@ -163,6 +163,9 @@ enum PhotographyKnowledgeRuleID: String, Equatable, Hashable, Sendable {
     case attributedNeutralProtection = "PT-QA-005"
     case humanPreferenceCalibration = "PT-PREF-001"
     case candidateGenerationSelectionSeparation = "PT-PREF-002"
+    case v2MeasuredIntent = "PT-V2-INTENT-001"
+    case v2AdaptiveLook = "PT-V2-LOOK-001"
+    case v2ProvisionalSelection = "PT-V2-SELECT-001"
 }
 
 /// PT-QA-005 is deliberately a small shared contract: the app performs pixel

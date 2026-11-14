@@ -39,6 +39,7 @@ let package = Package(
                 "PhotographerAI/PhotographyDecision.swift",
                 "PhotographerAI/PhotographyDecisionEngine.swift",
                 "PhotographerAI/PhotographyReferenceMatcher.swift",
+                "PhotographerAI/AutomaticPhotographyDirectorV2.swift",
                 "PhotographerAI/SceneStrategy.swift"
             ],
             resources: [.process("ReferenceData")]

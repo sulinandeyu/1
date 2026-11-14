@@ -44,8 +44,12 @@ final class DiagnosticBundleExporter {
         add("images/A_original.jpg", photo.originalImageData, "A source original")
         add("images/B_formal_output.jpg", photo.editedImageData, "B formal algorithm output")
 
-        let comparisonPrefixes = ["A ", "B ", "C ", "D ", "E1 ", "E2 ", "M 人工参数真实渲染"]
-        for identifier in ["C", "D", "E1", "E2", "M"] {
+        let comparisonPrefixes = [
+            "A ", "B ", "C ", "D ", "E1 ", "E2 ", "M 人工参数真实渲染",
+            "V2-1 ", "V2-2 ", "V2-3 ", "V2-AUTO "
+        ]
+        let diagnosticImageIdentifiers = ["C", "D", "E1", "E2", "M", "V2-1", "V2-2", "V2-3", "V2-AUTO"]
+        for identifier in diagnosticImageIdentifiers {
             let candidate = photo.diagnosticCandidates.first { $0.identifier == identifier }
             let preview = Self.resolvedPreview(
                 for: candidate,
@@ -141,7 +145,7 @@ final class DiagnosticBundleExporter {
             "schemaVersion": 2,
             "createdAt": ISO8601DateFormatter().string(from: Date()),
             "sourceSha256": sourceHash,
-            "sameSourceRequirement": "A/B/D/E1/E2/M and probes were produced from the source identified above in one diagnostic import.",
+            "sameSourceRequirement": "A/B/D/E1/E2/M/V2-1/V2-2/V2-3/V2-AUTO and probes were produced from the source identified above in one diagnostic import.",
             "app": [
                 "name": Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String ?? "小苏相机",
                 "version": Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "unknown",
@@ -161,6 +165,10 @@ final class DiagnosticBundleExporter {
                 "E1": "independently solved spatial-emphasis target experiment; human preference pending",
                 "E2": "independently solved restrained-depth target experiment; human preference pending",
                 "M": "R3-I human-declared Core Image renderer verification; never replaces B or D",
+                "V2-1": "Automatic Photography Director V2 natural-documentary candidate",
+                "V2-2": "Automatic Photography Director V2 dimensional-hierarchy candidate",
+                "V2-3": "Automatic Photography Director V2 atmospheric-cinematic candidate",
+                "V2-AUTO": "provisional V2 automatic selection; human preference still pending",
                 "difference": "A versus B, amplified five times"
             ],
             "files": inventory
@@ -187,6 +195,10 @@ final class DiagnosticBundleExporter {
         case "E1": return "E1_spatial_emphasis"
         case "E2": return "E2_restrained_depth"
         case "M": return "M_manual_render"
+        case "V2-1": return "V2_1_natural_documentary"
+        case "V2-2": return "V2_2_dimensional_hierarchy"
+        case "V2-3": return "V2_3_atmospheric_cinematic"
+        case "V2-AUTO": return "V2_AUTO_provisional_selection"
         default: return "\(identifier)_diagnostic"
         }
     }
@@ -238,6 +250,20 @@ final class DiagnosticBundleExporter {
             explorationAssessment: targetExplorationAssessment(from: photo)
         )
         let exploration = targetExplorationAssessment(from: photo)
+        let v2Identifiers = ["V2-1", "V2-2", "V2-3"]
+        let v2Records = v2Identifiers.map { identifier -> [String: Any] in
+            let candidate = photo.diagnosticCandidates.first { $0.identifier == identifier }
+            return [
+                "identifier": identifier,
+                "rendered": candidate?.states.contains(.executed) == true
+                    && Self.resolvedPreview(for: candidate, in: photo.processingStagePreviews) != nil,
+                "technicalStatus": candidate?.qualityStatus ?? "not_run",
+                "humanAestheticStatus": candidate?.humanAestheticStatus ?? "not_evaluated",
+                "states": candidate?.states.map(\.rawValue) ?? [DiagnosticCandidateState.unavailable.rawValue],
+                "selectionEvidence": candidate?.assessmentEvidence ?? []
+            ]
+        }
+        let v2Auto = photo.diagnosticCandidates.first { $0.identifier == "V2-AUTO" }
         return [
             "knowledgeRule": PhotographyKnowledgeRuleID.humanPreferenceCalibration.rawValue,
             "candidateGenerationSelectionRule": PhotographyKnowledgeRuleID.candidateGenerationSelectionSeparation.rawValue,
@@ -246,6 +272,19 @@ final class DiagnosticBundleExporter {
             "technicallyEligibleCandidates": assessment.technicallyEligibleCandidateIdentifiers,
             "humanSupportedCandidates": assessment.humanSupportedCandidateIdentifiers,
             "candidateGenerationOutcome": assessment.generationOutcome.rawValue,
+            "automaticPhotographyDirectorV2": [
+                "knowledgeRules": [
+                    PhotographyKnowledgeRuleID.v2MeasuredIntent.rawValue,
+                    PhotographyKnowledgeRuleID.v2AdaptiveLook.rawValue,
+                    PhotographyKnowledgeRuleID.v2ProvisionalSelection.rawValue
+                ],
+                "candidates": v2Records,
+                "autoStates": v2Auto?.states.map(\.rawValue) ?? [DiagnosticCandidateState.unavailable.rawValue],
+                "autoEvidence": v2Auto?.executed ?? [],
+                "provisional": true,
+                "humanAestheticStatus": v2Auto?.humanAestheticStatus ?? "not_evaluated",
+                "claimBoundary": "V2-AUTO is an engineering proxy selection, not evidence of professional aesthetic success."
+            ],
             "candidateSelectionOutcome": assessment.selectionOutcome.rawValue,
             "targetExplorationStatus": exploration?.status.rawValue ?? "notRecorded",
             "targetExplorationEvidence": photo.diagnosticCandidates

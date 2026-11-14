@@ -3680,6 +3680,149 @@ final class SceneAdaptationTests: XCTestCase {
         abs(lhs.r - rhs.r) + abs(lhs.g - rhs.g) + abs(lhs.b - rhs.b)
     }
 
+    func testAutomaticDirectorV2UsesMeasurementsRatherThanSceneLabelForRegionalTargets() {
+        let groundMask = NormalizedPhotoMask(width: 2, height: 2, pixels: Data([255, 255, 0, 0]))
+        let vegetationMask = NormalizedPhotoMask(width: 2, height: 2, pixels: Data([0, 0, 255, 255]))
+        let brightGround = fixture(
+            luminance: 0.49,
+            contrast: 0.55,
+            saturation: 0.22,
+            labels: ["outdoor", "plant", "sky"],
+            groundMask: groundMask,
+            vegetationMask: vegetationMask,
+            groundStatistics: regionStatistics(
+                luminance: 0.62, contrast: 0.63, saturation: 0.12,
+                red: 0.62, green: 0.61, blue: 0.58
+            ),
+            vegetationStatistics: regionStatistics(
+                luminance: 0.35, contrast: 0.71, saturation: 0.31,
+                red: 0.34, green: 0.38, blue: 0.26,
+                yellowColorRatio: 0.42, greenColorRatio: 0.31
+            )
+        )
+        let dimGround = fixture(
+            luminance: 0.42,
+            contrast: 0.55,
+            saturation: 0.22,
+            labels: ["outdoor", "plant", "sky"],
+            groundMask: groundMask,
+            vegetationMask: vegetationMask,
+            groundStatistics: regionStatistics(
+                luminance: 0.31, contrast: 0.63, saturation: 0.12,
+                red: 0.31, green: 0.30, blue: 0.29
+            ),
+            vegetationStatistics: regionStatistics(
+                luminance: 0.43, contrast: 0.71, saturation: 0.31,
+                red: 0.39, green: 0.46, blue: 0.31,
+                yellowColorRatio: 0.42, greenColorRatio: 0.31
+            )
+        )
+
+        let brightReport = detector.detect(in: brightGround)
+        let dimReport = detector.detect(in: dimGround)
+        let brightPlans = AutomaticPhotographyDirectorV2().makeCandidatePlans(
+            analysis: brightGround,
+            problems: brightReport,
+            diagnosis: detector.structuredDiagnosis(in: brightGround, report: brightReport)
+        )
+        let dimPlans = AutomaticPhotographyDirectorV2().makeCandidatePlans(
+            analysis: dimGround,
+            problems: dimReport,
+            diagnosis: detector.structuredDiagnosis(in: dimGround, report: dimReport)
+        )
+        let brightEV = brightPlans[1].regionalTonePlan?.adjustments.first { $0.region == .ground }?.exposureEV
+        let dimEV = dimPlans[1].regionalTonePlan?.adjustments.first { $0.region == .ground }?.exposureEV
+
+        XCTAssertNotNil(brightEV)
+        XCTAssertNotNil(dimEV)
+        XCTAssertLessThan(brightEV ?? 0, 0)
+        XCTAssertGreaterThan(dimEV ?? 0, brightEV ?? 0)
+        XCTAssertNotEqual(brightPlans[1].intent.regionTargets, dimPlans[1].intent.regionTargets)
+    }
+
+    func testAutomaticDirectorV2CandidatesExpressDifferentIntentBeyondExposure() {
+        let mask = NormalizedPhotoMask(width: 2, height: 2, pixels: Data([255, 255, 0, 0]))
+        let analysis = fixture(
+            luminance: 0.48,
+            contrast: 0.43,
+            saturation: 0.18,
+            labels: ["outdoor", "plant", "sky"],
+            vegetationMask: mask,
+            vegetationStatistics: regionStatistics(
+                luminance: 0.37, contrast: 0.58, saturation: 0.24,
+                red: 0.39, green: 0.40, blue: 0.27,
+                yellowColorRatio: 0.48, greenColorRatio: 0.27
+            )
+        )
+        let report = detector.detect(in: analysis)
+        let plans = AutomaticPhotographyDirectorV2().makeCandidatePlans(
+            analysis: analysis,
+            problems: report,
+            diagnosis: detector.structuredDiagnosis(in: analysis, report: report)
+        )
+
+        XCTAssertEqual(plans.count, 3)
+        XCTAssertEqual(Set(plans.map { $0.intent.basis }).count, 3)
+        XCTAssertGreaterThan(plans[1].recipe.localContrastAmount, plans[0].recipe.localContrastAmount)
+        XCTAssertNotEqual(plans[0].recipe.toneCurveAmount, plans[2].recipe.toneCurveAmount)
+        XCTAssertEqual(plans[2].recipe.cinematicColorGradeMode, .measuredCoolCinematic)
+        XCTAssertGreaterThan(plans[2].recipe.colorGradeIntensity, 0)
+    }
+
+    func testAutomaticDirectorV2PortraitProtectionDisablesEnvironmentColorGrade() {
+        let personMask = NormalizedPhotoMask(width: 2, height: 2, pixels: Data([255, 255, 0, 0]))
+        let analysis = fixture(
+            luminance: 0.46,
+            contrast: 0.49,
+            saturation: 0.21,
+            labels: ["person", "indoor"],
+            faceCount: 1,
+            faceLuminance: 0.45,
+            backgroundLuminance: 0.43,
+            personMask: personMask,
+            neutralColorStatistics: neutralStatistics(red: 0.54, green: 0.48, blue: 0.43)
+        )
+        let report = detector.detect(in: analysis)
+        let plans = AutomaticPhotographyDirectorV2().makeCandidatePlans(
+            analysis: analysis,
+            problems: report,
+            diagnosis: detector.structuredDiagnosis(in: analysis, report: report)
+        )
+
+        for plan in plans {
+            XCTAssertEqual(plan.recipe.colorGradeIntensity, 0)
+            XCTAssertEqual(plan.recipe.shadowCoolAmount, 0)
+            XCTAssertEqual(plan.recipe.midtoneCoolAmount, 0)
+            XCTAssertEqual(plan.recipe.highlightWarmAmount, 0)
+            XCTAssertEqual(plan.recipe.hsl.orangeHue, 0)
+            XCTAssertEqual(plan.recipe.hsl.orangeSaturation, 0)
+            XCTAssertGreaterThanOrEqual(plan.recipe.skinTextureProtection, 0.8)
+            XCTAssertLessThanOrEqual(abs(plan.recipe.temperatureShift), 80)
+        }
+    }
+
+    func testAutomaticDirectorV2SelectorRejectsUnsafeCandidateAndRemainsProvisional() {
+        let selection = AestheticCandidateSelectorV2().select(candidates: [
+            PhotographyRenderedCandidateEvidenceV2(
+                identifier: "unsafe", technicalStatus: .rejected,
+                intentAlignment: 1, subjectBackgroundSeparation: 1,
+                atmospherePreservation: 1, neutralProtection: 1,
+                clippingPenalty: 0, artifactPenalty: 0
+            ),
+            PhotographyRenderedCandidateEvidenceV2(
+                identifier: "safe", technicalStatus: .passed,
+                intentAlignment: 0.72, subjectBackgroundSeparation: 0.66,
+                atmospherePreservation: 0.78, neutralProtection: 0.91,
+                clippingPenalty: 0, artifactPenalty: 0
+            )
+        ])
+
+        XCTAssertEqual(selection.selectedIdentifier, "safe")
+        XCTAssertEqual(selection.eligibleIdentifiers, ["safe"])
+        XCTAssertTrue(selection.provisional)
+        XCTAssertTrue(selection.reason.contains("人工偏好"))
+    }
+
     private func decision(for analysis: PhotoAnalysis) -> PhotographyDecision {
         engine.makeDecision(for: analysis, problems: detector.detect(in: analysis))
     }

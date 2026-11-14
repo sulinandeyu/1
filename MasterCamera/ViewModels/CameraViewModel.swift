@@ -154,7 +154,7 @@ final class CameraViewModel: ObservableObject {
                             eligibleForPreference: false
                         ))
 
-                        for identifier in ["D", "E1", "E2"] {
+                        for identifier in ["D", "E1", "E2", "V2-1", "V2-2", "V2-3", "V2-AUTO"] {
                             guard let candidate = processed.diagnosticCandidates.first(where: { $0.identifier == identifier }) else {
                                 continue
                             }

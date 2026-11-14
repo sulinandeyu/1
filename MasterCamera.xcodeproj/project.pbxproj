@@ -44,6 +44,7 @@
 		C00000000000000000000002 /* DiagnosticBundleExporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = C00000000000000000000102 /* DiagnosticBundleExporter.swift */; };
 		D00000000000000000000001 /* CinematicImagingEngines.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00000000000000000000101 /* CinematicImagingEngines.swift */; };
 		E00000000000000000000001 /* PhotographyReferenceMatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = E00000000000000000000101 /* PhotographyReferenceMatcher.swift */; };
+		F00000000000000000000001 /* AutomaticPhotographyDirectorV2.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000101 /* AutomaticPhotographyDirectorV2.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -87,6 +88,7 @@
 		D00000000000000000000101 /* CinematicImagingEngines.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CinematicImagingEngines.swift; sourceTree = "<group>"; };
 		E00000000000000000000101 /* PhotographyReferenceMatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotographyReferenceMatcher.swift; sourceTree = "<group>"; };
 		E00000000000000000000102 /* PhotographyReferenceIndex.v1.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = PhotographyReferenceIndex.v1.json; sourceTree = "<group>"; };
+		F00000000000000000000101 /* AutomaticPhotographyDirectorV2.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AutomaticPhotographyDirectorV2.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -235,6 +237,7 @@
 				A00000000000000000000033 /* SceneStrategy.swift */,
 				A00000000000000000000034 /* PhotographyDecisionEngine.swift */,
 				E00000000000000000000101 /* PhotographyReferenceMatcher.swift */,
+				F00000000000000000000101 /* AutomaticPhotographyDirectorV2.swift */,
 			);
 			path = PhotographerAI;
 			sourceTree = "<group>";
@@ -385,6 +388,7 @@
 				C00000000000000000000002 /* DiagnosticBundleExporter.swift in Sources */,
 				D00000000000000000000001 /* CinematicImagingEngines.swift in Sources */,
 				E00000000000000000000001 /* PhotographyReferenceMatcher.swift in Sources */,
+				F00000000000000000000001 /* AutomaticPhotographyDirectorV2.swift in Sources */,
 				A0000000000000000000000C /* PhotoLibraryManager.swift in Sources */,
 				A0000000000000000000000D /* Logger.swift in Sources */,
 			);

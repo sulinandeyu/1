@@ -166,6 +166,13 @@ final class PhotoProcessingPipeline {
             analysis: analysis,
             isDiagnosticImport: photo.isDiagnosticImport
         )
+        let automaticDirectorV2Validation = evaluateAutomaticDirectorV2(
+            originalData: photo.originalImageData,
+            analysis: analysis,
+            problems: problemReport,
+            diagnosis: structuredDiagnosis,
+            isDiagnosticImport: photo.isDiagnosticImport
+        )
 
         var stageRecords = [
             ProcessingStageRecord(
@@ -223,6 +230,9 @@ final class PhotoProcessingPipeline {
         if let manualStage = manualValidation?.stage {
             stageRecords.append(manualStage)
         }
+        if let v2 = automaticDirectorV2Validation {
+            stageRecords.append(v2.stage)
+        }
         let diagnosticsResult: ImageDiagnosticsResult?
         do {
             let finalRegionImpacts = try qualityService.measureRegionImpacts(
@@ -253,7 +263,8 @@ final class PhotoProcessingPipeline {
                     + (measuredAestheticValidation?.details ?? [])
                     + aestheticTargetExperiments.flatMap { $0.result.details }
                     + [targetExplorationAssessment.detailLine]
-                    + (manualValidation?.details ?? []),
+                    + (manualValidation?.details ?? [])
+                    + (automaticDirectorV2Validation?.details ?? []),
                 stages: stageRecords,
                 fallbackReason: finalEdit.fallbackReason
             )
@@ -289,6 +300,9 @@ final class PhotoProcessingPipeline {
                 if let manualPreview = manualValidation?.preview {
                     comparisonPreviews.append(manualPreview)
                 }
+                if let v2 = automaticDirectorV2Validation {
+                    comparisonPreviews.append(contentsOf: v2.previews)
+                }
                 let manualProbePreviews = (try? renderer.renderManualParameterProbePreviews(
                     from: photo.originalImageData,
                     analysis: analysis
@@ -318,6 +332,9 @@ final class PhotoProcessingPipeline {
                 if let manualPreview = manualValidation?.preview {
                     comparisonPreviews.append(manualPreview)
                 }
+                if let v2 = automaticDirectorV2Validation {
+                    comparisonPreviews.append(contentsOf: v2.previews)
+                }
                 stagePreviews = comparisonPreviews + candidateResult.previews
             } else {
                 stagePreviews = []
@@ -336,7 +353,8 @@ final class PhotoProcessingPipeline {
                 measuredAestheticValidation: measuredAestheticValidation,
                 aestheticTargetExperiments: aestheticTargetExperiments,
                 targetExplorationAssessment: targetExplorationAssessment,
-                manualValidation: manualValidation
+                manualValidation: manualValidation,
+                automaticDirectorV2Validation: automaticDirectorV2Validation
             )
             : []
 
@@ -368,7 +386,8 @@ final class PhotoProcessingPipeline {
         measuredAestheticValidation: IsolatedDiagnosticCandidateResult?,
         aestheticTargetExperiments: [AestheticExperimentCandidateResult],
         targetExplorationAssessment: PhotographyTargetExplorationAssessment,
-        manualValidation: IsolatedDiagnosticCandidateResult?
+        manualValidation: IsolatedDiagnosticCandidateResult?,
+        automaticDirectorV2Validation: AutomaticDirectorV2ValidationResult?
     ) -> [DiagnosticCandidateEvidence] {
         let parameterPlan = finalDecision.parameterEvidence.map { item in
             let rules = item.knowledgeRuleIDs.map(\.rawValue).joined(separator: ",")
@@ -470,6 +489,7 @@ final class PhotoProcessingPipeline {
                 nilReason: "M 诊断路径未启用"
             )
         )
+        candidates.append(contentsOf: automaticDirectorV2Validation?.evidence ?? [])
         return candidates
     }
 
@@ -550,6 +570,261 @@ final class PhotoProcessingPipeline {
             parameterLifecycle: parameterLifecycle,
             durationMilliseconds: stage?.durationMilliseconds
         )
+    }
+
+    /// Runs the next-generation director only for explicit diagnostic imports.
+    /// Candidates are rendered sequentially at full resolution through the same
+    /// Core Image path as formal B, then measured before the provisional selector
+    /// is allowed to see them.
+    private func evaluateAutomaticDirectorV2(
+        originalData: Data,
+        analysis: PhotoAnalysis,
+        problems: PhotoProblemReport,
+        diagnosis: StructuredPhotographyDiagnosis,
+        isDiagnosticImport: Bool
+    ) -> AutomaticDirectorV2ValidationResult? {
+        guard isDiagnosticImport else { return nil }
+        let start = ProcessInfo.processInfo.systemUptime
+        let plans = AutomaticPhotographyDirectorV2().makeCandidatePlans(
+            analysis: analysis,
+            problems: problems,
+            diagnosis: diagnosis
+        )
+        var rendered: [AutomaticDirectorV2RenderedCandidate] = []
+        var evidence: [DiagnosticCandidateEvidence] = []
+        var details: [String] = [
+            "V2 sceneUnderstanding=\(plans.first?.sceneUnderstanding.traceSummary ?? "unavailable")",
+            "V2 humanAestheticStatus=pending_human_review",
+            "V2 selectionStatus=provisional"
+        ]
+
+        for plan in plans {
+            let candidateStart = ProcessInfo.processInfo.systemUptime
+            do {
+                let imageData = try renderer.renderAutomaticEdit(
+                    from: originalData,
+                    recipe: plan.recipe,
+                    analysis: analysis,
+                    adaptiveRegionalTonePlan: plan.regionalTonePlan
+                )
+                let execution = renderer.adaptiveRegionalExecutionDetails(
+                    analysis: analysis,
+                    plan: plan.regionalTonePlan
+                )
+                let impacts = try qualityService.measureRegionImpacts(
+                    originalData: originalData,
+                    editedData: imageData,
+                    analysis: analysis
+                )
+                let quality = try qualityService.check(
+                    originalData: originalData,
+                    editedData: imageData,
+                    sourceAnalysis: analysis,
+                    expectedRegions: plan.intent.regionTargets.map(\.region),
+                    regionalExecutionDetails: execution,
+                    intentionalNeutralToneRegions: plan.regionalTonePlan?.intentionalNeutralToneRegions ?? []
+                )
+                let selectorEvidence = makeV2SelectorEvidence(
+                    plan: plan,
+                    quality: quality,
+                    impacts: impacts
+                )
+                let duration = Self.milliseconds(ProcessInfo.processInfo.systemUptime - candidateStart)
+                let stageName = "\(plan.identifier) \(plan.intent.basis.title)"
+                let preview = ProcessingStagePreview(name: stageName, imageData: imageData)
+                rendered.append(AutomaticDirectorV2RenderedCandidate(
+                    plan: plan,
+                    preview: preview,
+                    quality: quality,
+                    impacts: impacts,
+                    selectorEvidence: selectorEvidence,
+                    durationMilliseconds: duration,
+                    executionDetails: execution
+                ))
+                let rejected = quality.status == .failed
+                    ? quality.issues.map { $0.title }
+                    : []
+                let states: [DiagnosticCandidateState] = rejected.isEmpty
+                    ? [.planned, .executed]
+                    : [.planned, .executed, .rejected]
+                let lifecycle = [PhotographyRecipeLifecycleSnapshot(
+                    stage: "v2FullResolutionCoreImage",
+                    recipeSummary: plan.recipe.traceSummary,
+                    changes: plan.lifecycle + ["executed: Core Image full resolution", "quality: \(quality.status.rawValue)"]
+                )]
+                let candidateEvidence = DiagnosticCandidateEvidence(
+                    identifier: plan.identifier,
+                    displayName: plan.displayName,
+                    states: states,
+                    imageStageName: stageName,
+                    planned: [
+                        "摄影意图=\(plan.intent.traceSummary)",
+                        "动态参数=\(plan.recipe.traceSummary)",
+                        "局部计划=\(plan.regionalTonePlan?.traceSummary ?? "none")",
+                        "知识规则=\(plan.knowledgeRuleIDs.map(\.rawValue).joined(separator: ","))"
+                    ],
+                    executed: [
+                        "renderStatus=completed",
+                        "执行模块=\(renderer.executedModuleNames(for: plan.recipe, analysis: analysis, manualRegionalAdjustments: plan.regionalTonePlan?.adjustments ?? []).joined(separator: " -> "))",
+                        "区域执行=\(execution.joined(separator: " | "))",
+                        "区域实测=\(v2RegionImpactSummary(impacts))"
+                    ],
+                    rejected: rejected,
+                    fallback: [],
+                    unavailable: [],
+                    qualityStatus: quality.status.rawValue,
+                    targetQualityStatus: "measured_intent_alignment=\(String(format: "%.3f", selectorEvidence.intentAlignment))",
+                    humanAestheticStatus: "pending_human_review",
+                    assessmentEvidence: [
+                        "技术安全与摄影审美分离；技术通过不代表照片更好看。",
+                        "selector provisional=true"
+                    ],
+                    parameterLifecycle: lifecycle,
+                    durationMilliseconds: duration
+                )
+                evidence.append(candidateEvidence)
+                details.append("\(plan.identifier) renderStatus=completed quality=\(quality.status.rawValue) intent=\(plan.intent.traceSummary) recipe=\(plan.recipe.traceSummary) impacts=\(v2RegionImpactSummary(impacts))")
+            } catch {
+                let duration = Self.milliseconds(ProcessInfo.processInfo.systemUptime - candidateStart)
+                evidence.append(DiagnosticCandidateEvidence(
+                    identifier: plan.identifier,
+                    displayName: plan.displayName,
+                    states: [.planned, .rejected],
+                    imageStageName: nil,
+                    planned: ["摄影意图=\(plan.intent.traceSummary)", "动态参数=\(plan.recipe.traceSummary)"],
+                    executed: [],
+                    rejected: ["renderFailed=\(error.localizedDescription)"],
+                    fallback: [],
+                    unavailable: [],
+                    qualityStatus: "render_failed",
+                    targetQualityStatus: "not_measured",
+                    humanAestheticStatus: "not_evaluable",
+                    assessmentEvidence: ["渲染失败候选不得参与自动选择。"],
+                    parameterLifecycle: [],
+                    durationMilliseconds: duration
+                ))
+                details.append("\(plan.identifier) renderFailed=\(error.localizedDescription)")
+            }
+        }
+
+        let selection = AestheticCandidateSelectorV2().select(
+            candidates: rendered.map(\.selectorEvidence)
+        )
+        var previews = rendered.map(\.preview)
+        if let identifier = selection.selectedIdentifier,
+           let selected = rendered.first(where: { $0.plan.identifier == identifier }) {
+            let autoStageName = "V2-AUTO 暂定自动选择（\(identifier)）"
+            previews.append(ProcessingStagePreview(
+                name: autoStageName,
+                imageData: selected.preview.imageData
+            ))
+            evidence.append(DiagnosticCandidateEvidence(
+                identifier: "V2-AUTO",
+                displayName: "V2 自动选择结果",
+                states: [.planned, .executed],
+                imageStageName: autoStageName,
+                planned: ["eligible=\(selection.eligibleIdentifiers.joined(separator: ","))"],
+                executed: ["selected=\(identifier)", "selectionBasis=provisional_engineering_proxy"],
+                rejected: [],
+                fallback: [],
+                unavailable: [],
+                qualityStatus: selected.quality.status.rawValue,
+                targetQualityStatus: "provisional_intent_alignment",
+                humanAestheticStatus: "pending_human_review",
+                assessmentEvidence: [selection.reason],
+                parameterLifecycle: [],
+                durationMilliseconds: nil
+            ))
+        } else {
+            evidence.append(DiagnosticCandidateEvidence(
+                identifier: "V2-AUTO",
+                displayName: "V2 自动选择结果",
+                states: [.rejected],
+                imageStageName: nil,
+                planned: ["eligible=\(selection.eligibleIdentifiers.joined(separator: ","))"],
+                executed: [],
+                rejected: [selection.reason],
+                fallback: [],
+                unavailable: [],
+                qualityStatus: "no_eligible_candidate",
+                targetQualityStatus: "selection_not_run",
+                humanAestheticStatus: "not_evaluable",
+                assessmentEvidence: [selection.reason],
+                parameterLifecycle: [],
+                durationMilliseconds: nil
+            ))
+        }
+        details.append("V2 AUTO selected=\(selection.selectedIdentifier ?? "none") provisional=\(selection.provisional) reason=\(selection.reason)")
+        let duration = Self.milliseconds(ProcessInfo.processInfo.systemUptime - start)
+        return AutomaticDirectorV2ValidationResult(
+            previews: previews,
+            evidence: evidence,
+            details: details,
+            stage: ProcessingStageRecord(
+                name: "Automatic Photography Director V2",
+                durationMilliseconds: duration,
+                executed: !rendered.isEmpty,
+                detail: "\(rendered.count)/\(plans.count) 个全分辨率候选；AUTO=\(selection.selectedIdentifier ?? "none")；provisional=true"
+            )
+        )
+    }
+
+    private func makeV2SelectorEvidence(
+        plan: PhotographyCandidatePlanV2,
+        quality: QualityCheckResult,
+        impacts: [PhotographyRegionImpact]
+    ) -> PhotographyRenderedCandidateEvidenceV2 {
+        let targetErrors = plan.intent.regionTargets.compactMap { target -> Float? in
+            guard let impact = impacts.first(where: { $0.region == target.region }) else { return nil }
+            let rendered = target.sourceLuminance + impact.luminanceDelta
+            return abs(rendered - target.targetLuminance)
+        }
+        let meanError = targetErrors.isEmpty ? 0.12 : targetErrors.reduce(0, +) / Float(targetErrors.count)
+        let intentAlignment = (1 - meanError / 0.18).clamped(to: 0...1)
+        let subjectImpact = impacts.first { $0.region == .subject || $0.region == .person }
+        let environmentImpacts = impacts.filter { [.ground, .vegetation, .architecture, .sky].contains($0.region) }
+        let environmentMean = environmentImpacts.isEmpty
+            ? 0
+            : environmentImpacts.map(\.luminanceDelta).reduce(0, +) / Float(environmentImpacts.count)
+        let separation = subjectImpact.map {
+            (0.62 + min(0.28, abs($0.luminanceDelta - environmentMean) * 2.4)).clamped(to: 0...1)
+        } ?? (0.58 + min(0.24, environmentImpacts.map { abs($0.luminanceDelta) }.max() ?? 0) * 1.8)
+        let neutralRisk = quality.colorIntegrity.riskPenalty
+        let clippingIssues: Set<QualityIssue> = [.clippedHighlights, .crushedShadows, .expandedPureWhite, .abnormalBlackCoverage]
+        let artifactIssues: Set<QualityIssue> = [.localMaskBoundaryArtifact, .overprocessedDetail, .amplifiedNoise]
+        let clippingPenalty: Float = Set(quality.issues).isDisjoint(with: clippingIssues) ? 0 : 1
+        let artifactPenalty: Float = Set(quality.issues).isDisjoint(with: artifactIssues) ? 0 : 1
+        let technical: PhotographyTechnicalStatusV2
+        switch quality.status {
+        case .passed: technical = .passed
+        case .warning: technical = .warning
+        case .failed: technical = .rejected
+        }
+        return PhotographyRenderedCandidateEvidenceV2(
+            identifier: plan.identifier,
+            technicalStatus: technical,
+            intentAlignment: intentAlignment,
+            subjectBackgroundSeparation: separation,
+            atmospherePreservation: (1 - neutralRisk * 0.65 - clippingPenalty * 0.35).clamped(to: 0...1),
+            neutralProtection: (1 - neutralRisk).clamped(to: 0...1),
+            clippingPenalty: clippingPenalty,
+            artifactPenalty: artifactPenalty
+        )
+    }
+
+    private func v2RegionImpactSummary(_ impacts: [PhotographyRegionImpact]) -> String {
+        impacts.map {
+            String(
+                format: "%@{coverage=%.3f,luma=%+.4f,color=%.4f,contrast=%+.4f,changed=%.3f,detail=%.3f}",
+                $0.region.rawValue,
+                $0.maskCoverage,
+                $0.luminanceDelta,
+                $0.colorDelta,
+                $0.contrastDelta,
+                $0.changedPixelRatio,
+                $0.detailEnergyRatio
+            )
+        }.joined(separator: " | ")
     }
 
     private func evaluateReferenceCandidate(
@@ -2173,6 +2448,23 @@ private struct AestheticExperimentCandidateResult {
     let identifier: String
     let displayName: String
     let result: IsolatedDiagnosticCandidateResult
+}
+
+private struct AutomaticDirectorV2RenderedCandidate {
+    let plan: PhotographyCandidatePlanV2
+    let preview: ProcessingStagePreview
+    let quality: QualityCheckResult
+    let impacts: [PhotographyRegionImpact]
+    let selectorEvidence: PhotographyRenderedCandidateEvidenceV2
+    let durationMilliseconds: Int
+    let executionDetails: [String]
+}
+
+private struct AutomaticDirectorV2ValidationResult {
+    let previews: [ProcessingStagePreview]
+    let evidence: [DiagnosticCandidateEvidence]
+    let details: [String]
+    let stage: ProcessingStageRecord
 }
 
 enum PhotoProcessingError: LocalizedError {
