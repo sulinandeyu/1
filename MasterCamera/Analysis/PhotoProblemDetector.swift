@@ -216,7 +216,7 @@ final class PhotoProblemDetector {
         analysis: PhotoAnalysis,
         understanding: VisualSceneUnderstandingResult
     ) -> PhotographyDiagnosisEvidence {
-        let regionalEvidence = problem.affectedRegions.compactMap { region in
+        let regionalEvidence: [VisualRegionEvidence] = problem.affectedRegions.compactMap { region -> VisualRegionEvidence? in
             guard let kind = visualKind(for: region) else { return nil }
             understanding.regionEvidence.first { evidence in
                 evidence.kind == kind
@@ -239,7 +239,7 @@ final class PhotoProblemDetector {
         let status: VisualEvidenceStatus = requiresLocalMask && regionalEvidence.isEmpty
             ? .uncertain
             : .reliable
-        let metrics = regionalEvidence.map(\.traceSummary).joined(separator: " | ")
+        let metrics = regionalEvidence.map { $0.traceSummary }.joined(separator: " | ")
         return PhotographyDiagnosisEvidence(
             identifier: String(format: "PHOTO-PROBLEM-%03d-%@", index + 1, problem.kind.rawValue.uppercased()),
             status: status,
