@@ -218,7 +218,7 @@ final class PhotoProblemDetector {
     ) -> PhotographyDiagnosisEvidence {
         let regionalEvidence: [VisualRegionEvidence] = problem.affectedRegions.compactMap { region -> VisualRegionEvidence? in
             guard let kind = visualKind(for: region) else { return nil }
-            understanding.regionEvidence.first { evidence in
+            return understanding.regionEvidence.first { evidence in
                 evidence.kind == kind
             }
         }
