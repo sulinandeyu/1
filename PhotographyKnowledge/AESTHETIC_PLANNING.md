@@ -13,6 +13,28 @@
 - 副作用：保守门控会漏掉真实主体；类级语义分割不能区分多个同类实例。
 - 验证：诊断记录必须包含来源、覆盖率、置信度和未知项；真机核对蒙版叠加图，不得仅看标签名。
 
+## PT-UNDERSTANDING-002：结构化区域证据
+
+- 来源：`APPLE-VISION-01/02`、`APPLE-CI-01/02`、`PT-UNDERSTANDING-001`。
+- 解决问题：现有识别结果被压缩成标签或日志字符串，无法逐区证明“识别了哪里、测得什么、是否可以执行局部调整”。
+- 输入测量：Vision 人物/人脸/显著性，Core ML 类级天空、地面、植被、水面、建筑、道路、车辆蒙版，覆盖率、边界密度、蒙版可靠度，区域亮度/反差/RGB/饱和度/黄色与绿色比例/阴影/高光；亮度范围单独标为非语义证据。
+- 适用条件：对应模型或测量实际执行；区域记录必须保留来源和能力边界。
+- 不适用条件：空蒙版、无区域统计、模型不支持的类别、覆盖率或边界不可靠。不可用状态不得解释为“照片中不存在该对象”。
+- 计算方法：输出 `VisualRegionEvidence` 与 `VisualRegionRelationshipEvidence`；只有状态 `reliable`、蒙版质量通过且区域像素统计存在时，才允许进入语义局部调整。道路证据必须来自道路类级蒙版，地面蒙版不自动改名为道路；黄色/绿色仅表示区域内颜色比例，不代表叶片、果实或主体身份。
+- 副作用：严格证据门会使更多区域显示 unavailable/uncertain，但避免颜色启发式伪造语义和错误局部修图。
+- 验证：诊断 JSON 和 ZIP 必须逐区记录 source/status/confidence/coverage/mask quality/measurements/limitations；蒙版叠加图与原图人工核对；Apple Core Image 实际局部渲染仍须独立验证。
+
+## PT-DIAGNOSIS-001：基于证据的摄影问题诊断
+
+- 来源：`ADOBE-TONE-01/02`、`ADOBE-MASK-01`、`PT-UNDERSTANDING-002`、`PT-QA-001/002`。
+- 解决问题：把“发现问题”和“可安全执行”混为一谈，或只列问题名称而缺少测量、摄影意义、副作用与降级状态。
+- 输入测量：全局曝光/端点/反差/颜色/噪声，可靠区域证据与区域关系，现有 `PhotoProblemReport`，人物和中性色保护状态。
+- 适用条件：问题必须能追溯到当前照片测量；局部执行必须有可靠区域证据。
+- 不适用条件：语义区域不可用、人物区域需要外貌修改、证据只来自场景名称或参考图参数。
+- 计算方法：每项输出稳定 identifier、status、severity、affectedRegions、measurementBasis、photographicMeaning、adjustmentDirection、sideEffects、confidence、executionStatus 和知识规则编号。证据足以判断问题但不足以安全局部渲染时标为 `analysisOnly`，不得宣称执行完成。
+- 副作用：诊断可能正确但摄影目标仍不符合用户审美；诊断层不得自动把技术问题转换成固定风格参数。
+- 验证：实际执行参数必须引用同一证据，渲染后重新测量；技术质量、目标合理性与人工审美分别记录。
+
 ## PT-AESTHETIC-001：实测视觉层级
 
 - 来源：`ADOBE-TONE-01/02`、`ADOBE-MASK-01`、`TUTORIAL-LOCAL-01`（未授权本地教程，仅作研究需求提炼）。

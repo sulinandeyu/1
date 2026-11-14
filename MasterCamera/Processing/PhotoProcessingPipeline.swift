@@ -50,6 +50,10 @@ final class PhotoProcessingPipeline {
         // 2. 找问题
         let decisionStart = ProcessInfo.processInfo.systemUptime
         let problemReport = problemDetector.detect(in: analysis)
+        let structuredDiagnosis = problemDetector.structuredDiagnosis(
+            in: analysis,
+            report: problemReport
+        )
         // 3–4. 生成逐图摄影目标并动态求解参数
         let decision = photographyDirector.direct(analysis: analysis, problems: problemReport)
         let decisionDuration = ProcessInfo.processInfo.systemUptime - decisionStart
@@ -65,7 +69,7 @@ final class PhotoProcessingPipeline {
             }
             .joined(separator: "；")
         AppLogger.imageEngine.info(
-            "摄影总监决策完成 \(Self.milliseconds(decisionDuration))ms：场景仅作分析=\(decision.sceneStrategy.rawValue)，逐图目标=\(decision.adaptiveTarget.summaryText, privacy: .public)，目标依据=\(decision.adaptiveTarget.rationale, privacy: .public)，区域计划=[\(treatmentTrace, privacy: .public)]，逐图参数=[\(parameterEvidenceTrace, privacy: .public)]，人物保护=\(decision.treatmentPlan.portraitProtection.isActive)，问题=[\(problemReport.problems.map { $0.kind.rawValue }.joined(separator: ","), privacy: .public)]，配方=\(decision.recipe.traceSummary, privacy: .public)"
+            "摄影总监决策完成 \(Self.milliseconds(decisionDuration))ms：场景仅作分析=\(decision.sceneStrategy.rawValue)，逐图目标=\(decision.adaptiveTarget.summaryText, privacy: .public)，目标依据=\(decision.adaptiveTarget.rationale, privacy: .public)，区域计划=[\(treatmentTrace, privacy: .public)]，逐图参数=[\(parameterEvidenceTrace, privacy: .public)]，人物保护=\(decision.treatmentPlan.portraitProtection.isActive)，结构化问题=[\(structuredDiagnosis.traceSummary, privacy: .public)]，配方=\(decision.recipe.traceSummary, privacy: .public)"
         )
         // 5. 先在低分辨率预览上比较由同一摄影决策派生的候选。
         let candidateStart = ProcessInfo.processInfo.systemUptime
@@ -726,6 +730,10 @@ final class PhotoProcessingPipeline {
             let decision = photographyDirector.direct(
                 analysis: analysis,
                 problems: problems,
+                structuredDiagnosis: problemDetector.structuredDiagnosis(
+                    in: analysis,
+                    report: problems
+                ),
                 enableMeasuredAestheticPlanning: true
             )
             phase = "rendering"
@@ -876,13 +884,25 @@ final class PhotoProcessingPipeline {
                 }
             }
             phase = "completed"
-            let regionalExecution = renderer.regionalExecutionDetails(
-                for: selectedRecipe,
-                analysis: analysis
-            ) + renderer.adaptiveRegionalExecutionDetails(
+            let adaptiveRegionalExecution = renderer.adaptiveRegionalExecutionDetails(
                 analysis: analysis,
                 plan: selectedRegionalPlan
             )
+            let regionalExecution = renderer.regionalExecutionDetails(
+                for: selectedRecipe,
+                analysis: analysis
+            ) + adaptiveRegionalExecution
+            let relationshipDiagnosis = problemDetector.structuredDiagnosis(
+                in: analysis,
+                report: problems
+            ).evidence.first { $0.identifier == "VISUAL-RELATION-GROUND-VEGETATION" }
+            let relationshipEligible = relationshipDiagnosis?.executionStatus == .executable
+            let plannedRegions = Set((selectedRegionalPlan?.adjustments ?? []).map(\.region))
+            let relationshipPlanned = plannedRegions.contains(.ground) && plannedRegions.contains(.vegetation)
+            let groundExecuted = adaptiveRegionalExecution.contains { $0.contains("地面/道路：已执行") }
+            let vegetationExecuted = adaptiveRegionalExecution.contains { $0.contains("植被：已执行") }
+            let relationshipExecuted = groundExecuted && vegetationExecuted
+            let relationshipRejected = relationshipEligible && (!relationshipPlanned || !relationshipExecuted)
             let aestheticProxy = PhotographyAestheticProgressScorer().score(
                 source: analysis,
                 regionImpacts: selectedImpacts
@@ -906,6 +926,7 @@ final class PhotoProcessingPipeline {
                 "[D] humanAestheticStatus=awaiting_blind_review",
                 "[D] 视觉理解=\(analysis.visualSceneUnderstanding.traceSummary)",
                 "[D] 摄影问题=\(problems.problems.map { $0.kind.rawValue }.joined(separator: ","))",
+                "[D] 结构化诊断生命周期=\(relationshipDiagnosis?.identifier ?? "unavailable"){eligible=\(relationshipEligible);planned=\(relationshipPlanned);executed=\(relationshipExecuted);rejected=\(relationshipRejected)}；executable 仅表示 eligible，不代表已执行",
                 "[D] 审美目标=\(decision.aestheticPlan?.traceSummary ?? "未生成")",
                 "[D] 增强区域影调=\(selectedRegionalPlan?.traceSummary ?? "未生成（无可靠蒙版或无需调整）")；rules=PT-AESTHETIC-007,PT-AESTHETIC-008,PT-QA-003",
                 "[D] 动态参数=\(parameters)",

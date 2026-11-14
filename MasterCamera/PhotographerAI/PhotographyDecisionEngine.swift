@@ -5,6 +5,7 @@ final class PhotographyDecisionEngine {
         for analysis: PhotoAnalysis,
         problems: PhotoProblemReport,
         targetProfile: PhotographyTargetProfile? = nil,
+        structuredDiagnosis: StructuredPhotographyDiagnosis? = nil,
         enableMeasuredAestheticPlanning: Bool = false
     ) -> PhotographyDecision {
         let strategy = SceneStrategy.choose(for: analysis, problems: problems)
@@ -17,12 +18,19 @@ final class PhotographyDecisionEngine {
                 )
                 : nil
         )
+        let resolvedStructuredDiagnosis = enableMeasuredAestheticPlanning
+            ? (structuredDiagnosis ?? PhotoProblemDetector().structuredDiagnosis(
+                in: analysis,
+                report: problems
+            ))
+            : structuredDiagnosis
         let aestheticPlan = planningProfile.flatMap { profile in
             (profile.referenceApplied || enableMeasuredAestheticPlanning)
                 ? AestheticPhotographyPlanner().makePlan(
                     analysis: analysis,
                     problems: problems,
-                    targetProfile: profile
+                    targetProfile: profile,
+                    structuredDiagnosis: resolvedStructuredDiagnosis
                 )
                 : nil
         }
@@ -1366,6 +1374,11 @@ struct AestheticPhotographyPlan: Equatable, Sendable {
     /// visually dominated by a brighter low-saturation plane. This is not a
     /// scene preset and remains nil when the evidence is absent.
     let groundVegetationLuminanceDeltaTarget: Float?
+    /// The structured diagnosis that made this relationship eligible. A non-nil
+    /// identifier still means only `eligible`; the regional planner and renderer
+    /// separately record `planned` and `executed`.
+    let sourceDiagnosisIdentifier: String?
+    let sourceDiagnosisEligibility: String
     let measuredIntentStrength: Float
     let intentSelectionStatus: String
     let risks: [String]
@@ -1373,7 +1386,7 @@ struct AestheticPhotographyPlan: Equatable, Sendable {
 
     var traceSummary: String {
         String(
-            format: "confidence=%.3f objective=%@ subjectDelta=%@ localContrast=%.3f shadowCool=%.3f midtoneWarm=%.3f colorSeparation=%.3f environmentCool=%.3f warmAccent=%.3f ambientDesaturation=%.3f tonalColor={midtoneCool:%.3f,highlightWarm:%.3f,neutralProtect:%.3f,warmCool:%.3f,softHighlight:%.3f} structure=%@ regionTargets={ground:%@,vegetation:%@,sky:%@,architecture:%@} groundVegetationDelta=%@ intentStrength=%.3f intentStatus=%@ emphasize=[%@] subdue=[%@] protect=[%@] risks=[%@] rationale=[%@]",
+            format: "confidence=%.3f objective=%@ subjectDelta=%@ localContrast=%.3f shadowCool=%.3f midtoneWarm=%.3f colorSeparation=%.3f environmentCool=%.3f warmAccent=%.3f ambientDesaturation=%.3f tonalColor={midtoneCool:%.3f,highlightWarm:%.3f,neutralProtect:%.3f,warmCool:%.3f,softHighlight:%.3f} structure=%@ regionTargets={ground:%@,vegetation:%@,sky:%@,architecture:%@} groundVegetationDelta=%@ diagnosis=%@ eligibility=%@ intentStrength=%.3f intentStatus=%@ emphasize=[%@] subdue=[%@] protect=[%@] risks=[%@] rationale=[%@]",
             confidence,
             primaryObjective,
             subjectBackgroundDeltaTarget.map { String(format: "%.3f", $0) } ?? "n/a",
@@ -1395,6 +1408,8 @@ struct AestheticPhotographyPlan: Equatable, Sendable {
             skyLuminanceTarget.map { String(format: "%.3f", $0) } ?? "n/a",
             architectureLuminanceTarget.map { String(format: "%.3f", $0) } ?? "n/a",
             groundVegetationLuminanceDeltaTarget.map { String(format: "%+.3f", $0) } ?? "n/a",
+            sourceDiagnosisIdentifier ?? "n/a",
+            sourceDiagnosisEligibility,
             measuredIntentStrength,
             intentSelectionStatus,
             emphasizedRegions.joined(separator: ","),
@@ -1414,9 +1429,19 @@ struct AestheticPhotographyPlanner {
     func makePlan(
         analysis: PhotoAnalysis,
         problems: PhotoProblemReport,
-        targetProfile: PhotographyTargetProfile
+        targetProfile: PhotographyTargetProfile,
+        structuredDiagnosis: StructuredPhotographyDiagnosis? = nil
     ) -> AestheticPhotographyPlan {
         let understanding = analysis.visualSceneUnderstanding
+        let resolvedDiagnosis = structuredDiagnosis ?? PhotoProblemDetector().structuredDiagnosis(
+            in: analysis,
+            report: problems
+        )
+        let groundVegetationDiagnosis = resolvedDiagnosis.evidence.first {
+            $0.identifier == "VISUAL-RELATION-GROUND-VEGETATION"
+                && $0.status == .reliable
+                && $0.executionStatus == .executable
+        }
         let subjectStatistics = reliableSubjectStatistics(analysis)
         let currentSubjectDelta: Float? = {
             if analysis.containsPersonEvidence {
@@ -1522,7 +1547,8 @@ struct AestheticPhotographyPlanner {
         // an explicitly uncertain hypothesis until a human preference is logged.
         let hierarchyEvidence: Float
         let groundVegetationDeltaTarget: Float?
-        if analysis.groundMask?.qualityAssessment.isUsable == true,
+        if let groundVegetationDiagnosis,
+           analysis.groundMask?.qualityAssessment.isUsable == true,
            analysis.vegetationMask?.qualityAssessment.isUsable == true,
            let ground = analysis.groundStatistics,
            let vegetation = analysis.vegetationStatistics {
@@ -1542,17 +1568,29 @@ struct AestheticPhotographyPlanner {
                 analysis.groundMask?.qualityAssessment.reliability ?? 0,
                 analysis.vegetationMask?.qualityAssessment.reliability ?? 0
             )
+            // Diagnosis eligibility has already required two reliable,
+            // executable masks and carries the relationship confidence. Do not
+            // multiply the same confidence/noise gates again here: doing so
+            // previously reduced a 0.61 measured relationship to about 0.24 and
+            // silently prevented any target from being planned. Noise remains a
+            // rendering-strength constraint in AdaptiveRegionalTonePlanner.
             hierarchyEvidence = (
                 luminanceDominance * 0.36
                     + saturationAdvantage * 0.44
                     + coverageBalance * 0.20
-            ) * maskReliability * noiseProtection
+            ) * maskReliability
             if hierarchyEvidence >= 0.28,
                saturationAdvantage >= 0.24,
                luminanceDominance >= 0.16 {
+                // The target is a relative relationship solved from this photo.
+                // It is intentionally bounded and never uses a scene name, T,
+                // inverse parameters, file name or image hash.
                 groundVegetationDeltaTarget = -bounded(
-                    0.035 + hierarchyEvidence * 0.105,
-                    0.035...0.12
+                    0.025
+                        + luminanceDominance * 0.04
+                        + saturationAdvantage * 0.035
+                        + coverageBalance * 0.015,
+                    0.03...0.095
                 )
             } else {
                 groundVegetationDeltaTarget = nil
@@ -1561,8 +1599,9 @@ struct AestheticPhotographyPlanner {
             hierarchyEvidence = 0
             groundVegetationDeltaTarget = nil
         }
-        let resolvedGroundVegetationTarget = targetProfile.regionalIntent?.groundVegetationDeltaTarget
-            ?? groundVegetationDeltaTarget
+        // PT-DIAGNOSIS-001 is authoritative for eligibility. An older target
+        // profile is not allowed to manufacture or override this relationship.
+        let resolvedGroundVegetationTarget = groundVegetationDeltaTarget
         let measuredIntentStrength = max(
             hierarchyEvidence,
             max(
@@ -1571,7 +1610,9 @@ struct AestheticPhotographyPlanner {
             )
         ).clamped(to: 0...1)
         let intentSelectionStatus: String
-        if let intent = targetProfile.regionalIntent {
+        if resolvedGroundVegetationTarget != nil {
+            intentSelectionStatus = "structured-diagnosis-eligible-measured-hierarchy-human-review-required"
+        } else if let intent = targetProfile.regionalIntent {
             intentSelectionStatus = "measured-\(intent.tonalStructure.rawValue)-hypothesis-human-review-required"
         } else {
             intentSelectionStatus = groundVegetationDeltaTarget == nil
@@ -1663,6 +1704,8 @@ struct AestheticPhotographyPlanner {
             skyLuminanceTarget: targetProfile.regionalIntent?.skyLuminanceTarget,
             architectureLuminanceTarget: targetProfile.regionalIntent?.architectureLuminanceTarget,
             groundVegetationLuminanceDeltaTarget: resolvedGroundVegetationTarget,
+            sourceDiagnosisIdentifier: groundVegetationDiagnosis?.identifier,
+            sourceDiagnosisEligibility: groundVegetationDiagnosis == nil ? "rejected-or-unavailable" : "eligible",
             measuredIntentStrength: measuredIntentStrength,
             intentSelectionStatus: intentSelectionStatus,
             risks: Array(Set(risks)).sorted(),
@@ -1747,6 +1790,7 @@ struct AdaptiveRegionalTonePlanner {
             let ev = exposureEV(from: statistics.averageLuminance, to: desired)
                 .clamped(to: -0.58...0.28) * response
             let recoverableShadow = max(0, statistics.shadowRatio - analysis.blackRatio)
+            let protectsBrightNeutralEndpoints = aestheticPlan?.sourceDiagnosisIdentifier != nil
             let adjustment = ManualRegionalToneAdjustment(
                 region: .ground,
                 exposureEV: ev,
@@ -1759,12 +1803,14 @@ struct AdaptiveRegionalTonePlanner {
                 contrast: (1 + max(0, target.contrast - statistics.contrastRange) * 0.20)
                     .clamped(to: 1...1.09),
                 luminanceLowerBound: 0.12,
-                luminanceUpperBound: 0.82,
-                luminanceFeather: 0.16
+                // No vehicle identity is claimed. Protect all bright endpoints
+                // through a luminance bound when only a ground class mask exists.
+                luminanceUpperBound: protectsBrightNeutralEndpoints ? 0.78 : 0.82,
+                luminanceFeather: protectsBrightNeutralEndpoints ? 0.19 : 0.16
             )
             if !adjustment.isNeutral { adjustments.append(adjustment) }
             evidence.append(String(
-                format: "ground measured=%.3f continuityTarget=%.3f relationshipTarget=%@ explicitTarget=%@ finalTarget=%.3f EV=%+.3f demand=%.3f response=%.3f range=0.12...0.82 noiseHeadroom=%.3f",
+                format: "ground measured=%.3f continuityTarget=%.3f relationshipTarget=%@ explicitTarget=%@ finalTarget=%.3f EV=%+.3f demand=%.3f response=%.3f range=0.12...%.2f noiseHeadroom=%.3f diagnosis=%@ eligibility=%@",
                 statistics.averageLuminance,
                 continuityDesired,
                 relationshipDesired.map { String(format: "%.3f", $0) } ?? "n/a",
@@ -1773,7 +1819,10 @@ struct AdaptiveRegionalTonePlanner {
                 ev,
                 expressionDemand,
                 response,
-                noiseHeadroom
+                protectsBrightNeutralEndpoints ? 0.78 : 0.82,
+                noiseHeadroom,
+                aestheticPlan?.sourceDiagnosisIdentifier ?? "n/a",
+                aestheticPlan?.sourceDiagnosisEligibility ?? "unavailable"
             ))
         }
 
@@ -1908,6 +1957,14 @@ struct AdaptiveRegionalTonePlanner {
             ))
         }
 
+        if let identifier = aestheticPlan?.sourceDiagnosisIdentifier {
+            let plannedRegions = Set(adjustments.map(\.region))
+            let relationshipPlanned = plannedRegions.contains(.ground)
+                && plannedRegions.contains(.vegetation)
+            evidence.append(
+                "diagnosisLifecycle=\(identifier){eligible=true;planned=\(relationshipPlanned);executed=pending-render;rejected=\(!relationshipPlanned)}"
+            )
+        }
         guard !adjustments.isEmpty else { return nil }
         return AdaptiveRegionalTonePlan(adjustments: adjustments, evidence: evidence)
     }
@@ -2752,12 +2809,14 @@ final class PhotographyDirector {
         analysis: PhotoAnalysis,
         problems: PhotoProblemReport,
         targetProfile: PhotographyTargetProfile? = nil,
+        structuredDiagnosis: StructuredPhotographyDiagnosis? = nil,
         enableMeasuredAestheticPlanning: Bool = false
     ) -> PhotographyDecision {
         decisionEngine.makeDecision(
             for: analysis,
             problems: problems,
             targetProfile: targetProfile,
+            structuredDiagnosis: structuredDiagnosis,
             enableMeasuredAestheticPlanning: enableMeasuredAestheticPlanning
         )
     }

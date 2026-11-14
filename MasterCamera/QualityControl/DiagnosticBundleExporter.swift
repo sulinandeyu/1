@@ -302,6 +302,46 @@ final class DiagnosticBundleExporter {
         if let analysis = photo.analysis {
             object["analysisTrace"] = analysis.traceSummary
             object["visualSceneUnderstanding"] = analysis.visualSceneUnderstanding.traceSummary
+            object["visualRegionEvidence"] = analysis.visualSceneUnderstanding.regionEvidence.map { evidence in
+                [
+                    "kind": evidence.kind.rawValue,
+                    "source": evidence.source.rawValue,
+                    "status": evidence.status.rawValue,
+                    "confidence": evidence.confidence,
+                    "coverage": evidence.coverage,
+                    "maskReliability": evidence.maskReliability,
+                    "boundaryDensity": evidence.boundaryDensity,
+                    "localAdjustmentExecutable": evidence.isExecutableForLocalAdjustment,
+                    "measurements": evidence.statistics.map { statistics -> Any in
+                        [
+                            "averageLuminance": statistics.averageLuminance,
+                            "contrastRange": statistics.contrastRange,
+                            "redAverage": statistics.redAverage,
+                            "greenAverage": statistics.greenAverage,
+                            "blueAverage": statistics.blueAverage,
+                            "averageSaturation": statistics.averageSaturation,
+                            "yellowColorRatio": statistics.yellowColorRatio,
+                            "greenColorRatio": statistics.greenColorRatio,
+                            "shadowRatio": statistics.shadowRatio,
+                            "highlightRatio": statistics.highlightRatio
+                        ] as [String: Any]
+                    } ?? NSNull(),
+                    "reason": evidence.reason,
+                    "limitations": evidence.limitations
+                ] as [String: Any]
+            }
+            object["visualRegionRelationships"] = analysis.visualSceneUnderstanding.regionRelationships.map { relationship in
+                [
+                    "identifier": relationship.identifier,
+                    "status": relationship.status.rawValue,
+                    "sourceRegion": relationship.sourceRegion.rawValue,
+                    "comparedRegion": relationship.comparedRegion.rawValue,
+                    "luminanceDelta": relationship.luminanceDelta.map { $0 as Any } ?? NSNull(),
+                    "saturationDelta": relationship.saturationDelta.map { $0 as Any } ?? NSNull(),
+                    "confidence": relationship.confidence,
+                    "interpretation": relationship.interpretation
+                ] as [String: Any]
+            }
             object["sceneRecognition"] = [
                 "status": analysis.sceneRecognitionDiagnostics.status.rawValue,
                 "topConfidence": analysis.sceneRecognitionDiagnostics.topConfidence,
@@ -326,6 +366,36 @@ final class DiagnosticBundleExporter {
         if let report = photo.problemReport {
             object["problems"] = report.problems.map {
                 ["kind": $0.kind.rawValue, "severity": $0.severity.rawValue, "confidence": $0.confidence]
+            }
+            if let analysis = photo.analysis {
+                let diagnosis = PhotoProblemDetector().structuredDiagnosis(
+                    in: analysis,
+                    report: report
+                )
+                object["structuredPhotographyDiagnosis"] = [
+                    "status": diagnosis.status.rawValue,
+                    "unknowns": diagnosis.unknowns,
+                    "evidence": diagnosis.evidence.map { item in
+                        [
+                            "identifier": item.identifier,
+                            "status": item.status.rawValue,
+                            "problemKind": item.problemKind?.rawValue ?? "measuredRelationship",
+                            "severity": item.severity.rawValue,
+                            "affectedRegions": item.affectedRegions.map(\.rawValue),
+                            "measurementBasis": item.measurementBasis,
+                            "photographicMeaning": item.photographicMeaning,
+                            "adjustmentDirection": item.adjustmentDirection,
+                            "sideEffects": item.sideEffects,
+                            "confidence": item.confidence,
+                            "executionStatus": item.executionStatus.rawValue,
+                            "eligibilityStatus": item.executionStatus == .executable ? "eligible" : "notEligible",
+                            "parameterPlanningStatus": "notEvaluatedAtDiagnosisStage",
+                            "pixelExecutionStatus": "notEvaluatedAtDiagnosisStage",
+                            "executionStatusMeaning": "diagnosis executable means eligible only; D records planned/executed/rejected after planning and rendering",
+                            "knowledgeRuleIDs": item.knowledgeRuleIDs.map(\.rawValue)
+                        ] as [String: Any]
+                    }
+                ] as [String: Any]
             }
         }
         if let decision = photo.decision {
