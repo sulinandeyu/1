@@ -1547,7 +1547,7 @@ struct AestheticPhotographyPlanner {
         // an explicitly uncertain hypothesis until a human preference is logged.
         let hierarchyEvidence: Float
         let groundVegetationDeltaTarget: Float?
-        if let groundVegetationDiagnosis,
+        if groundVegetationDiagnosis != nil,
            analysis.groundMask?.qualityAssessment.isUsable == true,
            analysis.vegetationMask?.qualityAssessment.isUsable == true,
            let ground = analysis.groundStatistics,
