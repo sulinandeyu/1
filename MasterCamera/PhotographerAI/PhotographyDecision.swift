@@ -145,6 +145,8 @@ enum PhotographyKnowledgeRuleID: String, Equatable, Hashable, Sendable {
     case referenceTargetCalibration = "PT-REF-002"
     case referenceValidationIsolation = "PT-REF-003"
     case semanticEvidenceBoundary = "PT-UNDERSTANDING-001"
+    case structuredRegionEvidence = "PT-UNDERSTANDING-002"
+    case evidenceBasedPhotographyDiagnosis = "PT-DIAGNOSIS-001"
     case measuredVisualHierarchy = "PT-AESTHETIC-001"
     case regionalColorHarmony = "PT-AESTHETIC-002"
     case atmospherePreservation = "PT-AESTHETIC-003"

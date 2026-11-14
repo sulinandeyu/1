@@ -860,6 +860,112 @@ enum VisualEvidenceStatus: String, Equatable, Sendable {
     case unavailable
 }
 
+/// A region that the current Apple Vision/Core ML stack can actually localise.
+/// The names deliberately distinguish a semantic class mask from saliency or a
+/// luminance zone so that downstream code cannot turn a colour patch into a
+/// fabricated object identity. See PT-UNDERSTANDING-002.
+enum VisualRegionKind: String, Equatable, Hashable, Sendable {
+    case person
+    case protectedSkin
+    case salientSubject
+    case sky
+    case ground
+    case pathOrRoad
+    case vegetation
+    case water
+    case architecture
+    case vehicle
+    case shadowZone
+    case midtoneZone
+    case highlightZone
+}
+
+enum VisualRegionEvidenceSource: String, Equatable, Sendable {
+    case visionPersonSegmentation
+    case visionFaceAndSkinProtection
+    case visionSaliency
+    case coreMLPanopticClassMask
+    case measuredLuminanceZone
+}
+
+struct VisualRegionEvidence: Equatable, Sendable {
+    let kind: VisualRegionKind
+    let source: VisualRegionEvidenceSource
+    let status: VisualEvidenceStatus
+    let confidence: Float
+    let coverage: Float
+    let maskReliability: Float
+    let boundaryDensity: Float
+    let statistics: PhotoRegionStatistics?
+    let reason: String
+    let limitations: [String]
+
+    var isExecutableForLocalAdjustment: Bool {
+        status == .reliable
+            && maskReliability >= 0.42
+            && coverage >= 0.004
+            && coverage <= 0.86
+            && statistics != nil
+    }
+
+    var traceSummary: String {
+        let measured = statistics.map {
+            String(
+                format: "luma=%.3f contrast=%.3f rgb=%.3f/%.3f/%.3f saturation=%.3f yellow=%.3f green=%.3f shadow=%.3f highlight=%.3f",
+                $0.averageLuminance,
+                $0.contrastRange,
+                $0.redAverage,
+                $0.greenAverage,
+                $0.blueAverage,
+                $0.averageSaturation,
+                $0.yellowColorRatio,
+                $0.greenColorRatio,
+                $0.shadowRatio,
+                $0.highlightRatio
+            )
+        } ?? "statistics=unavailable"
+        return String(
+            format: "%@{%@ source=%@ confidence=%.3f coverage=%.3f maskReliability=%.3f boundary=%.3f executable=%@ %@ reason=%@ limits=[%@]}",
+            kind.rawValue,
+            status.rawValue,
+            source.rawValue,
+            confidence,
+            coverage,
+            maskReliability,
+            boundaryDensity,
+            isExecutableForLocalAdjustment ? "yes" : "no",
+            measured,
+            reason,
+            limitations.joined(separator: ",")
+        )
+    }
+}
+
+struct VisualRegionRelationshipEvidence: Equatable, Sendable {
+    let identifier: String
+    let status: VisualEvidenceStatus
+    let sourceRegion: VisualRegionKind
+    let comparedRegion: VisualRegionKind
+    let luminanceDelta: Float?
+    let saturationDelta: Float?
+    let confidence: Float
+    let interpretation: String
+
+    var traceSummary: String {
+        String(
+            format: "%@{%@ %@-%@ luma=%@ saturation=%@ confidence=%.3f interpretation=%@}",
+            identifier,
+            status.rawValue,
+            sourceRegion.rawValue,
+            comparedRegion.rawValue,
+            luminanceDelta.map { String(format: "%+.3f", $0) } ?? "n/a",
+            saturationDelta.map { String(format: "%+.3f", $0) } ?? "n/a",
+            confidence,
+            interpretation
+        )
+    }
+}
+
 struct VisualSceneUnderstandingResult: Equatable, Sendable {
     let status: VisualEvidenceStatus
     let sceneLabels: [SceneLabel]
@@ -875,6 +981,8 @@ struct VisualSceneUnderstandingResult: Equatable, Sendable {
     let localLightEvidence: String
     let neutralColorEvidence: String
     let dominantColorRelationship: String
+    let regionEvidence: [VisualRegionEvidence]
+    let regionRelationships: [VisualRegionRelationshipEvidence]
     let protectedRegions: [String]
     let unknowns: [String]
 
@@ -883,8 +991,10 @@ struct VisualSceneUnderstandingResult: Equatable, Sendable {
             "\($0.identifier)=\(String(format: "%.2f", $0.confidence))"
         }.joined(separator: ",")
         let regions = semanticRegions.map(\.traceSummary).joined(separator: " | ")
+        let structuredRegions = regionEvidence.map(\.traceSummary).joined(separator: " | ")
+        let relationships = regionRelationships.map(\.traceSummary).joined(separator: " | ")
         return String(
-            format: "status=%@ subject=%@ subjectConfidence=%.3f center=%.3f/%.3f luma=%.3f contrast=%.3f shadow=%.3f highlight=%.3f labels=[%@] regions=[%@] light=[%@] color=[%@] neutral=[%@] protected=[%@] unknown=[%@]",
+            format: "status=%@ subject=%@ subjectConfidence=%.3f center=%.3f/%.3f luma=%.3f contrast=%.3f shadow=%.3f highlight=%.3f labels=[%@] regions=[%@] structuredRegions=[%@] relationships=[%@] light=[%@] color=[%@] neutral=[%@] protected=[%@] unknown=[%@]",
             status.rawValue,
             primarySubjectDescription,
             subjectConfidence,
@@ -896,6 +1006,8 @@ struct VisualSceneUnderstandingResult: Equatable, Sendable {
             highlightRatio,
             labels,
             regions,
+            structuredRegions,
+            relationships,
             localLightEvidence,
             dominantColorRelationship,
             neutralColorEvidence,
@@ -1000,6 +1112,11 @@ struct VisualSceneUnderstandingResult: Equatable, Sendable {
         if analysis.neutralColorStatistics?.isReliable != true {
             unknowns.append("光源绝对白平衡不确定")
         }
+        let regionEvidence = makeRegionEvidence(from: analysis)
+        let regionRelationships = makeRegionRelationships(
+            from: analysis,
+            evidence: regionEvidence
+        )
         return VisualSceneUnderstandingResult(
             status: status,
             sceneLabels: analysis.semanticLabels,
@@ -1022,9 +1139,184 @@ struct VisualSceneUnderstandingResult: Equatable, Sendable {
             ),
             neutralColorEvidence: analysis.neutralColorStatistics?.traceSummary ?? "unavailable",
             dominantColorRelationship: colorRelationship,
+            regionEvidence: regionEvidence,
+            regionRelationships: regionRelationships,
             protectedRegions: protected,
             unknowns: unknowns
         )
+    }
+
+    private static func makeRegionEvidence(from analysis: PhotoAnalysis) -> [VisualRegionEvidence] {
+        var evidence: [VisualRegionEvidence] = [
+            maskEvidence(.sky, .coreMLPanopticClassMask, analysis.skyMask, analysis.skyStatistics, "Core ML 天空类级区域"),
+            maskEvidence(.ground, .coreMLPanopticClassMask, analysis.groundMask, analysis.groundStatistics, "Core ML 地面类级区域；不自动等同道路"),
+            maskEvidence(.vegetation, .coreMLPanopticClassMask, analysis.vegetationMask, analysis.vegetationStatistics, "Core ML 植被类级区域"),
+            maskEvidence(.water, .coreMLPanopticClassMask, analysis.waterMask, analysis.waterStatistics, "Core ML 水体类级区域"),
+            maskEvidence(.architecture, .coreMLPanopticClassMask, analysis.architectureMask, analysis.architectureStatistics, "Core ML 建筑类级区域"),
+            maskEvidence(.salientSubject, .visionSaliency, analysis.salientSubjectMask, analysis.salientSubjectStatistics, "Vision 显著区域；只表示视觉显著性，不表示对象身份"),
+            maskEvidence(.person, .visionPersonSegmentation, analysis.personMask, nil, "Vision 人物区域；人物存在时仅用于保护与摄影级环境关系"),
+            maskEvidence(.protectedSkin, .visionFaceAndSkinProtection, analysis.skinMask, nil, "人脸/皮肤保护区域；不得用于美颜或外貌修改")
+        ]
+        evidence.append(semanticEvidence(.pathOrRoad, role: .pathOrRoad, analysis: analysis))
+        evidence.append(semanticEvidence(.vehicle, role: .vehicle, analysis: analysis))
+        evidence += [
+            luminanceEvidence(.shadowZone, coverage: analysis.shadowRatio, confidence: 0.92, reason: "由当前照片亮度小于 0.18 的像素比例测得"),
+            luminanceEvidence(.midtoneZone, coverage: analysis.midtoneRatio, confidence: 0.92, reason: "由当前照片中间调像素比例测得"),
+            luminanceEvidence(.highlightZone, coverage: analysis.highlightRatio, confidence: 0.92, reason: "由当前照片亮度大于 0.85 的像素比例测得")
+        ]
+        return evidence
+    }
+
+    private static func maskEvidence(
+        _ kind: VisualRegionKind,
+        _ source: VisualRegionEvidenceSource,
+        _ mask: NormalizedPhotoMask?,
+        _ statistics: PhotoRegionStatistics?,
+        _ reason: String
+    ) -> VisualRegionEvidence {
+        guard let mask, mask.isValid else {
+            return VisualRegionEvidence(
+                kind: kind,
+                source: source,
+                status: .unavailable,
+                confidence: 0,
+                coverage: 0,
+                maskReliability: 0,
+                boundaryDensity: 0,
+                statistics: nil,
+                reason: "\(reason)不可用或未生成",
+                limitations: ["不得据此声明该区域不存在", "不得执行语义局部调整"]
+            )
+        }
+        let quality = mask.qualityAssessment
+        let protectionOnlyEvidence = kind == .person || kind == .protectedSkin
+        let status: VisualEvidenceStatus = quality.isUsable && (statistics != nil || protectionOnlyEvidence)
+            ? .reliable
+            : .uncertain
+        var limitations = ["类级/保护级蒙版不是对象实例或摄影意图证明"]
+        if statistics == nil { limitations.append("缺少区域像素统计，仅可用于保护或可视化") }
+        if !quality.isUsable { limitations.append(quality.reason) }
+        return VisualRegionEvidence(
+            kind: kind,
+            source: source,
+            status: status,
+            confidence: quality.reliability,
+            coverage: mask.activeCoverage,
+            maskReliability: quality.reliability,
+            boundaryDensity: quality.boundaryDensity,
+            statistics: statistics,
+            reason: reason,
+            limitations: limitations
+        )
+    }
+
+    private static func semanticEvidence(
+        _ kind: VisualRegionKind,
+        role: SemanticObjectRole,
+        analysis: PhotoAnalysis
+    ) -> VisualRegionEvidence {
+        guard let region = analysis.semanticObjectRegions
+            .filter({ $0.role == role })
+            .max(by: { $0.confidence < $1.confidence }) else {
+            return VisualRegionEvidence(
+                kind: kind,
+                source: .coreMLPanopticClassMask,
+                status: .unavailable,
+                confidence: 0,
+                coverage: 0,
+                maskReliability: 0,
+                boundaryDensity: 0,
+                statistics: nil,
+                reason: "Core ML 未输出可用的 \(role.rawValue) 类级区域",
+                limitations: ["未识别不代表画面不存在该对象", "禁止使用颜色启发式伪造语义"]
+            )
+        }
+        let quality = region.mask.qualityAssessment
+        let combinedConfidence = min(region.confidence, quality.reliability)
+        let status: VisualEvidenceStatus = quality.isUsable && region.confidence >= 0.5 && region.statistics != nil
+            ? .reliable
+            : .uncertain
+        return VisualRegionEvidence(
+            kind: kind,
+            source: .coreMLPanopticClassMask,
+            status: status,
+            confidence: combinedConfidence,
+            coverage: region.coverage,
+            maskReliability: quality.reliability,
+            boundaryDensity: quality.boundaryDensity,
+            statistics: region.statistics,
+            reason: "Core ML \(role.rawValue) 类级蒙版；不证明实例身份或摄影主体",
+            limitations: ["同类对象会合并", "置信度不足时只可诊断，不可局部执行"]
+        )
+    }
+
+    private static func luminanceEvidence(
+        _ kind: VisualRegionKind,
+        coverage: Float,
+        confidence: Float,
+        reason: String
+    ) -> VisualRegionEvidence {
+        VisualRegionEvidence(
+            kind: kind,
+            source: .measuredLuminanceZone,
+            status: coverage > 0 ? .reliable : .uncertain,
+            confidence: confidence,
+            coverage: coverage,
+            maskReliability: confidence,
+            boundaryDensity: 0,
+            statistics: nil,
+            reason: reason,
+            limitations: ["亮度范围不是语义区域", "只可用于曲线、端点与亮度范围保护"]
+        )
+    }
+
+    private static func makeRegionRelationships(
+        from analysis: PhotoAnalysis,
+        evidence: [VisualRegionEvidence]
+    ) -> [VisualRegionRelationshipEvidence] {
+        func relation(
+            _ identifier: String,
+            _ firstKind: VisualRegionKind,
+            _ secondKind: VisualRegionKind,
+            _ first: PhotoRegionStatistics?,
+            _ second: PhotoRegionStatistics?,
+            interpretation: String
+        ) -> VisualRegionRelationshipEvidence {
+            let firstEvidence = evidence.first { $0.kind == firstKind }
+            let secondEvidence = evidence.first { $0.kind == secondKind }
+            guard
+                firstEvidence?.status == .reliable,
+                secondEvidence?.status == .reliable,
+                let first,
+                let second
+            else {
+                return VisualRegionRelationshipEvidence(
+                    identifier: identifier,
+                    status: .unavailable,
+                    sourceRegion: firstKind,
+                    comparedRegion: secondKind,
+                    luminanceDelta: nil,
+                    saturationDelta: nil,
+                    confidence: 0,
+                    interpretation: "至少一个区域证据不足，禁止推断区域关系"
+                )
+            }
+            return VisualRegionRelationshipEvidence(
+                identifier: identifier,
+                status: .reliable,
+                sourceRegion: firstKind,
+                comparedRegion: secondKind,
+                luminanceDelta: first.averageLuminance - second.averageLuminance,
+                saturationDelta: first.averageSaturation - second.averageSaturation,
+                confidence: min(firstEvidence?.confidence ?? 0, secondEvidence?.confidence ?? 0),
+                interpretation: interpretation
+            )
+        }
+        return [
+            relation("ground-versus-vegetation", .ground, .vegetation, analysis.groundStatistics, analysis.vegetationStatistics, interpretation: "只描述空间平面与植被的实测明暗/颜色关系，不自动决定谁是主体"),
+            relation("sky-versus-ground", .sky, .ground, analysis.skyStatistics, analysis.groundStatistics, interpretation: "用于动态范围与天空保护，不用于凭空生成蓝色或云层"),
+            relation("architecture-versus-ground", .architecture, .ground, analysis.architectureStatistics, analysis.groundStatistics, interpretation: "用于结构层次和中性色保护")
+        ]
     }
 
     private static func semanticPriority(

@@ -44,6 +44,45 @@ struct PhotoProblem: Equatable, Sendable {
     }
 }
 
+enum PhotographyDiagnosisExecutionStatus: String, Equatable, Sendable {
+    case executable
+    case analysisOnly
+    case unavailable
+}
+
+/// Structured photography diagnosis produced from the same measurements used
+/// by the existing decision engine. It does not invent a new renderer or a new
+/// aesthetic rule set; it makes the evidence, boundary and execution state of
+/// each existing problem explicit. See PT-DIAGNOSIS-001.
+struct PhotographyDiagnosisEvidence: Equatable, Sendable {
+    let identifier: String
+    let status: VisualEvidenceStatus
+    let problemKind: PhotoProblemKind?
+    let severity: PhotoProblemSeverity
+    let affectedRegions: [TreatmentRegion]
+    let measurementBasis: String
+    let photographicMeaning: String
+    let adjustmentDirection: String
+    let sideEffects: String
+    let confidence: Float
+    let executionStatus: PhotographyDiagnosisExecutionStatus
+    let knowledgeRuleIDs: [PhotographyKnowledgeRuleID]
+
+    var traceSummary: String {
+        "\(identifier){status=\(status.rawValue);severity=\(severity.title);regions=\(affectedRegions.map(\.rawValue).joined(separator: ","));measurements=\(measurementBasis);meaning=\(photographicMeaning);direction=\(adjustmentDirection);sideEffects=\(sideEffects);confidence=\(String(format: "%.3f", confidence));execution=\(executionStatus.rawValue);rules=\(knowledgeRuleIDs.map(\.rawValue).joined(separator: ","))}"
+    }
+}
+
+struct StructuredPhotographyDiagnosis: Equatable, Sendable {
+    let status: VisualEvidenceStatus
+    let evidence: [PhotographyDiagnosisEvidence]
+    let unknowns: [String]
+
+    var traceSummary: String {
+        "status=\(status.rawValue) evidence=[\(evidence.map(\.traceSummary).joined(separator: " | "))] unknown=[\(unknowns.joined(separator: ","))]"
+    }
+}
+
 enum PhotoProblemKind: String, Equatable, Hashable, Sendable {
     case underexposed
     case overexposed
@@ -107,6 +146,168 @@ final class PhotoProblemDetector {
         detectSceneSpecificProblems(in: analysis, problems: &problems)
 
         return PhotoProblemReport(problems: problems)
+    }
+
+    func structuredDiagnosis(
+        in analysis: PhotoAnalysis,
+        report: PhotoProblemReport? = nil
+    ) -> StructuredPhotographyDiagnosis {
+        let resolvedReport = report ?? detect(in: analysis)
+        let understanding = analysis.visualSceneUnderstanding
+        var diagnosis = resolvedReport.problems.enumerated().map { index, problem in
+            diagnosisEvidence(problem, index: index, analysis: analysis, understanding: understanding)
+        }
+
+        if let relationship = understanding.regionRelationships.first(where: {
+            $0.identifier == "ground-versus-vegetation" && $0.status == .reliable
+        }), let luminanceDelta = relationship.luminanceDelta,
+           let saturationDelta = relationship.saturationDelta,
+           abs(luminanceDelta) >= 0.035 || abs(saturationDelta) >= 0.05 {
+            let groundEvidence = understanding.regionEvidence.first { $0.kind == .ground }
+            let vegetationEvidence = understanding.regionEvidence.first { $0.kind == .vegetation }
+            let isEligibleForLocalAdjustment = groundEvidence?.isExecutableForLocalAdjustment == true
+                && vegetationEvidence?.isExecutableForLocalAdjustment == true
+            diagnosis.append(PhotographyDiagnosisEvidence(
+                identifier: "VISUAL-RELATION-GROUND-VEGETATION",
+                status: .reliable,
+                problemKind: nil,
+                severity: abs(luminanceDelta) >= 0.16 ? .moderate : .mild,
+                affectedRegions: [.ground, .vegetation],
+                measurementBasis: String(
+                    format: "地面-植被亮度差 %+.3f、饱和度差 %+.3f；区域置信度 %.3f。",
+                    luminanceDelta,
+                    saturationDelta,
+                    relationship.confidence
+                ),
+                photographicMeaning: "空间平面与颜色更丰富区域的视觉权重可能失衡；该证据不声明道路或树叶是主体。",
+                adjustmentDirection: "仅在两侧蒙版可靠时建立相对明暗/颜色层级目标，参数由当前像素残差求解。",
+                sideEffects: "错误压暗可能造成死黑、车辆/建筑中性色损伤或蒙版边缘光晕。",
+                confidence: relationship.confidence,
+                // `executable` is an eligibility result at diagnosis time. It is
+                // deliberately not evidence that a parameter was planned or a
+                // pixel was rendered; those later states are recorded by D.
+                executionStatus: isEligibleForLocalAdjustment ? .executable : .analysisOnly,
+                knowledgeRuleIDs: [.structuredRegionEvidence, .evidenceBasedPhotographyDiagnosis, .measuredVisualHierarchy, .regionalColorHarmony]
+            ))
+        }
+
+        var unknowns = understanding.unknowns
+        if diagnosis.isEmpty {
+            unknowns.append("未发现达到当前诊断阈值的摄影技术问题；不等于照片已经具有专业审美")
+        }
+        let status: VisualEvidenceStatus
+        if understanding.status == .unavailable {
+            status = .unavailable
+        } else if diagnosis.contains(where: { $0.status == .reliable }) {
+            status = .reliable
+        } else {
+            status = .uncertain
+        }
+        return StructuredPhotographyDiagnosis(
+            status: status,
+            evidence: diagnosis,
+            unknowns: Array(Set(unknowns)).sorted()
+        )
+    }
+
+    private func diagnosisEvidence(
+        _ problem: PhotoProblem,
+        index: Int,
+        analysis: PhotoAnalysis,
+        understanding: VisualSceneUnderstandingResult
+    ) -> PhotographyDiagnosisEvidence {
+        let regionalEvidence = problem.affectedRegions.compactMap { region in
+            guard let kind = visualKind(for: region) else { return nil }
+            understanding.regionEvidence.first { evidence in
+                evidence.kind == kind
+            }
+        }
+        let requiresLocalMask = problem.affectedRegions.contains { $0 != .global && $0 != .background }
+        let localExecutable = !requiresLocalMask || (
+            !regionalEvidence.isEmpty
+                && regionalEvidence.allSatisfy { $0.isExecutableForLocalAdjustment }
+        )
+        let involvesPerson = problem.affectedRegions.contains(.person)
+        let executionStatus: PhotographyDiagnosisExecutionStatus
+        if involvesPerson {
+            executionStatus = .analysisOnly
+        } else if localExecutable {
+            executionStatus = .executable
+        } else {
+            executionStatus = .analysisOnly
+        }
+        let status: VisualEvidenceStatus = requiresLocalMask && regionalEvidence.isEmpty
+            ? .uncertain
+            : .reliable
+        let metrics = regionalEvidence.map(\.traceSummary).joined(separator: " | ")
+        return PhotographyDiagnosisEvidence(
+            identifier: String(format: "PHOTO-PROBLEM-%03d-%@", index + 1, problem.kind.rawValue.uppercased()),
+            status: status,
+            problemKind: problem.kind,
+            severity: problem.severity,
+            affectedRegions: problem.affectedRegions,
+            measurementBasis: metrics.isEmpty ? problem.evidence : "\(problem.evidence)；\(metrics)",
+            photographicMeaning: photographicMeaning(for: problem.kind),
+            adjustmentDirection: problem.recommendation,
+            sideEffects: problem.risk,
+            confidence: problem.confidence,
+            executionStatus: executionStatus,
+            knowledgeRuleIDs: knowledgeRules(for: problem.kind, local: requiresLocalMask)
+        )
+    }
+
+    private func visualKind(for region: TreatmentRegion) -> VisualRegionKind? {
+        switch region {
+        case .sky: return .sky
+        case .person: return .person
+        case .subject: return .salientSubject
+        case .ground: return .ground
+        case .vegetation: return .vegetation
+        case .water: return .water
+        case .architecture: return .architecture
+        case .global, .background: return nil
+        }
+    }
+
+    private func photographicMeaning(for kind: PhotoProblemKind) -> String {
+        switch kind {
+        case .underexposed: return "整体可读性不足，但暗部噪声会限制恢复幅度。"
+        case .overexposed: return "画面亮度权重过高，可能削弱主体和空间层次。"
+        case .clippedHighlights: return "真实高光和材质接近丢失，不能伪造已经剪切的细节。"
+        case .blockedShadows: return "暗部层次不足；夜景或有意低调影调不能被机械提亮。"
+        case .flatContrast: return "前中后景与主体背景分离不足。"
+        case .harshContrast: return "明暗跨度可能造成高光和暗部同时损伤。"
+        case .coolCast, .warmCast, .greenCast: return "可靠中性色显示可能的综合色偏，但现场氛围必须保留。"
+        case .oversaturated: return "颜色身份和材质可能失真。"
+        case .noiseRisk: return "提亮、清晰度与锐化可能把噪声强化为假纹理。"
+        case .backlitSubject: return "主体与背景亮度关系可能削弱视觉重心；人物只允许摄影级整体处理。"
+        case .regionalUnderexposure: return "可靠区域的中间调不足。"
+        case .regionalFlatness: return "可靠区域内部缺少可读层次。"
+        case .regionalHighlightRisk: return "可靠区域高光可能压缩材质与真实光源形态。"
+        }
+    }
+
+    private func knowledgeRules(
+        for kind: PhotoProblemKind,
+        local: Bool
+    ) -> [PhotographyKnowledgeRuleID] {
+        var rules: [PhotographyKnowledgeRuleID] = [.evidenceBasedPhotographyDiagnosis]
+        if local { rules += [.structuredRegionEvidence, .reliableSemanticMask] }
+        switch kind {
+        case .underexposed, .overexposed, .clippedHighlights, .blockedShadows:
+            rules.append(.toneHistogramRegions)
+        case .flatContrast, .harshContrast, .regionalUnderexposure, .regionalFlatness, .regionalHighlightRisk:
+            rules.append(.measuredToneCurve)
+        case .coolCast, .warmCast, .greenCast:
+            rules.append(.neutralEvidenceWhiteBalance)
+        case .oversaturated:
+            rules.append(.regionalColorHarmony)
+        case .noiseRisk:
+            rules.append(.noiseAwareDetail)
+        case .backlitSubject:
+            rules.append(.portraitSourceRelativeProtection)
+        }
+        return Array(Set(rules))
     }
 
     private func detectExposureProblems(

@@ -1730,6 +1730,90 @@ final class SceneAdaptationTests: XCTestCase {
         XCTAssertEqual(understanding.semanticRegions.first?.role, .foodOrFruit)
     }
 
+    func testVisualUnderstandingExportsReliableAndUnavailableRegionEvidenceExplicitly() throws {
+        let mask = NormalizedPhotoMask(
+            width: 4,
+            height: 4,
+            pixels: Data([0, 255, 255, 0, 255, 255, 255, 255, 255, 255, 255, 255, 0, 255, 255, 0])
+        )
+        let analysis = fixture(
+            luminance: 0.52,
+            contrast: 0.5,
+            saturation: 0.2,
+            labels: ["outdoor"],
+            groundMask: mask,
+            vegetationMask: mask,
+            groundStatistics: regionStatistics(
+                luminance: 0.56,
+                contrast: 0.48,
+                saturation: 0.08,
+                red: 0.55,
+                green: 0.55,
+                blue: 0.54
+            ),
+            vegetationStatistics: regionStatistics(
+                luminance: 0.36,
+                contrast: 0.52,
+                saturation: 0.28,
+                red: 0.42,
+                green: 0.39,
+                blue: 0.2,
+                yellowColorRatio: 0.44,
+                greenColorRatio: 0.18
+            )
+        )
+        let understanding = analysis.visualSceneUnderstanding
+        let ground = try XCTUnwrap(understanding.regionEvidence.first { $0.kind == .ground })
+        let road = try XCTUnwrap(understanding.regionEvidence.first { $0.kind == .pathOrRoad })
+        let relationship = try XCTUnwrap(understanding.regionRelationships.first {
+            $0.identifier == "ground-versus-vegetation"
+        })
+
+        XCTAssertEqual(ground.status, .reliable)
+        XCTAssertTrue(ground.isExecutableForLocalAdjustment)
+        XCTAssertEqual(road.status, .unavailable)
+        XCTAssertFalse(road.isExecutableForLocalAdjustment)
+        XCTAssertEqual(relationship.status, .reliable)
+        XCTAssertEqual(relationship.luminanceDelta ?? 0, 0.2, accuracy: 0.0001)
+        XCTAssertTrue(road.limitations.contains { $0.contains("未识别不代表") })
+    }
+
+    func testStructuredDiagnosisSeparatesMeasuredProblemFromExecutionEvidence() throws {
+        let mask = NormalizedPhotoMask(
+            width: 4,
+            height: 4,
+            pixels: Data([0, 255, 255, 0, 255, 255, 255, 255, 255, 255, 255, 255, 0, 255, 255, 0])
+        )
+        let analysis = fixture(
+            luminance: 0.48,
+            contrast: 0.45,
+            saturation: 0.18,
+            labels: ["outdoor"],
+            groundMask: mask,
+            groundStatistics: regionStatistics(
+                luminance: 0.14,
+                contrast: 0.22,
+                saturation: 0.09,
+                red: 0.14,
+                green: 0.14,
+                blue: 0.13,
+                shadowRatio: 0.62,
+                highlightRatio: 0
+            )
+        )
+        let report = detector.detect(in: analysis)
+        let diagnosis = detector.structuredDiagnosis(in: analysis, report: report)
+        let groundProblem = try XCTUnwrap(diagnosis.evidence.first {
+            $0.problemKind == .regionalUnderexposure && $0.affectedRegions.contains(.ground)
+        })
+
+        XCTAssertEqual(groundProblem.status, .reliable)
+        XCTAssertEqual(groundProblem.executionStatus, .executable)
+        XCTAssertTrue(groundProblem.measurementBasis.contains("ground"))
+        XCTAssertTrue(groundProblem.knowledgeRuleIDs.contains(.evidenceBasedPhotographyDiagnosis))
+        XCTAssertTrue(groundProblem.knowledgeRuleIDs.contains(.reliableSemanticMask))
+    }
+
     func testPersonMaskWithoutFaceStillActivatesStrictIdentityProtection() {
         let personMask = NormalizedPhotoMask(
             width: 4,
@@ -2793,11 +2877,82 @@ final class SceneAdaptationTests: XCTestCase {
         )
 
         XCTAssertNotNil(hierarchy.0.groundVegetationLuminanceDeltaTarget)
+        XCTAssertEqual(
+            hierarchy.0.sourceDiagnosisIdentifier,
+            "VISUAL-RELATION-GROUND-VEGETATION"
+        )
+        XCTAssertEqual(hierarchy.0.sourceDiagnosisEligibility, "eligible")
         XCTAssertNil(balanced.0.groundVegetationLuminanceDeltaTarget)
         XCTAssertGreaterThan(hierarchy.0.measuredIntentStrength, balanced.0.measuredIntentStrength)
         XCTAssertLessThan(hierarchyGround.exposureEV, balancedGround.exposureEV)
         XCTAssertTrue(hierarchy.1.intentionalNeutralToneRegions.contains(.ground))
-        XCTAssertEqual(hierarchy.0.intentSelectionStatus, "measured-hierarchy-hypothesis-human-review-required")
+        XCTAssertEqual(
+            hierarchy.0.intentSelectionStatus,
+            "structured-diagnosis-eligible-measured-hierarchy-human-review-required"
+        )
+        XCTAssertTrue(hierarchy.1.evidence.contains {
+            $0.contains("diagnosisLifecycle=VISUAL-RELATION-GROUND-VEGETATION")
+                && $0.contains("eligible=true")
+                && $0.contains("planned=true")
+                && $0.contains("executed=pending-render")
+        })
+    }
+
+    func testUnreliableVegetationMaskCannotManufactureStructuredRelationshipTarget() {
+        let groundMask = NormalizedPhotoMask(
+            width: 4,
+            height: 4,
+            pixels: Data([255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0])
+        )
+        // Full-frame coverage is deliberately unusable as a bounded local mask.
+        let vegetationMask = NormalizedPhotoMask(
+            width: 4,
+            height: 4,
+            pixels: Data(repeating: 255, count: 16)
+        )
+        let analysis = fixture(
+            luminance: 0.58,
+            contrast: 0.66,
+            saturation: 0.18,
+            labels: ["outdoor"],
+            groundMask: groundMask,
+            vegetationMask: vegetationMask,
+            groundStatistics: regionStatistics(
+                luminance: 0.69,
+                contrast: 0.58,
+                saturation: 0.07,
+                red: 0.55,
+                green: 0.54,
+                blue: 0.49
+            ),
+            vegetationStatistics: regionStatistics(
+                luminance: 0.52,
+                contrast: 0.72,
+                saturation: 0.29,
+                red: 0.47,
+                green: 0.42,
+                blue: 0.23,
+                yellowColorRatio: 0.5,
+                greenColorRatio: 0.2
+            )
+        )
+        let problems = detector.detect(in: analysis)
+        let diagnosis = detector.structuredDiagnosis(in: analysis, report: problems)
+        let profile = PhotographyTargetProfile.measuredBaseline(
+            analysis: analysis,
+            problems: problems
+        )
+        let plan = AestheticPhotographyPlanner().makePlan(
+            analysis: analysis,
+            problems: problems,
+            targetProfile: profile,
+            structuredDiagnosis: diagnosis
+        )
+
+        XCTAssertFalse(vegetationMask.qualityAssessment.isUsable)
+        XCTAssertNil(plan.sourceDiagnosisIdentifier)
+        XCTAssertEqual(plan.sourceDiagnosisEligibility, "rejected-or-unavailable")
+        XCTAssertNil(plan.groundVegetationLuminanceDeltaTarget)
     }
 
     func testNeutralLuminanceAttributionKeepsThresholdAndProtectsNonToneRegions() {
