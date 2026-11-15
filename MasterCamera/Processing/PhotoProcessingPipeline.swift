@@ -585,6 +585,7 @@ final class PhotoProcessingPipeline {
     ) -> AutomaticDirectorV2ValidationResult? {
         guard isDiagnosticImport else { return nil }
         let start = ProcessInfo.processInfo.systemUptime
+        let startingMemory = Self.memoryFootprint()
         let plans = AutomaticPhotographyDirectorV2().makeCandidatePlans(
             analysis: analysis,
             problems: problems,
@@ -763,6 +764,9 @@ final class PhotoProcessingPipeline {
         }
         details.append("V2 AUTO selected=\(selection.selectedIdentifier ?? "none") provisional=\(selection.provisional) exploration=\(exploration.status.rawValue) reason=\(selection.reason)")
         let duration = Self.milliseconds(ProcessInfo.processInfo.systemUptime - start)
+        let finishingMemory = Self.memoryFootprint()
+        let memoryEvidence = Self.memorySummary(start: startingMemory, end: finishingMemory)
+        details.append("V2 memoryEvidence=\(memoryEvidence)")
         return AutomaticDirectorV2ValidationResult(
             previews: previews,
             evidence: evidence,
@@ -771,7 +775,7 @@ final class PhotoProcessingPipeline {
                 name: "Automatic Photography Director V2",
                 durationMilliseconds: duration,
                 executed: !rendered.isEmpty,
-                detail: "\(rendered.count)/\(plans.count) 个全分辨率候选；AUTO=\(selection.selectedIdentifier ?? "none")；exploration=\(exploration.status.rawValue)；provisional=true"
+                detail: "\(rendered.count)/\(plans.count) 个全分辨率候选；AUTO=\(selection.selectedIdentifier ?? "none")；exploration=\(exploration.status.rawValue)；provisional=true；\(memoryEvidence)"
             )
         )
     }

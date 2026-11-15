@@ -634,6 +634,14 @@ enum PhotographySelectionBasis: String, Equatable, Sendable {
     case humanPreferenceCalibrated
 }
 
+/// The labeled evidence page may show AUTO, while the blind page must never
+/// reveal or duplicate the provisional automatic selection. Keeping this in
+/// the decision core makes the privacy/experimental boundary contract-testable.
+enum DiagnosticBatchComparisonPolicy {
+    static let blindCandidateIdentifiers: Set<String> = ["B", "V2-1", "V2-2", "V2-3"]
+    static let labeledComparisonIdentifiers = ["A", "B", "V2-1", "V2-2", "V2-3", "V2-AUTO"]
+}
+
 /// PT-PREF-002: candidate generation and candidate selection are different
 /// failure modes.  Technical safety can reject a candidate, but it cannot say
 /// that a photograph is aesthetically worthwhile.  Likewise, a high engineering

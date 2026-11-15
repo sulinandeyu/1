@@ -154,6 +154,20 @@ final class CameraViewModel: ObservableObject {
                             eligibleForPreference: false
                         ))
 
+                        if !processed.editedImageData.isEmpty {
+                            let formalBURL = imageDirectory.appendingPathComponent("B_formal_output.jpg")
+                            try processed.editedImageData.write(to: formalBURL, options: .atomic)
+                            let formalBStatus = processed.qualityCheck?.status.rawValue ?? "notRun"
+                            blindImages.append(DiagnosticBatchImageFile(
+                                identifier: "B",
+                                fileURL: formalBURL,
+                                technicalStatus: formalBStatus,
+                                eligibleForPreference: processed.qualityCheck.map {
+                                    $0.status != .failed
+                                } ?? false
+                            ))
+                        }
+
                         for identifier in ["D", "E1", "E2", "V2-1", "V2-2", "V2-3", "V2-AUTO"] {
                             guard let candidate = processed.diagnosticCandidates.first(where: { $0.identifier == identifier }) else {
                                 continue

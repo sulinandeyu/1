@@ -37,5 +37,6 @@ jobs:
             -scheme MasterCamera \
             -configuration Debug \
             -sdk iphonesimulator \
+            GIT_COMMIT_SHA="$GITHUB_SHA" \
             CODE_SIGNING_ALLOWED=NO
 

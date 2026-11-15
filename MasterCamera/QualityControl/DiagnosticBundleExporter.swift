@@ -1,5 +1,7 @@
 import CryptoKit
+import Darwin
 import Foundation
+import ImageIO
 import UIKit
 
 /// Builds a self-contained, uncompressed ZIP so TestFlight evidence can be
@@ -43,6 +45,10 @@ final class DiagnosticBundleExporter {
 
         add("images/A_original.jpg", photo.originalImageData, "A source original")
         add("images/B_formal_output.jpg", photo.editedImageData, "B formal algorithm output")
+        var renderedImages: [String: Data] = [
+            "A": photo.originalImageData,
+            "B": photo.editedImageData
+        ]
 
         let comparisonPrefixes = [
             "A ", "B ", "C ", "D ", "E1 ", "E2 ", "M 人工参数真实渲染",
@@ -56,6 +62,7 @@ final class DiagnosticBundleExporter {
                 in: photo.processingStagePreviews
             )
             if let preview {
+                renderedImages[identifier] = preview.imageData
                 add(
                     "images/\(candidateFileStem(identifier)).jpg",
                     preview.imageData,
@@ -70,6 +77,24 @@ final class DiagnosticBundleExporter {
                     Data("state=unavailable\nreason=\(reason)\n".utf8),
                     "\(identifier) unavailable marker"
                 )
+            }
+        }
+
+        if let analysis = photo.analysis, !analysis.faceRegions.isEmpty {
+            for (faceIndex, faceRegion) in analysis.faceRegions.prefix(4).enumerated() {
+                for identifier in ["A", "B", "V2-1", "V2-2", "V2-3", "V2-AUTO"] {
+                    guard let imageData = renderedImages[identifier],
+                          let crop = Self.faceCropJPEG(
+                            imageData,
+                            normalizedVisionRegion: faceRegion
+                          )
+                    else { continue }
+                    add(
+                        "portrait_100pct/face_\(faceIndex + 1)_\(identifier).jpg",
+                        crop,
+                        "native-resolution face-region crop for source-relative portrait review"
+                    )
+                }
             }
         }
 
@@ -134,12 +159,17 @@ final class DiagnosticBundleExporter {
         )
 
         let inventory = entries.map { entry -> [String: Any] in
-            [
+            var record: [String: Any] = [
                 "path": entry.path,
                 "role": entry.role,
                 "bytes": entry.data.count,
                 "sha256": Self.sourceSHA256(entry.data)
             ]
+            if let size = Self.encodedPixelSize(entry.data) {
+                record["encodedPixelWidth"] = size.width
+                record["encodedPixelHeight"] = size.height
+            }
+            return record
         }
         let metadata: [String: Any] = [
             "schemaVersion": 2,
@@ -149,10 +179,12 @@ final class DiagnosticBundleExporter {
             "app": [
                 "name": Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String ?? "小苏相机",
                 "version": Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "unknown",
-                "build": Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "unknown"
+                "build": Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "unknown",
+                "gitCommitSha": Bundle.main.object(forInfoDictionaryKey: "XGitCommitSHA") as? String ?? "unknown"
             ],
             "device": [
                 "model": UIDevice.current.model,
+                "hardwareIdentifier": Self.deviceHardwareIdentifier(),
                 "name": UIDevice.current.name,
                 "systemName": UIDevice.current.systemName,
                 "systemVersion": UIDevice.current.systemVersion
@@ -595,6 +627,65 @@ final class DiagnosticBundleExporter {
         return String(value.prefix(96))
     }
 
+    private static func encodedPixelSize(_ data: Data) -> (width: Int, height: Int)? {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              let width = properties[kCGImagePropertyPixelWidth] as? NSNumber,
+              let height = properties[kCGImagePropertyPixelHeight] as? NSNumber
+        else { return nil }
+        return (width.intValue, height.intValue)
+    }
+
+    /// Vision rectangles use a lower-left origin. The JPEG crop is made from
+    /// an orientation-normalized native-pixel canvas and is never resized, so
+    /// reviewers can inspect face texture at 100% rather than a thumbnail.
+    private static func faceCropJPEG(
+        _ data: Data,
+        normalizedVisionRegion: NormalizedPhotoRegion
+    ) -> Data? {
+        guard let image = UIImage(data: data) else { return nil }
+        let pixelSize = CGSize(
+            width: image.size.width * image.scale,
+            height: image.size.height * image.scale
+        )
+        guard pixelSize.width >= 1, pixelSize.height >= 1 else { return nil }
+        let normalizedX = min(1, max(0, CGFloat(normalizedVisionRegion.x)))
+        let normalizedY = min(1, max(0, CGFloat(normalizedVisionRegion.y)))
+        let normalizedWidth = min(1, max(0, CGFloat(normalizedVisionRegion.width)))
+        let normalizedHeight = min(1, max(0, CGFloat(normalizedVisionRegion.height)))
+        let crop = CGRect(
+            x: normalizedX * pixelSize.width,
+            y: min(1, max(0, 1 - normalizedY - normalizedHeight)) * pixelSize.height,
+            width: normalizedWidth * pixelSize.width,
+            height: normalizedHeight * pixelSize.height
+        ).integral.intersection(CGRect(origin: .zero, size: pixelSize))
+        guard crop.width >= 2, crop.height >= 2 else { return nil }
+        let format = UIGraphicsImageRendererFormat.default()
+        format.scale = 1
+        format.opaque = true
+        let cropped = UIGraphicsImageRenderer(size: crop.size, format: format).image { _ in
+            image.draw(in: CGRect(
+                x: -crop.minX,
+                y: -crop.minY,
+                width: pixelSize.width,
+                height: pixelSize.height
+            ))
+        }
+        return cropped.jpegData(compressionQuality: 0.96)
+    }
+
+    private static func deviceHardwareIdentifier() -> String {
+        var size = 0
+        guard sysctlbyname("hw.machine", nil, &size, nil, 0) == 0, size > 1 else {
+            return "unavailable"
+        }
+        var value = [CChar](repeating: 0, count: size)
+        guard sysctlbyname("hw.machine", &value, &size, nil, 0) == 0 else {
+            return "unavailable"
+        }
+        return String(cString: value)
+    }
+
     private static let fileTimestamp: DateFormatter = {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
@@ -712,7 +803,8 @@ final class DiagnosticBatchBundleExporter {
         小苏相机批量摄影候选取证包
 
         - 每个 cases/.../diagnostic.zip 对应一张独立原图。
-        - 子 ZIP 内包含同源 A/B/D/E1/E2/M 全分辨率图像、实际参数、蒙版与质检证据。
+        - 子 ZIP 内包含同源 A/B/D/E1/E2/M/V2-1/V2-2/V2-3/V2-AUTO 全分辨率图像、实际参数、蒙版与质检证据。
+        - comparison.html 明示 A、当前正式 B、三张 V2 与暂定 AUTO；blind-compare.html 只匿名比较 B 与 V2-1/2/3，绝不显示或泄漏 AUTO 选择。
         - 图像由 iPhone 上的生产 PhotoProcessingPipeline 与 Apple Core Image 串行生成。
         - 技术失败候选仍保留取证，但不得视为正式可用候选。
         - 本文件不包含、推断或伪造任何人工摄影偏好。
@@ -726,6 +818,11 @@ final class DiagnosticBatchBundleExporter {
                 path: "blind-compare.html",
                 data: Data(blindCompareHTML(cases: cases).utf8),
                 role: "direct-open human preference page"
+            ),
+            DiagnosticExportEntry(
+                path: "comparison.html",
+                data: Data(comparisonHTML(cases: cases).utf8),
+                role: "labeled A/B/V2/AUTO evidence comparison"
             )
         ]
         var fileEntries = cases.map { item in
@@ -765,6 +862,7 @@ final class DiagnosticBatchBundleExporter {
         let stem: String
         switch image.identifier {
         case "A": stem = "A_original.jpg"
+        case "B": stem = "B_formal_output.jpg"
         case "D": stem = "D_automatic.jpg"
         case "E1": stem = "E1_spatial_emphasis.jpg"
         case "E2": stem = "E2_restrained_depth.jpg"
@@ -780,7 +878,9 @@ final class DiagnosticBatchBundleExporter {
                 "caseId": String(format: "case_%02d", item.index),
                 "sourceSha256": item.sourceHash,
                 "original": original.map { blindImagePath($0, in: item) } ?? "",
-                "candidates": item.blindImages.filter { $0.identifier != "A" }.map { image in
+                "candidates": item.blindImages.filter {
+                    DiagnosticBatchComparisonPolicy.blindCandidateIdentifiers.contains($0.identifier)
+                }.map { image in
                     [
                         "id": image.identifier,
                         "image": blindImagePath(image, in: item),
@@ -798,10 +898,37 @@ final class DiagnosticBatchBundleExporter {
         <!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
         <title>小苏相机跨场景候选盲测</title><style>
         body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;margin:0;background:#101114;color:#f4f4f4}main{max-width:1500px;margin:auto;padding:24px}select,button,textarea{font:inherit;padding:10px;border-radius:9px;border:1px solid #555;background:#202228;color:#fff}button{cursor:pointer}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:18px}.card{background:#191b20;padding:12px;border-radius:14px}.card img{width:100%;max-height:68vh;object-fit:contain;background:#000}.failed{border:2px solid #d85b5b}.eligible{border:2px solid #4d9c72}.badge{font-size:13px;color:#ccc;min-height:38px}.actions{display:flex;flex-wrap:wrap;gap:10px;margin:20px 0}.warn{color:#ffcc80}textarea{width:100%;min-height:80px;box-sizing:border-box}pre{white-space:pre-wrap;background:#17181c;padding:12px;border-radius:10px}
-        </style></head><body><main><h1>7 图 D/E1/E2 真实候选盲测</h1><p class="warn">只有技术合格候选可被选为最好。技术失败图仍显示用于诊断，不代表可进入正式 B。页面不会自动填写或伪造人工偏好。</p>
+        </style></head><body><main><h1>7 图正式 B / V2 真实候选盲测</h1><p class="warn">候选顺序每次随机；页面不显示候选名称，也不包含或泄漏 V2-AUTO 的选择结果。只有技术合格候选可被选为最好，页面不会自动填写或伪造人工偏好。</p>
         <label>照片：<select id="case"></select></label><section><h2>原图</h2><img id="original" style="max-width:520px;max-height:60vh;object-fit:contain;background:#000"></section><h2>匿名候选</h2><div id="candidates" class="grid"></div>
         <div class="actions"><button data-special="all_bad">全部不好</button><button data-special="difference_not_obvious">差异不明显</button></div><textarea id="issues" placeholder="记录偏色、肤色、黑位、光晕、过饱和、局部错误或其他原因"></textarea><div class="actions"><button id="download">下载人工评价 JSON</button></div><pre id="status"></pre>
         <script>const cases=\(json);let current=null,order=[],results=[];const $=id=>document.getElementById(id);function shuffle(x){return [...x].sort(()=>Math.random()-.5)}function render(){current=cases.find(x=>x.caseId===$('case').value);$('original').src=current.original;order=shuffle(current.candidates);$('candidates').innerHTML='';order.forEach((c,i)=>{const d=document.createElement('div');d.className='card '+(c.eligible?'eligible':'failed');const b=c.eligible?`<button data-win="${i}">选择候选 ${i+1}</button>`:'<strong>技术失败，仅供查看，不可选</strong>';d.innerHTML=`<h3>候选 ${i+1}</h3><img src="${c.image}"><p class="badge">技术状态：${c.technicalStatus}</p>${b}`;$('candidates').appendChild(d)});document.querySelectorAll('[data-win]').forEach(b=>b.onclick=()=>record('best',order[Number(b.dataset.win)]));$('status').textContent=`SHA-256：${current.sourceSha256}\n尚未记录本图人工评价。`;}function record(choice,winner){const entry={schemaVersion:1,caseId:current.caseId,sourceSha256:current.sourceSha256,recordedAt:new Date().toISOString(),blindOrder:order.map(x=>({slot:order.indexOf(x)+1,technicalStatus:x.technicalStatus,eligible:x.eligible})),choice,winner:winner?winner.id:null,issues:$('issues').value.trim(),source:'iphone_batch_core_image_blind_review'};results=results.filter(x=>x.caseId!==current.caseId);results.push(entry);$('status').textContent=`已记录 ${results.length}/${cases.length} 条。本图选择：${choice}${winner?'；揭盲='+winner.id:''}`;}document.querySelectorAll('[data-special]').forEach(b=>b.onclick=()=>record(b.dataset.special,null));$('download').onclick=()=>{const blob=new Blob([JSON.stringify({schemaVersion:1,createdAt:new Date().toISOString(),humanEntered:true,results},null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='xiaosu-human-preference.json';a.click();URL.revokeObjectURL(a.href)};cases.forEach((c,i)=>{const o=document.createElement('option');o.value=c.caseId;o.textContent=`照片 ${i+1}`;$('case').appendChild(o)});$('case').onchange=render;if(cases.length)render();</script></main></body></html>
+        """
+    }
+
+    private func comparisonHTML(cases: [DiagnosticBatchCase]) -> String {
+        let sections = cases.map { item -> String in
+            let cards = DiagnosticBatchComparisonPolicy.labeledComparisonIdentifiers.compactMap { identifier -> String? in
+                guard let image = item.blindImages.first(where: { $0.identifier == identifier }) else {
+                    return nil
+                }
+                let path = blindImagePath(image, in: item)
+                return """
+                <article class="card"><h3>\(identifier)</h3><img src="\(path)">
+                <p>技术状态：\(image.technicalStatus)</p></article>
+                """
+            }.joined(separator: "\n")
+            return """
+            <section><h2>照片 \(item.index) · SHA-256 \(item.sourceHash)</h2>
+            <div class="grid">\(cards)</div></section>
+            """
+        }.joined(separator: "\n")
+        return """
+        <!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+        <title>小苏相机 iPhone A/B/V2 对照</title><style>
+        body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;margin:0;background:#101114;color:#f4f4f4}main{max-width:1700px;margin:auto;padding:24px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:16px}.card{background:#191b20;padding:12px;border-radius:14px}.card img{width:100%;max-height:70vh;object-fit:contain;background:#000}h2{margin-top:42px;overflow-wrap:anywhere}p{color:#ccc}.warn{color:#ffcc80}
+        </style></head><body><main><h1>同源 iPhone A / 正式 B / V2 对照</h1>
+        <p class="warn">V2-AUTO 是暂定工程选择，不代表摄影审美通过；是否更好必须通过独立盲测评价。</p>
+        \(sections)</main></body></html>
         """
     }
 

@@ -3885,6 +3885,17 @@ final class SceneAdaptationTests: XCTestCase {
         XCTAssertTrue(selection.reason.contains("人工偏好"))
     }
 
+    func testV2BatchBlindPolicyIncludesCurrentBButNeverLeaksAutoSelection() {
+        XCTAssertEqual(
+            DiagnosticBatchComparisonPolicy.blindCandidateIdentifiers,
+            Set(["B", "V2-1", "V2-2", "V2-3"])
+        )
+        XCTAssertFalse(DiagnosticBatchComparisonPolicy.blindCandidateIdentifiers.contains("A"))
+        XCTAssertFalse(DiagnosticBatchComparisonPolicy.blindCandidateIdentifiers.contains("V2-AUTO"))
+        XCTAssertTrue(DiagnosticBatchComparisonPolicy.labeledComparisonIdentifiers.contains("A"))
+        XCTAssertTrue(DiagnosticBatchComparisonPolicy.labeledComparisonIdentifiers.contains("V2-AUTO"))
+    }
+
     private func decision(for analysis: PhotoAnalysis) -> PhotographyDecision {
         engine.makeDecision(for: analysis, problems: detector.detect(in: analysis))
     }
