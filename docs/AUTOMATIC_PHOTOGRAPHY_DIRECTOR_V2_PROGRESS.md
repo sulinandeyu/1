@@ -4,9 +4,10 @@
 
 ## 当前阶段
 
-V2 最小端到端实现已接入隔离诊断路径，Apple iOS Build #118 已在提交
-`6c2e79b5df9f80f341ef013d77d159b35f93cfca` 上成功完成 `swift test` 与
-iOS Simulator 构建。正式 B 未替换；V2 尚未经过 iPhone 人工摄影审美验收。
+V2 最小端到端实现已接入隔离诊断路径。最新摄影源码提交
+`d15c3cf5316da753b572bec68e0b6531d50d62e4` 已通过 Apple iOS Build #119：
+`swift test` 步骤与 iOS Simulator 构建均成功。正式 B 未替换；V2 尚未经过
+iPhone 人工摄影审美验收。
 
 ## 已完成
 
@@ -37,8 +38,8 @@ Windows 投影只验证当前 V2 意图和参数能否产生可测差异，不�
 
 ## 正在验证
 
-- 新增的 V2 全分辨率候选差异门与两项契约测试需要在最新提交上重新执行 Apple CI。
 - 私人七图仍需通过 iPhone 相册诊断取得真实 Core Image 全分辨率结果；私人素材不会提交公开仓库或公开构建产物。
+- Build #119：<https://github.com/sulinandeyu/1/actions/runs/43661980959>；工作流没有公开单独汇总测试数量，因此只记录可核验的步骤结论，不编造数量。
 
 ## 尚未完成
 
