@@ -694,7 +694,9 @@ struct PhotographyTargetExplorationAssessment: Equatable, Sendable {
 struct PhotographyTargetExplorationValidator {
     func assess(
         expectedIdentifiers: [String],
-        pairDifferences: [PhotographyCandidatePairDifference]
+        pairDifferences: [PhotographyCandidatePairDifference],
+        minimumDistinctPairCount: Int = 2,
+        requiredDistinctPairs: [[String]] = [["E1", "E2"]]
     ) -> PhotographyTargetExplorationAssessment {
         let expectedPairs = max(0, expectedIdentifiers.count * (expectedIdentifiers.count - 1) / 2)
         guard pairDifferences.count == expectedPairs else {
@@ -705,10 +707,13 @@ struct PhotographyTargetExplorationValidator {
             )
         }
         let distinctPairs = pairDifferences.filter(\.isSubstantivelyDistinct)
-        let experimentalPairIsDistinct = pairDifferences.first {
-            Set([$0.firstIdentifier, $0.secondIdentifier]) == Set(["E1", "E2"])
-        }?.isSubstantivelyDistinct == true
-        guard distinctPairs.count >= 2, experimentalPairIsDistinct else {
+        let requiredPairsAreDistinct = requiredDistinctPairs.allSatisfy { requiredPair in
+            guard requiredPair.count == 2 else { return false }
+            return pairDifferences.first {
+                Set([$0.firstIdentifier, $0.secondIdentifier]) == Set(requiredPair)
+            }?.isSubstantivelyDistinct == true
+        }
+        guard distinctPairs.count >= minimumDistinctPairCount, requiredPairsAreDistinct else {
             return PhotographyTargetExplorationAssessment(
                 status: .invalidInsufficientRenderedDifference,
                 pairDifferences: pairDifferences,

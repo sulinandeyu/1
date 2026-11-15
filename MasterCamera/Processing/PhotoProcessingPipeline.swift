@@ -707,6 +707,11 @@ final class PhotoProcessingPipeline {
             }
         }
 
+        let exploration = evaluateAutomaticDirectorV2Exploration(
+            rendered: rendered,
+            analysis: analysis
+        )
+        details.append(exploration.detailLine)
         let selection = AestheticCandidateSelectorV2().select(
             candidates: rendered.map(\.selectorEvidence)
         )
@@ -729,9 +734,11 @@ final class PhotoProcessingPipeline {
                 fallback: [],
                 unavailable: [],
                 qualityStatus: selected.quality.status.rawValue,
-                targetQualityStatus: "provisional_intent_alignment",
-                humanAestheticStatus: "pending_human_review",
-                assessmentEvidence: [selection.reason],
+                targetQualityStatus: "candidateExploration=\(exploration.status.rawValue)",
+                humanAestheticStatus: exploration.status == .invalidInsufficientRenderedDifference
+                    ? "candidate_generation_failed"
+                    : "pending_human_review",
+                assessmentEvidence: [selection.reason, exploration.detailLine],
                 parameterLifecycle: [],
                 durationMilliseconds: nil
             ))
@@ -754,7 +761,7 @@ final class PhotoProcessingPipeline {
                 durationMilliseconds: nil
             ))
         }
-        details.append("V2 AUTO selected=\(selection.selectedIdentifier ?? "none") provisional=\(selection.provisional) reason=\(selection.reason)")
+        details.append("V2 AUTO selected=\(selection.selectedIdentifier ?? "none") provisional=\(selection.provisional) exploration=\(exploration.status.rawValue) reason=\(selection.reason)")
         let duration = Self.milliseconds(ProcessInfo.processInfo.systemUptime - start)
         return AutomaticDirectorV2ValidationResult(
             previews: previews,
@@ -764,8 +771,69 @@ final class PhotoProcessingPipeline {
                 name: "Automatic Photography Director V2",
                 durationMilliseconds: duration,
                 executed: !rendered.isEmpty,
-                detail: "\(rendered.count)/\(plans.count) 个全分辨率候选；AUTO=\(selection.selectedIdentifier ?? "none")；provisional=true"
+                detail: "\(rendered.count)/\(plans.count) 个全分辨率候选；AUTO=\(selection.selectedIdentifier ?? "none")；exploration=\(exploration.status.rawValue)；provisional=true"
             )
+        )
+    }
+
+    /// PT-V2-LOOK-001: intent and parameter differences are not accepted as
+    /// candidate diversity. Only the same-source full-resolution Core Image
+    /// outputs can establish that the three V2 intentions produced materially
+    /// different photographs.
+    private func evaluateAutomaticDirectorV2Exploration(
+        rendered: [AutomaticDirectorV2RenderedCandidate],
+        analysis: PhotoAnalysis
+    ) -> PhotographyTargetExplorationAssessment {
+        let expected = ["V2-1", "V2-2", "V2-3"]
+        var differences: [PhotographyCandidatePairDifference] = []
+        let byIdentifier = Dictionary(uniqueKeysWithValues: rendered.map {
+            ($0.plan.identifier, $0.preview.imageData)
+        })
+        guard expected.allSatisfy({ byIdentifier[$0] != nil }) else {
+            return PhotographyTargetExplorationValidator().assess(
+                expectedIdentifiers: expected,
+                pairDifferences: differences,
+                minimumDistinctPairCount: 3,
+                requiredDistinctPairs: []
+            )
+        }
+        for firstIndex in 0..<(expected.count - 1) {
+            for secondIndex in (firstIndex + 1)..<expected.count {
+                let firstIdentifier = expected[firstIndex]
+                let secondIdentifier = expected[secondIndex]
+                guard let firstData = byIdentifier[firstIdentifier],
+                      let secondData = byIdentifier[secondIdentifier]
+                else { continue }
+                do {
+                    let impact = try qualityService.compareCandidateOutputs(
+                        firstData: firstData,
+                        secondData: secondData
+                    )
+                    let regional = try qualityService.measureRegionImpacts(
+                        originalData: firstData,
+                        editedData: secondData,
+                        analysis: analysis
+                    )
+                    differences.append(PhotographyCandidatePairDifference(
+                        firstIdentifier: firstIdentifier,
+                        secondIdentifier: secondIdentifier,
+                        rgbMeanAbsoluteDifference: impact.normalizedMeanAbsoluteRGBDifference,
+                        changedPixelRatio: impact.changedPixelRatio,
+                        maximumRegionalLuminanceDifference: regional.map { abs($0.luminanceDelta) }.max() ?? 0,
+                        maximumRegionalColorDifference: regional.map(\.colorDelta).max() ?? 0
+                    ))
+                } catch {
+                    AppLogger.imageEngine.error(
+                        "V2 真实像素差异测量失败 \(firstIdentifier)/\(secondIdentifier)：\(error.localizedDescription)"
+                    )
+                }
+            }
+        }
+        return PhotographyTargetExplorationValidator().assess(
+            expectedIdentifiers: expected,
+            pairDifferences: differences,
+            minimumDistinctPairCount: 3,
+            requiredDistinctPairs: []
         )
     }
 

@@ -281,6 +281,8 @@ final class DiagnosticBundleExporter {
                 "candidates": v2Records,
                 "autoStates": v2Auto?.states.map(\.rawValue) ?? [DiagnosticCandidateState.unavailable.rawValue],
                 "autoEvidence": v2Auto?.executed ?? [],
+                "autoAssessmentEvidence": v2Auto?.assessmentEvidence ?? [],
+                "candidateExplorationStatus": v2Auto?.targetQualityStatus ?? "not_measured",
                 "provisional": true,
                 "humanAestheticStatus": v2Auto?.humanAestheticStatus ?? "not_evaluated",
                 "claimBoundary": "V2-AUTO is an engineering proxy selection, not evidence of professional aesthetic success."

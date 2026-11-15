@@ -4,7 +4,9 @@
 
 ## 当前阶段
 
-V2 最小端到端实现已接入隔离诊断路径，尚未替换正式 B，也尚未经过 iPhone 人工摄影审美验收。
+V2 最小端到端实现已接入隔离诊断路径，Apple iOS Build #118 已在提交
+`6c2e79b5df9f80f341ef013d77d159b35f93cfca` 上成功完成 `swift test` 与
+iOS Simulator 构建。正式 B 未替换；V2 尚未经过 iPhone 人工摄影审美验收。
 
 ## 已完成
 
@@ -17,24 +19,40 @@ V2 最小端到端实现已接入隔离诊断路径，尚未替换正式 B，也
 - 诊断 ZIP 与批量盲测导出已增加 V2 候选标识；正式拍照、正式 B、原图保存路径未切换。
 - 新增 `PT-V2-INTENT-001`、`PT-V2-LOOK-001`、`PT-V2-SELECT-001` 的知识来源、输入、适用边界、副作用和验证方式。
 - 新增测量驱动、候选差异、人物保护和技术门后选择的 Swift 契约测试。
+- 新增本地七图投影工具 `scripts/run_automatic_photography_director_v2_projection.py`；它不读取专业目标 T，按当前照片测量生成 V2-1/V2-2/V2-3、暂定 AUTO、实际参数、区域代理蒙版、技术指标、对照页与盲评页。
+- 七图本地输出位于 `output/automatic_photography_director_v2/`；`comparison.html` 可直接对照原图、历史可比结果（仅在存在时）、V2 候选和 AUTO，`blind-compare.html` 不预填人工偏好。
+- 将同源全分辨率 V2 候选的真实像素差异检查接入诊断链；只有三组配对均达到现有区域/像素差异门槛时才记录为有效目标探索，否则明确记录 `candidate_generation_failed`。该检查不把“差异足够”解释为“更好看”。
+
+## 七图本地投影结果
+
+Windows 投影只验证当前 V2 意图和参数能否产生可测差异，不冒充 Core Image、Vision 或 iPhone 结果。
+
+- 建筑、室内混合光、阴天植被：三组候选配对达到本地差异门槛（3/7）。
+- 秋季道路：V2-2/V2-3 RGB MAE 约 `0.0109`，候选生成差异不足。
+- 柿子庭院：V2-2/V2-3 RGB MAE 约 `0.0087`，候选生成差异不足。
+- 自然人物：最小配对 RGB MAE 约 `0.0030`；人物保护生效，但三种摄影表达不足。
+- 人物与车辆：最小配对 RGB MAE 约 `0.0078`；人物保护生效，但三种摄影表达不足。
+- 以上 4/7 记录为 `candidate_generation_failed_difference_too_small`；不得把暂定 AUTO 当作摄影审美成功。
+- 当前七图均没有真实人工偏好记录；所有 AUTO 仍为 `pending_human_review`。
 
 ## 正在验证
 
-- GitHub Actions Apple 环境的 Swift 编译、测试与 iOS Simulator 构建。
-- 七张本地真实照片的 Windows V2 投影、实际参数、技术指标、对照页和盲评入口。Windows 输出只作为开发投影，不冒充 Core Image 或 iPhone 结果。
+- 新增的 V2 全分辨率候选差异门与两项契约测试需要在最新提交上重新执行 Apple CI。
+- 私人七图仍需通过 iPhone 相册诊断取得真实 Core Image 全分辨率结果；私人素材不会提交公开仓库或公开构建产物。
 
 ## 尚未完成
 
-- 七张私人原图尚未产生本版真实 Apple Core Image V2 全分辨率成片；它们不能提交公开仓库或公开构建产物。
+- 七张私人原图尚未产生本版真实 Apple Core Image V2 全分辨率成片；Windows 输出均带有 `windows_projection_not_core_image` 标记。
 - 尚无 V2 人工偏好记录，`V2-AUTO` 只能是 provisional，不能宣称学会专业摄影审美。
-- 尚未证明 V2 候选在七类照片中都优于正式 B。
+- 尚未证明 V2 候选在七类照片中优于正式 B；本地投影已证明 4/7 的候选空间仍不足。
 - 人物真实性仍需 iPhone 100% 放大检查；自动测试不等同于真人面部审美验收。
 - 未上传 TestFlight；本轮明确禁止自动上传。
 
 ## 恢复入口
 
-1. 先检查本文件和独立 V2 分支的最新 Apple CI 结果。
-2. 若编译失败，只修复真实编译/像素问题并重新验证。
-3. 若 Apple CI 通过，运行七图本地投影工具并检查输出清单。
-4. 最后通过现有 iPhone 相册诊断导入获得真实 V2-1/V2-2/V2-3/V2-AUTO，导出 ZIP 后进行盲评。
+1. 先检查本文件、独立 V2 分支最新 HEAD 及对应 Apple CI 结果。
+2. 若编译或测试失败，只修复真实失败并重新验证，不降低差异或技术安全门槛。
+3. 通过现有 iPhone 相册诊断导入获得真实 V2-1/V2-2/V2-3/V2-AUTO；ZIP 会记录候选探索状态与逐对像素证据。
+4. 对七图执行盲评；若候选都不好，归类为生成失败；若存在好候选但 AUTO 未命中，归类为选择失败。
+5. 未取得上述证据前，不替换正式 B、不上传 TestFlight、不宣称达到专业摄影审美。
 

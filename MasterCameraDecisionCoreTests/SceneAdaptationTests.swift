@@ -3147,6 +3147,68 @@ final class SceneAdaptationTests: XCTestCase {
         XCTAssertTrue(assessment.reason.contains("人工盲测"))
     }
 
+    func testV2RenderedExplorationRequiresAllThreeCandidatePairsToBeDistinct() {
+        let assessment = PhotographyTargetExplorationValidator().assess(
+            expectedIdentifiers: ["V2-1", "V2-2", "V2-3"],
+            pairDifferences: [
+                PhotographyCandidatePairDifference(
+                    firstIdentifier: "V2-1", secondIdentifier: "V2-2",
+                    rgbMeanAbsoluteDifference: 0.030, changedPixelRatio: 0.81,
+                    maximumRegionalLuminanceDifference: 0.051,
+                    maximumRegionalColorDifference: 0.028
+                ),
+                PhotographyCandidatePairDifference(
+                    firstIdentifier: "V2-1", secondIdentifier: "V2-3",
+                    rgbMeanAbsoluteDifference: 0.026, changedPixelRatio: 0.79,
+                    maximumRegionalLuminanceDifference: 0.043,
+                    maximumRegionalColorDifference: 0.026
+                ),
+                PhotographyCandidatePairDifference(
+                    firstIdentifier: "V2-2", secondIdentifier: "V2-3",
+                    rgbMeanAbsoluteDifference: 0.006, changedPixelRatio: 0.52,
+                    maximumRegionalLuminanceDifference: 0.011,
+                    maximumRegionalColorDifference: 0.008
+                )
+            ],
+            minimumDistinctPairCount: 3,
+            requiredDistinctPairs: []
+        )
+
+        XCTAssertEqual(assessment.status, .invalidInsufficientRenderedDifference)
+        XCTAssertTrue(assessment.reason.contains("candidate_generation_failed"))
+    }
+
+    func testV2RenderedExplorationAcceptsThreeDistinctPairsButStillRequiresHumanReview() {
+        let assessment = PhotographyTargetExplorationValidator().assess(
+            expectedIdentifiers: ["V2-1", "V2-2", "V2-3"],
+            pairDifferences: [
+                PhotographyCandidatePairDifference(
+                    firstIdentifier: "V2-1", secondIdentifier: "V2-2",
+                    rgbMeanAbsoluteDifference: 0.030, changedPixelRatio: 0.81,
+                    maximumRegionalLuminanceDifference: 0.051,
+                    maximumRegionalColorDifference: 0.028
+                ),
+                PhotographyCandidatePairDifference(
+                    firstIdentifier: "V2-1", secondIdentifier: "V2-3",
+                    rgbMeanAbsoluteDifference: 0.026, changedPixelRatio: 0.79,
+                    maximumRegionalLuminanceDifference: 0.043,
+                    maximumRegionalColorDifference: 0.026
+                ),
+                PhotographyCandidatePairDifference(
+                    firstIdentifier: "V2-2", secondIdentifier: "V2-3",
+                    rgbMeanAbsoluteDifference: 0.020, changedPixelRatio: 0.76,
+                    maximumRegionalLuminanceDifference: 0.036,
+                    maximumRegionalColorDifference: 0.021
+                )
+            ],
+            minimumDistinctPairCount: 3,
+            requiredDistinctPairs: []
+        )
+
+        XCTAssertEqual(assessment.status, .effectivePendingHumanReview)
+        XCTAssertTrue(assessment.reason.contains("人工盲测"))
+    }
+
     func testMeasuredHypothesesProduceDistinctAppleCoreImageRegionalPixels() throws {
         let groundMask = NormalizedPhotoMask(
             width: 4,
