@@ -111,8 +111,9 @@ final class CameraManager: NSObject, ObservableObject {
                     completion(
                         .success(
                             CapturedPhoto(
+                                id: result.captureID,
                                 originalImageData: result.imageData,
-                                capturedAt: Date(),
+                                capturedAt: result.capturedAt,
                                 skinMask: result.skinMask
                             )
                         )

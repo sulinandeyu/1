@@ -2,7 +2,7 @@ import Foundation
 import UIKit
 
 struct CapturedPhoto: Identifiable, Equatable, Sendable {
-    let id = UUID()
+    let id: UUID
     let originalImageData: Data
     let editedImageData: Data
     let capturedAt: Date
@@ -16,8 +16,10 @@ struct CapturedPhoto: Identifiable, Equatable, Sendable {
     let differenceImageData: Data?
     let processingStagePreviews: [ProcessingStagePreview]
     let diagnosticCandidates: [DiagnosticCandidateEvidence]
+    let originalRetentionReceipt: OriginalRetentionReceipt?
 
     init(
+        id: UUID = UUID(),
         originalImageData: Data,
         editedImageData: Data? = nil,
         capturedAt: Date,
@@ -30,8 +32,10 @@ struct CapturedPhoto: Identifiable, Equatable, Sendable {
         processingDiagnostics: ImageProcessingDiagnostics? = nil,
         differenceImageData: Data? = nil,
         processingStagePreviews: [ProcessingStagePreview] = [],
-        diagnosticCandidates: [DiagnosticCandidateEvidence] = []
+        diagnosticCandidates: [DiagnosticCandidateEvidence] = [],
+        originalRetentionReceipt: OriginalRetentionReceipt? = nil
     ) {
+        self.id = id
         self.originalImageData = originalImageData
         // A newly captured/imported photo has no AI result yet. Keeping this empty is
         // intentional: copying the original bytes here made an unprocessed capture look
@@ -48,6 +52,7 @@ struct CapturedPhoto: Identifiable, Equatable, Sendable {
         self.differenceImageData = differenceImageData
         self.processingStagePreviews = processingStagePreviews
         self.diagnosticCandidates = diagnosticCandidates
+        self.originalRetentionReceipt = originalRetentionReceipt
     }
 
     var originalImage: UIImage? {
@@ -65,6 +70,33 @@ struct CapturedPhoto: Identifiable, Equatable, Sendable {
             && analysis != nil
             && decision != nil
             && qualityCheck.status != .failed
+    }
+
+    var hasRecoverableOriginal: Bool {
+        originalRetentionReceipt?.hasRecoverableOriginal == true
+            || !originalImageData.isEmpty
+    }
+
+    func replacingOriginalRetentionReceipt(
+        _ receipt: OriginalRetentionReceipt?
+    ) -> CapturedPhoto {
+        CapturedPhoto(
+            id: id,
+            originalImageData: originalImageData,
+            editedImageData: editedImageData,
+            capturedAt: capturedAt,
+            isDiagnosticImport: isDiagnosticImport,
+            skinMask: skinMask,
+            analysis: analysis,
+            problemReport: problemReport,
+            decision: decision,
+            qualityCheck: qualityCheck,
+            processingDiagnostics: processingDiagnostics,
+            differenceImageData: differenceImageData,
+            processingStagePreviews: processingStagePreviews,
+            diagnosticCandidates: diagnosticCandidates,
+            originalRetentionReceipt: receipt
+        )
     }
 
     var differenceImage: UIImage? {

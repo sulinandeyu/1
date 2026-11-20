@@ -4,6 +4,8 @@ import Foundation
 import ImageIO
 
 struct PhotoCaptureResult: Sendable {
+    let captureID: UUID
+    let capturedAt: Date
     let imageData: Data
     let skinMask: NormalizedPhotoMask?
 }
@@ -42,6 +44,7 @@ final class PhotoCaptureService {
         }
 
         let processor = PhotoCaptureProcessor(
+            capturedAt: Date(),
             completion: completion,
             onFinish: { [weak self] uniqueID in
                 self?.processors[uniqueID] = nil
@@ -54,15 +57,18 @@ final class PhotoCaptureService {
 }
 
 private final class PhotoCaptureProcessor: NSObject, AVCapturePhotoCaptureDelegate {
+    private let capturedAt: Date
     private let completion: (Result<PhotoCaptureResult, Error>) -> Void
     private let onFinish: (Int64) -> Void
     private let context = CIContext()
     private var didComplete = false
 
     init(
+        capturedAt: Date,
         completion: @escaping (Result<PhotoCaptureResult, Error>) -> Void,
         onFinish: @escaping (Int64) -> Void
     ) {
+        self.capturedAt = capturedAt
         self.completion = completion
         self.onFinish = onFinish
     }
@@ -85,6 +91,8 @@ private final class PhotoCaptureProcessor: NSObject, AVCapturePhotoCaptureDelega
         complete(
             .success(
                 PhotoCaptureResult(
+                    captureID: UUID(),
+                    capturedAt: capturedAt,
                     imageData: data,
                     skinMask: normalizedSkinMask(from: photo)
                 )

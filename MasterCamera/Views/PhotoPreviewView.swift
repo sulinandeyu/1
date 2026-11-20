@@ -115,9 +115,11 @@ struct PhotoPreviewView: View {
                         .accessibilityLabel(
                             photo.isDiagnosticImport
                                 ? "保存 A/B 及可用的 C/D/E1/E2/M 诊断成片"
-                                : "保存原图和 AI 成片"
+                                : (photo.hasCompletedProcessing
+                                    ? "保存原图和 AI 成片"
+                                    : "保存可恢复原图")
                         )
-                        .disabled(saveState.isSaving)
+                        .disabled(saveState.isSaving || saveState.isCompleted)
                     }
                 }
                 .foregroundStyle(.white)
@@ -158,11 +160,16 @@ struct PhotoPreviewView: View {
         } message: {
             Text(diagnosticExportError ?? "未知错误")
         }
+        .onAppear {
+            if !photo.hasCompletedProcessing {
+                selectedVersion = .original
+            }
+        }
     }
 
     private var versionSelector: some View {
         HStack(spacing: 5) {
-            ForEach(PhotoVersion.allCases) { version in
+            ForEach(availableVersions) { version in
                 Button {
                     withAnimation(.easeOut(duration: 0.18)) {
                         selectedVersion = version
@@ -233,6 +240,9 @@ struct PhotoPreviewView: View {
 
         switch selectedVersion {
         case .edited:
+            guard photo.hasCompletedProcessing else {
+                return "本次没有通过质量检查的正式成片；当前仅保留原图"
+            }
             return photo.isDiagnosticImport
                 ? "当前为 B 正式算法成片；长按可临时查看 A 原图"
                 : "长按照片可临时查看原图"
@@ -241,6 +251,11 @@ struct PhotoPreviewView: View {
         case .difference:
             return "A 原图与 B 正式成片的差异已放大 5 倍；不代表 D 或 M"
         }
+    }
+
+    private var availableVersions: [PhotoVersion] {
+        guard photo.hasCompletedProcessing else { return [.original] }
+        return PhotoVersion.allCases
     }
 
     private var currentDisplayTitle: String {
@@ -426,9 +441,16 @@ struct PhotoPreviewView: View {
 private extension SaveState {
     var textColor: Color {
         switch self {
-        case .idle, .saving, .saved, .savedDiagnosticBundle:
+        case .idle,
+             .saving,
+             .savingOriginalOnly,
+             .saved,
+             .savedOriginalOnly,
+             .savedOriginalMemoryRescue,
+             .savedDiagnosticBundle,
+             .processingFailedOriginalAvailable:
             return .white
-        case .failed:
+        case .originalRetentionFailed, .needsReconciliation, .failed:
             return .red
         }
     }

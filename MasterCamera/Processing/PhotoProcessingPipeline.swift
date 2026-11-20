@@ -360,6 +360,7 @@ final class PhotoProcessingPipeline {
 
         // 8. 返回可预览的原片与成片；用户确认后由 PhotoLibraryManager 保存。
         return CapturedPhoto(
+            id: photo.id,
             originalImageData: photo.originalImageData,
             editedImageData: finalEdit.data,
             capturedAt: photo.capturedAt,
@@ -372,7 +373,8 @@ final class PhotoProcessingPipeline {
             processingDiagnostics: diagnosticsResult?.diagnostics,
             differenceImageData: diagnosticsResult?.differenceImageData,
             processingStagePreviews: stagePreviews,
-            diagnosticCandidates: diagnosticCandidates
+            diagnosticCandidates: diagnosticCandidates,
+            originalRetentionReceipt: photo.originalRetentionReceipt
         )
     }
 

@@ -184,6 +184,23 @@ struct CameraView: View {
         VStack(spacing: isCompact ? 8 : 12) {
             zoomControl
 
+            if viewModel.recoverableOriginalCount > 0 {
+                Button(action: viewModel.restoreLatestPendingOriginal) {
+                    Label(
+                        "恢复待保存原图（\(viewModel.recoverableOriginalCount)）",
+                        systemImage: "arrow.clockwise.icloud"
+                    )
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.9))
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 34)
+                    .background(Color.white.opacity(0.08), in: Capsule())
+                }
+                .buttonStyle(.plain)
+                .disabled(viewModel.processingState.isProcessing)
+                .accessibilityLabel("恢复尚未确认保存的原图")
+            }
+
             HStack(alignment: .center) {
                 PhotosPicker(selection: $selectedSample, matching: .images) {
                     controlButton(icon: "photo.on.rectangle.angled", title: "相册")

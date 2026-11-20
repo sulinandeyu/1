@@ -16,10 +16,15 @@ final class CameraViewModel: ObservableObject {
     @Published private(set) var maximumZoomFactor: CGFloat = 1.0
     @Published private(set) var diagnosticBatchProgress: DiagnosticBatchProgress?
     @Published var diagnosticBatchArchive: DiagnosticBatchArchive?
+    @Published private(set) var recoverableOriginalCount = 0
 
     let cameraManager = CameraManager()
+    private let originalRetentionStore: OriginalPhotoRetentionStore
+    private var recoverableOriginals: [OriginalRetentionReceipt] = []
+    private var reconciliationCaptureIDs: Set<UUID> = []
 
-    init() {
+    init(originalRetentionStore: OriginalPhotoRetentionStore = .shared) {
+        self.originalRetentionStore = originalRetentionStore
         cameraManager.$state
             .receive(on: DispatchQueue.main)
             .assign(to: &$state)
@@ -35,6 +40,7 @@ final class CameraViewModel: ObservableObject {
 
     func onAppear() {
         cameraManager.prepare()
+        Task { await initializeOriginalRecovery() }
     }
 
     func onDisappear() {
@@ -276,6 +282,36 @@ final class CameraViewModel: ObservableObject {
         capturedPhoto = nil
         saveState = .idle
         processingState = .idle
+        Task { await refreshRecoverableOriginals() }
+    }
+
+    func restoreLatestPendingOriginal() {
+        guard !processingState.isProcessing else { return }
+        Task {
+            await refreshRecoverableOriginals()
+            guard let receipt = recoverableOriginals.first else { return }
+            do {
+                let data = try await originalRetentionStore.originalData(for: receipt)
+                capturedPhoto = CapturedPhoto(
+                    id: receipt.captureID,
+                    originalImageData: data,
+                    capturedAt: receipt.capturedAt,
+                    originalRetentionReceipt: receipt
+                )
+                if case .needsReconciliation(let reason) = receipt.state {
+                    saveState = .needsReconciliation(reason)
+                } else if reconciliationCaptureIDs.contains(receipt.captureID) {
+                    saveState = .needsReconciliation(
+                        "正式成片的 Photos 提交状态无法确认；已停止自动重试以避免重复资产。"
+                    )
+                } else {
+                    saveState = .idle
+                }
+                errorMessage = nil
+            } catch {
+                errorMessage = "恢复原图失败：\(error.localizedDescription)"
+            }
+        }
     }
 
     func saveCapturedPhoto() {
@@ -283,15 +319,41 @@ final class CameraViewModel: ObservableObject {
         guard !saveState.isSaving else { return }
 
         Task {
-            saveState = .saving
+            saveState = capturedPhoto.hasCompletedProcessing
+                ? .saving
+                : .savingOriginalOnly
 
             do {
-                try await PhotoLibraryManager.savePhotos(capturedPhoto)
+                let result = try await PhotoLibraryManager.savePhotos(capturedPhoto)
                 errorMessage = nil
-                saveState = capturedPhoto.isDiagnosticImport ? .savedDiagnosticBundle : .saved
+                switch result {
+                case .diagnosticAssets:
+                    saveState = .savedDiagnosticBundle
+                case .originalMemoryRescue(let receipt):
+                    self.capturedPhoto = capturedPhoto
+                        .replacingOriginalRetentionReceipt(receipt)
+                    saveState = .savedOriginalMemoryRescue
+                case .captured(let outcome):
+                    self.capturedPhoto = capturedPhoto
+                        .replacingOriginalRetentionReceipt(outcome.originalReceipt)
+                    saveState = outcome.editedAssetIdentifier == nil
+                        ? .savedOriginalOnly
+                        : .saved
+                }
+                await refreshRecoverableOriginals()
             } catch {
                 errorMessage = error.localizedDescription
-                saveState = .failed(error.localizedDescription)
+                if let coordinatorError = error as? PhotoSaveCoordinatorError {
+                    switch coordinatorError {
+                    case .needsReconciliation(let reason),
+                         .confirmationUnknown(let reason):
+                        saveState = .needsReconciliation(reason)
+                    default:
+                        saveState = .failed(error.localizedDescription)
+                    }
+                } else {
+                    saveState = .failed(error.localizedDescription)
+                }
             }
         }
     }
@@ -304,12 +366,57 @@ final class CameraViewModel: ObservableObject {
         Task { [weak self] in
             guard let self else { return }
 
+            let preparedPhoto: CapturedPhoto
+            if !OriginalRetentionPolicy.shouldStageNewCapture(
+                isDiagnosticImport: photo.isDiagnosticImport
+            ) {
+                preparedPhoto = photo
+            } else {
+                do {
+                    let receipt = try await originalRetentionStore.stageOriginal(
+                        data: photo.originalImageData,
+                        captureID: photo.id,
+                        capturedAt: photo.capturedAt
+                    )
+                    preparedPhoto = photo.replacingOriginalRetentionReceipt(receipt)
+                    await refreshRecoverableOriginals()
+                } catch {
+                    // The image file and manifest are separate durability units. If
+                    // the verified image reached its final name but manifest commit
+                    // was interrupted, retry the same idempotent stage operation.
+                    // Do not invoke cold-launch reconciliation during this process.
+                    if let recovered = try? await originalRetentionStore.stageOriginal(
+                        data: photo.originalImageData,
+                        captureID: photo.id,
+                        capturedAt: photo.capturedAt
+                    ) {
+                        preparedPhoto = photo.replacingOriginalRetentionReceipt(recovered)
+                        await refreshRecoverableOriginals()
+                        AppLogger.imageEngine.warning(
+                            "原图 manifest 写入中断后已由完整文件恢复：\(photo.id.uuidString)"
+                        )
+                    } else {
+                        let receipt = OriginalRetentionReceipt.memoryOnly(
+                            captureID: photo.id,
+                            data: photo.originalImageData,
+                            capturedAt: photo.capturedAt,
+                            reason: error.localizedDescription
+                        )
+                        capturedPhoto = photo.replacingOriginalRetentionReceipt(receipt)
+                        saveState = .originalRetentionFailed(error.localizedDescription)
+                        errorMessage = "原图私有暂存失败，已停止 AI 后期；请立即保存内存中的原图。"
+                        processingState = .idle
+                        return
+                    }
+                }
+            }
+
             try? await Task.sleep(nanoseconds: 120_000_000)
             processingState = .rendering
 
             do {
                 let processedPhoto = try await Task.detached(priority: .userInitiated) {
-                    try PhotoProcessingPipeline().process(photo)
+                    try PhotoProcessingPipeline().process(preparedPhoto)
                 }
                 .value
 
@@ -320,9 +427,48 @@ final class CameraViewModel: ObservableObject {
                 processingState = .idle
             } catch {
                 AppLogger.imageEngine.error("照片处理失败：\(error.localizedDescription)")
-                errorMessage = "照片处理失败：\(error.localizedDescription)"
+                capturedPhoto = preparedPhoto
+                saveState = .processingFailedOriginalAvailable
+                errorMessage = "照片处理失败，原图安全副本仍可恢复：\(error.localizedDescription)"
                 processingState = .idle
             }
+        }
+    }
+
+    private func initializeOriginalRecovery() async {
+        do {
+            let report = try await originalRetentionStore.reconcileAfterColdLaunch()
+            applyRecoveryReport(report)
+
+            let cutoff = Date().addingTimeInterval(-30 * 24 * 60 * 60)
+            let cleanup = try await originalRetentionStore.cleanupConfirmedOriginals(
+                olderThan: cutoff
+            )
+            for issue in cleanup.issues {
+                AppLogger.imageEngine.warning("已确认原图清理：\(issue)")
+            }
+        } catch {
+            AppLogger.imageEngine.error("原图冷启动协调失败：\(error.localizedDescription)")
+        }
+    }
+
+    private func refreshRecoverableOriginals() async {
+        do {
+            let report = try await originalRetentionStore.recoverySnapshot()
+            applyRecoveryReport(report)
+        } catch {
+            AppLogger.imageEngine.error("原图恢复索引读取失败：\(error.localizedDescription)")
+        }
+    }
+
+    private func applyRecoveryReport(_ report: OriginalRetentionRecoveryReport) {
+        recoverableOriginals = report.recoverableOriginals
+        recoverableOriginalCount = report.recoverableOriginals.count
+        reconciliationCaptureIDs = Set(
+            report.needsReconciliation.map(\.captureID)
+        )
+        for issue in report.issues {
+            AppLogger.imageEngine.warning("原图恢复协调：\(issue)")
         }
     }
 }

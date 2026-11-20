@@ -20,7 +20,7 @@ let package = Package(
                 "Models",
                 "Processing",
                 "QualityControl",
-                "Storage",
+                "Storage/PhotoLibraryManager.swift",
                 "Utilities",
                 "ViewModels",
                 "Views",
@@ -40,7 +40,8 @@ let package = Package(
                 "PhotographerAI/PhotographyDecisionEngine.swift",
                 "PhotographerAI/PhotographyReferenceMatcher.swift",
                 "PhotographerAI/AutomaticPhotographyDirectorV2.swift",
-                "PhotographerAI/SceneStrategy.swift"
+                "PhotographerAI/SceneStrategy.swift",
+                "Storage/OriginalPhotoRetentionStore.swift"
             ],
             resources: [.process("ReferenceData")]
         ),
