@@ -517,7 +517,7 @@ struct RegionalPixelAdjustment: Equatable, Sendable {
     }
 
     var traceSummary: String {
-        let base = String(
+        String(
             format: "%@ confidence=%.2f EV=%+.3f highlights=%.3f shadows=%.3f contrast=%.3f saturation=%.3f temp=%+.0f clarity=%.3f",
             region.rawValue,
             confidence,
