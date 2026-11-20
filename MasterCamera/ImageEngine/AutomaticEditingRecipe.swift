@@ -30,8 +30,121 @@ enum CinematicToneStyle: String, Equatable, Sendable {
     case lowKey
 }
 
+/// Seven output anchors sampled at 0, 0.08, 0.22, 0.50, 0.72, 0.90 and 1.0.
+/// Values are encoded-sRGB channel values; the processor performs the required
+/// working-space conversion before and after interpolation.
+struct SevenPointChannelCurve: Equatable, Sendable {
+    var black: Float = 0
+    var shadow: Float = 0.08
+    var lowerMidtone: Float = 0.22
+    var midtone: Float = 0.50
+    var upperMidtone: Float = 0.72
+    var highlight: Float = 0.90
+    var white: Float = 1
+
+    static let identity = SevenPointChannelCurve()
+
+    func clampedMonotonic() -> SevenPointChannelCurve {
+        var values = [black, shadow, lowerMidtone, midtone, upperMidtone, highlight, white]
+            .map { $0.clamped(to: 0...1) }
+        for index in 1..<values.count {
+            values[index] = max(values[index], min(1, values[index - 1] + 0.002))
+        }
+        return SevenPointChannelCurve(
+            black: values[0], shadow: values[1], lowerMidtone: values[2],
+            midtone: values[3], upperMidtone: values[4],
+            highlight: values[5], white: values[6]
+        )
+    }
+
+    var anchors: [Float] {
+        [black, shadow, lowerMidtone, midtone, upperMidtone, highlight, white]
+    }
+}
+
+struct ProfessionalRGBCurves: Equatable, Sendable {
+    var red: SevenPointChannelCurve = .identity
+    var green: SevenPointChannelCurve = .identity
+    var blue: SevenPointChannelCurve = .identity
+    var intensity: Float = 0
+
+    static let identity = ProfessionalRGBCurves()
+
+    func clamped() -> ProfessionalRGBCurves {
+        ProfessionalRGBCurves(
+            red: red.clampedMonotonic(),
+            green: green.clampedMonotonic(),
+            blue: blue.clampedMonotonic(),
+            intensity: intensity.clamped(to: 0...1)
+        )
+    }
+
+    var isIdentity: Bool {
+        intensity <= 0.0001 || (red == .identity && green == .identity && blue == .identity)
+    }
+}
+
+/// A small chromatic vector for one tonal zone. The renderer removes its
+/// luminance component, so this control grades colour without silently acting
+/// as another exposure slider.
+struct TonalColorVector: Equatable, Sendable {
+    var red: Float = 0
+    var green: Float = 0
+    var blue: Float = 0
+    var amount: Float = 0
+
+    static let neutral = TonalColorVector()
+
+    func clamped() -> TonalColorVector {
+        TonalColorVector(
+            red: red.clamped(to: -0.12...0.12),
+            green: green.clamped(to: -0.12...0.12),
+            blue: blue.clamped(to: -0.12...0.12),
+            amount: amount.clamped(to: 0...1)
+        )
+    }
+
+    var isNeutral: Bool {
+        amount <= 0.0001 || (abs(red) <= 0.0001 && abs(green) <= 0.0001 && abs(blue) <= 0.0001)
+    }
+}
+
+struct ProfessionalTonalColorGrade: Equatable, Sendable {
+    var shadows: TonalColorVector = .neutral
+    var midtones: TonalColorVector = .neutral
+    var highlights: TonalColorVector = .neutral
+    var neutralChromaProtection: Float = 0.82
+    var highlightNeutralProtection: Float = 0.90
+
+    static let neutral = ProfessionalTonalColorGrade()
+
+    func clamped() -> ProfessionalTonalColorGrade {
+        ProfessionalTonalColorGrade(
+            shadows: shadows.clamped(),
+            midtones: midtones.clamped(),
+            highlights: highlights.clamped(),
+            neutralChromaProtection: neutralChromaProtection.clamped(to: 0...1),
+            highlightNeutralProtection: highlightNeutralProtection.clamped(to: 0...1)
+        )
+    }
+
+    var isNeutral: Bool {
+        shadows.isNeutral && midtones.isNeutral && highlights.isNeutral
+    }
+}
+
+/// The historical production HSL operator is HSV-value based. Task 2-A uses
+/// true HSL lightness semantics without changing the established B output.
+enum ProfessionalHSLMathMode: String, Equatable, Sendable {
+    case legacyHSVValue
+    case perceptualHSL
+}
+
 /// 专业分区调色参数。数值是相对调整量，0 表示不改变该色域。
 struct ProfessionalHSLAdjustment: Equatable, Sendable {
+    var redHue: Float = 0
+    var redSaturation: Float = 0
+    var redLuminance: Float = 0
     var orangeHue: Float
     var orangeSaturation: Float
     var orangeLuminance: Float
@@ -47,6 +160,13 @@ struct ProfessionalHSLAdjustment: Equatable, Sendable {
     var blueHue: Float
     var blueSaturation: Float
     var blueLuminance: Float
+    var purpleHue: Float = 0
+    var purpleSaturation: Float = 0
+    var purpleLuminance: Float = 0
+    var magentaHue: Float = 0
+    var magentaSaturation: Float = 0
+    var magentaLuminance: Float = 0
+    var mathMode: ProfessionalHSLMathMode = .legacyHSVValue
 
     static let neutral = ProfessionalHSLAdjustment(
         orangeHue: 0,
@@ -63,6 +183,9 @@ struct ProfessionalHSLAdjustment: Equatable, Sendable {
 
     func clamped() -> ProfessionalHSLAdjustment {
         ProfessionalHSLAdjustment(
+            redHue: redHue.clamped(to: -0.03...0.03),
+            redSaturation: redSaturation.clamped(to: -0.18...0.18),
+            redLuminance: redLuminance.clamped(to: -0.08...0.08),
             orangeHue: orangeHue.clamped(to: -0.025...0.025),
             orangeSaturation: orangeSaturation.clamped(to: -0.18...0.18),
             orangeLuminance: orangeLuminance.clamped(to: -0.08...0.08),
@@ -77,7 +200,14 @@ struct ProfessionalHSLAdjustment: Equatable, Sendable {
             cyanLuminance: cyanLuminance.clamped(to: -0.08...0.08),
             blueHue: blueHue.clamped(to: -0.03...0.03),
             blueSaturation: blueSaturation.clamped(to: -0.2...0.16),
-            blueLuminance: blueLuminance.clamped(to: -0.08...0.08)
+            blueLuminance: blueLuminance.clamped(to: -0.08...0.08),
+            purpleHue: purpleHue.clamped(to: -0.03...0.03),
+            purpleSaturation: purpleSaturation.clamped(to: -0.2...0.18),
+            purpleLuminance: purpleLuminance.clamped(to: -0.08...0.08),
+            magentaHue: magentaHue.clamped(to: -0.03...0.03),
+            magentaSaturation: magentaSaturation.clamped(to: -0.2...0.18),
+            magentaLuminance: magentaLuminance.clamped(to: -0.08...0.08),
+            mathMode: mathMode
         )
     }
 
@@ -87,6 +217,9 @@ struct ProfessionalHSLAdjustment: Equatable, Sendable {
     /// becoming the normal camera safety envelope.
     func diagnosticRendererClamped() -> ProfessionalHSLAdjustment {
         ProfessionalHSLAdjustment(
+            redHue: redHue.clamped(to: -0.08...0.08),
+            redSaturation: redSaturation.clamped(to: -0.35...0.35),
+            redLuminance: redLuminance.clamped(to: -0.25...0.25),
             orangeHue: orangeHue.clamped(to: -0.08...0.08),
             orangeSaturation: orangeSaturation.clamped(to: -0.35...0.35),
             orangeLuminance: orangeLuminance.clamped(to: -0.25...0.25),
@@ -101,7 +234,14 @@ struct ProfessionalHSLAdjustment: Equatable, Sendable {
             cyanLuminance: cyanLuminance.clamped(to: -0.25...0.25),
             blueHue: blueHue.clamped(to: -0.08...0.08),
             blueSaturation: blueSaturation.clamped(to: -0.35...0.35),
-            blueLuminance: blueLuminance.clamped(to: -0.25...0.25)
+            blueLuminance: blueLuminance.clamped(to: -0.25...0.25),
+            purpleHue: purpleHue.clamped(to: -0.08...0.08),
+            purpleSaturation: purpleSaturation.clamped(to: -0.35...0.35),
+            purpleLuminance: purpleLuminance.clamped(to: -0.25...0.25),
+            magentaHue: magentaHue.clamped(to: -0.08...0.08),
+            magentaSaturation: magentaSaturation.clamped(to: -0.35...0.35),
+            magentaLuminance: magentaLuminance.clamped(to: -0.25...0.25),
+            mathMode: mathMode
         )
     }
 }
@@ -377,7 +517,7 @@ struct RegionalPixelAdjustment: Equatable, Sendable {
     }
 
     var traceSummary: String {
-        String(
+        let base = String(
             format: "%@ confidence=%.2f EV=%+.3f highlights=%.3f shadows=%.3f contrast=%.3f saturation=%.3f temp=%+.0f clarity=%.3f",
             region.rawValue,
             confidence,
@@ -447,6 +587,10 @@ struct AutomaticEditingRecipe: Equatable, Sendable {
     var shadowZoneExposureEV: Float
     var highlightZoneExposureEV: Float
     var luminanceMaskStrength: Float
+    /// Task 2-A diagnostic controls. Defaults are strict identity so existing
+    /// production/B recipes retain their established pixel semantics.
+    var rgbCurves: ProfessionalRGBCurves = .identity
+    var tonalColorGrade: ProfessionalTonalColorGrade = .neutral
 
     static let naturalEnhancement = AutomaticEditingRecipe(
         exposureEV: 0.0,
@@ -596,12 +740,14 @@ struct AutomaticEditingRecipe: Equatable, Sendable {
             hsl: hsl.clamped(),
             shadowZoneExposureEV: shadowZoneExposureEV.clamped(to: 0.0...0.22),
             highlightZoneExposureEV: highlightZoneExposureEV.clamped(to: -0.24...0.0),
-            luminanceMaskStrength: luminanceMaskStrength.clamped(to: 0.0...1.0)
+            luminanceMaskStrength: luminanceMaskStrength.clamped(to: 0.0...1.0),
+            rgbCurves: rgbCurves.clamped(),
+            tonalColorGrade: tonalColorGrade.clamped()
         )
     }
 
     var traceSummary: String {
-        String(
+        let base = String(
             format: "tone=%@/%.3f cinematic=%@/%@ exposure=%.3f highlight=%.3f shadow=%.3f contrast=%.3f saturation=%.3f vibrance=%.3f wb=%.0f/%.2f grade=%@/%.3f/shadow%.3f/midCool%.3f/midWarm%.3f/highlight%.3f/neutralProtect%.3f hsl=o%.3f,y%.3f,g%.3f,c%.3f,b%.3f local=subject%.3f,face%.3f,sky%.3f/%.3f/%.3f detail=%.3f/%.3f",
             toneCurveStyle.rawValue,
             toneCurveAmount,
@@ -634,6 +780,48 @@ struct AutomaticEditingRecipe: Equatable, Sendable {
             skySaturation,
             noiseReductionAmount,
             sharpeningAmount
+        )
+        let rgb = rgbCurves.isIdentity
+            ? "identity"
+            : String(
+                format: "i%.3f:R[%@]:G[%@]:B[%@]",
+                rgbCurves.intensity,
+                rgbCurves.red.anchors.map { String(format: "%.3f", $0) }.joined(separator: ","),
+                rgbCurves.green.anchors.map { String(format: "%.3f", $0) }.joined(separator: ","),
+                rgbCurves.blue.anchors.map { String(format: "%.3f", $0) }.joined(separator: ",")
+            )
+        let grade = tonalColorGrade.isNeutral
+            ? "neutral"
+            : String(
+                format: "S[%+.3f,%+.3f,%+.3f]@%.3f/M[%+.3f,%+.3f,%+.3f]@%.3f/H[%+.3f,%+.3f,%+.3f]@%.3f/neutral%.3f/highlight%.3f",
+                tonalColorGrade.shadows.red,
+                tonalColorGrade.shadows.green,
+                tonalColorGrade.shadows.blue,
+                tonalColorGrade.shadows.amount,
+                tonalColorGrade.midtones.red,
+                tonalColorGrade.midtones.green,
+                tonalColorGrade.midtones.blue,
+                tonalColorGrade.midtones.amount,
+                tonalColorGrade.highlights.red,
+                tonalColorGrade.highlights.green,
+                tonalColorGrade.highlights.blue,
+                tonalColorGrade.highlights.amount,
+                tonalColorGrade.neutralChromaProtection,
+                tonalColorGrade.highlightNeutralProtection
+            )
+        return base + String(
+            format: " hsl8=%@/r%.3f/o%.3f/y%.3f/g%.3f/c%.3f/b%.3f/p%.3f/m%.3f rgbCurves=%@ tonalGrade=%@",
+            hsl.mathMode.rawValue,
+            hsl.redSaturation,
+            hsl.orangeSaturation,
+            hsl.yellowSaturation,
+            hsl.greenSaturation,
+            hsl.cyanSaturation,
+            hsl.blueSaturation,
+            hsl.purpleSaturation,
+            hsl.magentaSaturation,
+            rgb,
+            grade
         )
     }
 }
@@ -682,12 +870,19 @@ extension AutomaticEditingRecipe {
         append("yellowLuminance", previous.hsl.yellowLuminance, hsl.yellowLuminance)
         append("greenSaturation", previous.hsl.greenSaturation, hsl.greenSaturation)
         append("greenLuminance", previous.hsl.greenLuminance, hsl.greenLuminance)
+        if previous.hsl.mathMode != hsl.mathMode {
+            result.append("hslMathMode:\(previous.hsl.mathMode.rawValue)->\(hsl.mathMode.rawValue)")
+        }
         append("skyExposureEV", previous.skyExposureEV, skyExposureEV)
         append("skyHighlights", previous.skyHighlightAmount, skyHighlightAmount)
         append("subjectExposureEV", previous.subjectExposureEV, subjectExposureEV)
         append("backgroundSeparation", previous.backgroundSeparation, backgroundSeparation)
         append("noiseReduction", previous.noiseReductionAmount, noiseReductionAmount)
         append("sharpening", previous.sharpeningAmount, sharpeningAmount)
+        append("rgbCurveIntensity", previous.rgbCurves.intensity, rgbCurves.intensity)
+        append("tonalShadowAmount", previous.tonalColorGrade.shadows.amount, tonalColorGrade.shadows.amount)
+        append("tonalMidtoneAmount", previous.tonalColorGrade.midtones.amount, tonalColorGrade.midtones.amount)
+        append("tonalHighlightAmount", previous.tonalColorGrade.highlights.amount, tonalColorGrade.highlights.amount)
         return result.isEmpty ? ["unchanged"] : result
     }
 }
@@ -790,6 +985,8 @@ struct ManualPhotographyParameters: Equatable, Sendable {
     var highlightZoneExposureEV: Float = 0
     var luminanceMaskStrength: Float = 0
     var hsl: ProfessionalHSLAdjustment = .neutral
+    var rgbCurves: ProfessionalRGBCurves = .identity
+    var tonalColorGrade: ProfessionalTonalColorGrade = .neutral
     var noiseReductionAmount: Float = 0
     var sharpeningAmount: Float = 0
     var regionalToneAdjustments: [ManualRegionalToneAdjustment] = []
@@ -850,6 +1047,8 @@ struct ManualPhotographyParameters: Equatable, Sendable {
         recipe.highlightZoneExposureEV = highlightZoneExposureEV
         recipe.luminanceMaskStrength = luminanceMaskStrength
         recipe.hsl = hsl
+        recipe.rgbCurves = rgbCurves
+        recipe.tonalColorGrade = tonalColorGrade
         recipe.noiseReductionAmount = noiseReductionAmount
         recipe.sharpeningAmount = sharpeningAmount
         let requested = recipe
@@ -870,6 +1069,8 @@ struct ManualPhotographyParameters: Equatable, Sendable {
         recipe.whitePoint = requested.whitePoint.clamped(to: 0.7...1)
         recipe.saturation = requested.saturation.clamped(to: 0.75...1.35)
         recipe.hsl = requested.hsl.diagnosticRendererClamped()
+        recipe.rgbCurves = requested.rgbCurves.clamped()
+        recipe.tonalColorGrade = requested.tonalColorGrade.clamped()
         return recipe
     }
 
@@ -903,6 +1104,10 @@ struct ManualPhotographyParameters: Equatable, Sendable {
             corrected.saturation = 1 + (corrected.saturation - 1) * 0.65
             corrected.temperatureShift *= 0.5
             corrected.tintShift *= 0.5
+            corrected.rgbCurves.intensity *= 0.72
+            corrected.tonalColorGrade.shadows.amount *= 0.62
+            corrected.tonalColorGrade.midtones.amount *= 0.62
+            corrected.tonalColorGrade.highlights.amount *= 0.55
         }
 
         let boundaryScale: Float = localMaskBoundaryArtifact ? 0.68 : 0.78
@@ -1013,6 +1218,132 @@ struct ManualPhotographyParameters: Equatable, Sendable {
                     exposureEV: 0.0346182,
                     contrast: 1.0123817,
                     saturation: 0.8327602
+                )
+            ]
+        )
+    }()
+
+    /// Task 2-A renderer-expression probe. This is a declared manual look used
+    /// only for diagnostic imports to prove that the production Core Image
+    /// operators can express filmic tone and colour relationships. It is not
+    /// selected by a scene label and is never used by B or automatic D/V2.
+    static let task2ACinematicExpression: ManualPhotographyParameters = {
+        var hsl = ProfessionalHSLAdjustment.neutral
+        hsl.mathMode = .perceptualHSL
+        hsl.redSaturation = -0.035
+        hsl.orangeHue = -0.006
+        hsl.orangeSaturation = 0.055
+        hsl.orangeLuminance = 0.008
+        hsl.yellowHue = -0.012
+        hsl.yellowSaturation = 0.105
+        hsl.yellowLuminance = 0.012
+        hsl.greenHue = 0.008
+        hsl.greenSaturation = -0.105
+        hsl.greenLuminance = -0.018
+        hsl.cyanSaturation = -0.055
+        hsl.blueSaturation = -0.045
+        hsl.purpleSaturation = -0.035
+        hsl.magentaSaturation = -0.030
+
+        let rgbCurves = ProfessionalRGBCurves(
+            red: SevenPointChannelCurve(
+                black: 0, shadow: 0.077, lowerMidtone: 0.215,
+                midtone: 0.496, upperMidtone: 0.724,
+                highlight: 0.902, white: 1
+            ),
+            green: SevenPointChannelCurve(
+                black: 0, shadow: 0.081, lowerMidtone: 0.221,
+                midtone: 0.500, upperMidtone: 0.720,
+                highlight: 0.900, white: 1
+            ),
+            blue: SevenPointChannelCurve(
+                black: 0.003, shadow: 0.087, lowerMidtone: 0.231,
+                midtone: 0.505, upperMidtone: 0.716,
+                highlight: 0.895, white: 0.997
+            ),
+            intensity: 0.72
+        )
+        let tonalGrade = ProfessionalTonalColorGrade(
+            shadows: TonalColorVector(red: -0.030, green: 0.002, blue: 0.040, amount: 0.58),
+            midtones: TonalColorVector(red: -0.016, green: 0.002, blue: 0.021, amount: 0.36),
+            highlights: TonalColorVector(red: 0.020, green: 0.006, blue: -0.018, amount: 0.18),
+            neutralChromaProtection: 0.88,
+            highlightNeutralProtection: 0.94
+        )
+        return ManualPhotographyParameters(
+            identifier: "task2a-cinematic-expression-v1",
+            cinematicIntensity: .standard,
+            exposureEV: -0.08,
+            highlightAmount: 0.72,
+            shadowAmount: 0.11,
+            contrast: 1.035,
+            blackPoint: 0.004,
+            whitePoint: 0.985,
+            shadowRollOff: 0.10,
+            lowerMidtoneLift: -0.028,
+            midtoneBias: -0.035,
+            upperMidtoneSeparation: 0.018,
+            highlightRollOff: 0.24,
+            saturation: 0.96,
+            vibrance: 0.035,
+            toneCurveAmount: 0.18,
+            toneCurveStyle: .softHighlights,
+            localContrastAmount: 0.035,
+            skyExposureEV: -0.06,
+            skyHighlightAmount: 0.70,
+            skySaturation: 0.97,
+            shadowZoneExposureEV: 0.045,
+            highlightZoneExposureEV: -0.085,
+            luminanceMaskStrength: 0.58,
+            hsl: hsl,
+            rgbCurves: rgbCurves,
+            tonalColorGrade: tonalGrade,
+            noiseReductionAmount: 0.008,
+            sharpeningAmount: 0.020,
+            regionalToneAdjustments: [
+                ManualRegionalToneAdjustment(
+                    region: .ground,
+                    exposureEV: -0.18,
+                    shadowAmount: 0.08,
+                    lowerMidtoneLift: -0.035,
+                    midtoneBias: -0.045,
+                    highlightRollOff: 0.14,
+                    contrast: 1.035,
+                    saturation: 0.92,
+                    luminanceLowerBound: 0.12,
+                    luminanceUpperBound: 0.80,
+                    luminanceFeather: 0.16
+                ),
+                ManualRegionalToneAdjustment(
+                    region: .vegetation,
+                    exposureEV: -0.025,
+                    shadowAmount: 0.06,
+                    upperMidtoneSeparation: 0.025,
+                    contrast: 1.025,
+                    hsl: hsl,
+                    luminanceLowerBound: 0.08,
+                    luminanceUpperBound: 0.90,
+                    luminanceFeather: 0.18
+                ),
+                ManualRegionalToneAdjustment(
+                    region: .sky,
+                    exposureEV: -0.10,
+                    highlightAmount: 0.68,
+                    highlightRollOff: 0.22,
+                    saturation: 0.96,
+                    luminanceLowerBound: 0.42,
+                    luminanceUpperBound: 1,
+                    luminanceFeather: 0.18
+                ),
+                ManualRegionalToneAdjustment(
+                    region: .architecture,
+                    exposureEV: -0.035,
+                    shadowAmount: 0.055,
+                    contrast: 1.018,
+                    saturation: 0.94,
+                    luminanceLowerBound: 0.10,
+                    luminanceUpperBound: 0.86,
+                    luminanceFeather: 0.18
                 )
             ]
         )

@@ -47,6 +47,7 @@
 | PT-UNDERSTANDING-001、PT-AESTHETIC-001/002/003/004 | `PhotographyTargetProfile.measuredBaseline`、`enableMeasuredAestheticPlanning`、`evaluateMeasuredAestheticCandidate` | D 路径不读取摄影参考；源图相对目标、动态参数、完整分辨率渲染与一次有限复测构成可追踪闭环 | 仅诊断导入，不替换 B；技术代理不冒充审美结论 | Build 28 旧 D 已真机渲染但与 B 过近；新闭环待远程 Apple 环境及 iPhone ZIP 复验 |
 | PT-INVERSE-001/002/003 | `PhotographyInverseSolver/inverse_solver.py`：SIFT/RANSAC 配准、有效区域、当前参数边界、全局后局部优化 | Windows 忠实复刻已公开的扩展线性 sRGB、EV、黑点以及曲线/HSL 两个 32³ 色彩立方体与线性域蒙版混合；输出全分辨率 R 与误差 | T 像素不得混合或复制到 R；扩展边界仅诊断；Apple 私有滤镜数学不冒充已复刻 | 秋季街道同源内点率 99.5%；修正后的当前边界 RGB MAE 0.1113、扩展探针 0.0652；真实 Core Image 与人工审美仍待验收 |
 | PT-INVERSE-004 | `ManualPhotographyParameters.inverseR3Verification`、`ManualRegionalToneAdjustment`、`DiagnosticRegionalToneProcessor` | M 专用显式全局/区域曲线、曝光、高光阴影、黑白点、HSL、亮度范围蒙版；`QualityCheckService.measureRegionImpacts` 输出区域暗部/高光/细节证据 | B/D 边界不变；关闭 M 自动区域处理；私有滤镜偏差单独标注；无可靠蒙版跳过 | Build #76 证实旧 Windows 模拟与 Core Image 在 32³ 曲线插值、线性域 HSL/混合和曲线强度上不一致；模拟已修正并重新反求 R3-W，远程复验与真实 R3-I 待完成 |
+| PT-RENDER-001 | `ProfessionalRGBCurveProcessor`、八色域 `ProfessionalHSLProcessor`、`ProfessionalTonalColorGrade`、`ExtendedRangeColorCube`、`CoreImageRenderer.renderManualEdit` | 既有七锚点亮度/旧 HSV-value 保持正式 B 语义；Task 2-A RGB 使用 identity 保持的分段线性插值，HSL 使用真实 lightness；encoded-sRGB 色彩立方体恢复 extended-linear 超范围残差；可靠蒙版区域处理；诊断使用 RGBAh 并输出 sRGB JPEG | 新字段默认 identity/legacy；只在诊断 M/Task 2-A 启用；正式 B context/编码不变；T 只后验评价 | 11 项 macOS Core Image + 5 项 app-hosted 测试已写；Apple 执行、iPhone A/T/R-I 和人工审美均待验证 |
 
 ## 已证实差距
 

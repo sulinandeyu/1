@@ -3,6 +3,7 @@ import Darwin
 import Foundation
 import ImageIO
 import UIKit
+import UniformTypeIdentifiers
 
 /// Builds a self-contained, uncompressed ZIP so TestFlight evidence can be
 /// exported through the native share sheet without adding a third-party archive
@@ -12,12 +13,16 @@ final class DiagnosticBundleExporter {
         SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
     }
 
-    func makeArchive(for photo: CapturedPhoto) throws -> URL {
+    func makeArchive(
+        for photo: CapturedPhoto,
+        externalResearchTargetData: Data? = nil
+    ) throws -> URL {
         guard photo.isDiagnosticImport else {
             throw DiagnosticBundleExportError.notDiagnosticImport
         }
 
         let sourceHash = Self.sourceSHA256(photo.originalImageData)
+        let sourcePath = "images/A_original.\(Self.imageFileExtension(photo.originalImageData))"
         var entries: [DiagnosticExportEntry] = []
         var usedPaths = Set<String>()
 
@@ -43,8 +48,23 @@ final class DiagnosticBundleExporter {
             ))
         }
 
-        add("images/A_original.jpg", photo.originalImageData, "A source original")
+        add(sourcePath, photo.originalImageData, "A source original in its real encoded format")
         add("images/B_formal_output.jpg", photo.editedImageData, "B formal algorithm output")
+        let targetHash: String?
+        let targetPath: String?
+        if let externalResearchTargetData, !externalResearchTargetData.isEmpty {
+            targetHash = Self.sourceSHA256(externalResearchTargetData)
+            let path = "research/T_external_reference.\(Self.imageFileExtension(externalResearchTargetData))"
+            targetPath = path
+            add(
+                path,
+                externalResearchTargetData,
+                "user-selected local research target; evaluation only, never a render input"
+            )
+        } else {
+            targetHash = nil
+            targetPath = nil
+        }
         var renderedImages: [String: Data] = [
             "A": photo.originalImageData,
             "B": photo.editedImageData
@@ -137,25 +157,41 @@ final class DiagnosticBundleExporter {
             try jsonData(performanceObject(photo: photo)),
             "processing duration and memory evidence"
         )
-        let r3Candidate = photo.diagnosticCandidates.first { $0.identifier == "M" }
-        let r3ImageFile = Self.resolvedPreview(
-            for: r3Candidate,
+        let task2ACandidate = photo.diagnosticCandidates.first { $0.identifier == "M" }
+        let task2APreview = Self.resolvedPreview(
+            for: task2ACandidate,
             in: photo.processingStagePreviews
-        ) == nil ? "unavailable" : "images/M_manual_render.jpg"
-        let r3Status: [String: Any] = [
-            "source": "A_original.jpg identified by sourceSha256",
-            "professionalTargetT": "external_research_reference_not_packaged",
-            "professionalTargetReason": "T is licensing-restricted and must never be bundled or exported as an App result.",
-            "coreImageCandidate": r3ImageFile,
-            "parameterIdentifier": ManualPhotographyParameters.inverseR3Verification.identifier,
-            "candidateStates": r3Candidate?.states.map(\.rawValue) ?? ["unavailable"],
-            "technicalQualityStatus": r3Candidate?.qualityStatus ?? "notRun",
-            "humanAestheticStatus": r3Candidate?.humanAestheticStatus ?? "notEvaluated"
+        )
+        let task2AImageFile = task2APreview == nil ? "unavailable" : "images/M_manual_render.jpg"
+        let task2AStatus: [String: Any] = [
+            "source": "\(sourcePath) identified by sourceSha256",
+            "professionalTargetT": targetHash == nil
+                ? "external_research_reference_not_selected"
+                : targetPath ?? "external_research_reference_format_unknown",
+            "professionalTargetSha256": targetHash ?? "unavailable",
+            "professionalTargetReason": targetHash == nil
+                ? "No local T was selected for this evidence archive."
+                : "T was explicitly selected by the user and is packaged only in this local share archive; it never entered rendering or automatic decision.",
+            "coreImageCandidate": task2AImageFile,
+            "coreImageCandidateSha256": task2APreview.map { Self.sourceSHA256($0.imageData) } ?? "unavailable",
+            "renderActuallyExecuted": task2ACandidate?.states.contains(.executed) == true && task2APreview != nil,
+            "parameterIdentifier": ManualPhotographyParameters.task2ACinematicExpression.identifier,
+            "experiment": "Task 2-A manual cinematic rendering expression; not automatic photography decision",
+            "candidateStates": task2ACandidate?.states.map(\.rawValue) ?? ["unavailable"],
+            "parameterLifecycle": task2ACandidate?.parameterLifecycle.map {
+                ["stage": $0.stage, "recipeSummary": $0.recipeSummary, "changes": $0.changes]
+            } ?? [],
+            "executedPixelEvidence": task2ACandidate?.executed ?? [],
+            "rejectedOrSkippedEvidence": (task2ACandidate?.rejected ?? [])
+                + (task2ACandidate?.unavailable ?? []),
+            "technicalQualityStatus": task2ACandidate?.qualityStatus ?? "notRun",
+            "humanAestheticStatus": "pending_human_review",
+            "recordedCandidateHumanStatus": task2ACandidate?.humanAestheticStatus ?? "notEvaluated"
         ]
         add(
-            "evidence/R3_VALIDATION_STATUS.json",
-            try jsonData(r3Status),
-            "R3-I experiment provenance; T is intentionally external"
+            "evidence/TASK2A_RENDER_VALIDATION_STATUS.json",
+            try jsonData(task2AStatus),
+            "Task 2-A Core Image expression provenance; T is intentionally external"
         )
 
         let inventory = entries.map { entry -> [String: Any] in
@@ -169,12 +205,14 @@ final class DiagnosticBundleExporter {
                 record["encodedPixelWidth"] = size.width
                 record["encodedPixelHeight"] = size.height
             }
+            record.merge(Self.encodedImageIdentity(entry.data)) { current, _ in current }
             return record
         }
         let metadata: [String: Any] = [
             "schemaVersion": 2,
             "createdAt": ISO8601DateFormatter().string(from: Date()),
             "sourceSha256": sourceHash,
+            "externalResearchTargetSha256": targetHash ?? "not_selected",
             "sameSourceRequirement": "A/B/D/E1/E2/M/V2-1/V2-2/V2-3/V2-AUTO and probes were produced from the source identified above in one diagnostic import.",
             "app": [
                 "name": Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String ?? "小苏相机",
@@ -196,7 +234,7 @@ final class DiagnosticBundleExporter {
                 "D": "measured automatic aesthetic diagnostic; never replaces B",
                 "E1": "independently solved spatial-emphasis target experiment; human preference pending",
                 "E2": "independently solved restrained-depth target experiment; human preference pending",
-                "M": "R3-I human-declared Core Image renderer verification; never replaces B or D",
+                "M": "Task 2-A human-declared Core Image cinematic expression; never replaces B or D",
                 "V2-1": "Automatic Photography Director V2 natural-documentary candidate",
                 "V2-2": "Automatic Photography Director V2 dimensional-hierarchy candidate",
                 "V2-3": "Automatic Photography Director V2 atmospheric-cinematic candidate",
@@ -208,8 +246,20 @@ final class DiagnosticBundleExporter {
         add("manifest.json", try jsonData(metadata), "bundle manifest")
         add(
             "README.txt",
-            Data(readme(sourceHash: sourceHash).utf8),
+            Data(readme(sourceHash: sourceHash, includesLocalTarget: targetHash != nil).utf8),
             "human-readable evidence guide"
+        )
+        add(
+            "task2a-comparison.html",
+            Data(task2AComparisonHTML(
+                sourcePath: sourcePath,
+                targetPath: targetPath,
+                includesLocalTarget: targetHash != nil,
+                includesRenderedCandidate: task2AImageFile != "unavailable",
+                technicalStatus: task2ACandidate?.qualityStatus ?? "notRun",
+                executionState: task2ACandidate?.states.map(\.rawValue).joined(separator: ",") ?? "unavailable"
+            ).utf8),
+            "local A/T/R-I full-resolution comparison page"
         )
 
         let stamp = Self.fileTimestamp.string(from: Date())
@@ -598,8 +648,11 @@ final class DiagnosticBundleExporter {
         try JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
     }
 
-    private func readme(sourceHash: String) -> String {
-        """
+    private func readme(sourceHash: String, includesLocalTarget: Bool) -> String {
+        let targetDescription = includesLocalTarget
+            ? "由用户本次明确选择，仅写入本地分享 ZIP，未进入渲染"
+            : "本次未选择，因此未打包"
+        return """
         小苏相机诊断证据包
 
         同源原图 SHA-256：\(sourceHash)
@@ -609,15 +662,47 @@ final class DiagnosticBundleExporter {
         D = 逐图自动后期诊断输出，不替换 B
         E1 = 由当前照片测量独立求解的空间层次目标实验，人工偏好待评价
         E2 = 由当前照片测量独立求解的克制暗调目标实验，人工偏好待评价
-        M / R3-I = 人工声明 R3 参数的 Core Image 渲染表达能力验证，不替换 B/D
-        T = 外部专业目标参考；因许可限制不打包、不导出，也绝不冒充 App 成片
+        M / R-I = Task 2-A 人工声明的 Core Image 电影影调表达能力验证，不替换 B/D
+        T = 外部专业目标参考；\(targetDescription)；绝不冒充 App 成片
         差异图 = A 与 B 的五倍放大差异，不代表 D、E1、E2 或 M
 
         candidate_states_and_parameters.json 明确区分 planned、executed、rejected、fallback、unavailable，
         并分别记录技术质检、摄影目标质量状态和人工审美状态。
-        R3_VALIDATION_STATUS.json 明确区分 A、外部 T 与设备实际 M/R3-I。
-        屏幕截图不是实际成片文件；images 目录中的 JPEG 才是本次处理实际输出。
+        TASK2A_RENDER_VALIDATION_STATUS.json 明确区分 A、外部 T 与设备实际 M/R-I。
+        屏幕截图不是实际成片文件；images 目录保留 A 的真实原始编码，B/D/E/M/V2 等 JPEG 才是本次处理实际输出。
         """
+    }
+
+    private func task2AComparisonHTML(
+        sourcePath: String,
+        targetPath: String?,
+        includesLocalTarget: Bool,
+        includesRenderedCandidate: Bool,
+        technicalStatus: String,
+        executionState: String
+    ) -> String {
+        let target: String
+        if includesLocalTarget, let targetPath {
+            target = "<section><h2>T · 独立研究参考（未参与渲染）</h2><img class=\"zoomable\" src=\"\(targetPath)\"></section>"
+        } else {
+            target = "<section><h2>T · 未选择</h2><p>本证据包不含专业参考 T。</p></section>"
+        }
+        let rendered = includesRenderedCandidate
+            ? "<section><h2>R-I · Task 2-A Core Image</h2><img class=\"zoomable\" src=\"images/M_manual_render.jpg\"><p>技术状态与执行参数见 evidence/TASK2A_RENDER_VALIDATION_STATUS.json；审美状态默认为 pending_human_review。</p></section>"
+            : "<section><h2>R-I · 渲染不可用</h2><p>请检查 evidence/TASK2A_RENDER_VALIDATION_STATUS.json 与候选失败记录。</p></section>"
+        return """
+        <!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+        <title>Task 2-A A/T/R-I 对照</title><style>body{font:15px system-ui;background:#111;color:#eee;margin:0;padding:18px}main{max-width:1500px;margin:auto}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px}section{background:#1b1b1b;padding:12px;border-radius:12px;overflow:auto}img{width:100%;height:auto}.zoomable{cursor:zoom-in}.zoomable.zoom{width:auto;max-width:none}.review{display:flex;gap:10px;flex-wrap:wrap;margin:16px 0}button{padding:9px 12px}p{color:#bbb}</style></head>
+        <body><main><h1>Task 2-A 本机 Core Image 表达能力证据</h1><p>A 是唯一渲染输入；T 仅供独立人工评价；R-I 来自真实 M 诊断渲染。此页面不代表自动摄影决策或审美验收通过。</p><p><strong>参数来源：</strong>\(ManualPhotographyParameters.task2ACinematicExpression.identifier)（人工声明的隔离表达探针） · <strong>执行状态：</strong>\(executionState) · <strong>技术质检：</strong>\(technicalStatus)。完整实际配方、区域回执和像素证据见 evidence/TASK2A_RENDER_VALIDATION_STATUS.json。</p><div class="review"><button data-v="reached">达到摄影目标</button><button data-v="partially_reached">部分达到</button><button data-v="not_reached">未达到</button><button data-v="pending_human_review">尚无法评价</button><button id="download">导出人工评价 JSON</button><strong id="review">pending_human_review</strong></div><div class="grid"><section><h2>A · 原图</h2><img class="zoomable" src="\(sourcePath)"></section>\(target)\(rendered)<section><h2>B · 正式算法（未修改）</h2><img class="zoomable" src="images/B_formal_output.jpg"></section></div><script>let review='pending_human_review';document.querySelectorAll('.zoomable').forEach(x=>x.onclick=()=>x.classList.toggle('zoom'));document.querySelectorAll('[data-v]').forEach(b=>b.onclick=()=>{review=b.dataset.v;document.getElementById('review').textContent=review});document.getElementById('download').onclick=()=>{const payload={schemaVersion:1,experiment:'task2a_cinematic_expression',humanEntered:true,status:review,recordedAt:new Date().toISOString()};const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='task2a-human-review.json';a.click();URL.revokeObjectURL(a.href)}</script></main></body></html>
+        """
+    }
+
+    static func imageFileExtension(_ data: Data) -> String {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let type = CGImageSourceGetType(source),
+              let preferred = UTType(type as String)?.preferredFilenameExtension
+        else { return "img" }
+        return preferred.lowercased()
     }
 
     private func sanitized(_ name: String) -> String {
@@ -634,6 +719,20 @@ final class DiagnosticBundleExporter {
               let height = properties[kCGImagePropertyPixelHeight] as? NSNumber
         else { return nil }
         return (width.intValue, height.intValue)
+    }
+
+    private static func encodedImageIdentity(_ data: Data) -> [String: Any] {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil) else {
+            return ["uniformType": "not_an_image"]
+        }
+        let uniformType = CGImageSourceGetType(source).map { $0 as String } ?? "unknown"
+        var result: [String: Any] = ["uniformType": uniformType]
+        if let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any] {
+            result["orientation"] = (properties[kCGImagePropertyOrientation] as? NSNumber)?.intValue ?? 1
+            result["colorModel"] = properties[kCGImagePropertyColorModel] as? String ?? "unknown"
+            result["colorProfile"] = properties[kCGImagePropertyProfileName] as? String ?? "unspecified"
+        }
+        return result
     }
 
     /// Vision rectangles use a lower-left origin. The JPEG crop is made from

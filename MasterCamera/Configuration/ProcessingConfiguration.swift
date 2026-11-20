@@ -22,7 +22,7 @@ struct DiagnosticValidationConfiguration: Equatable, Sendable {
 
     static let diagnosticImportsOnly = DiagnosticValidationConfiguration(
         measuredAestheticCandidateEnabled: true,
-        manualParameters: .inverseR3Verification
+        manualParameters: .task2ACinematicExpression
     )
 }
 

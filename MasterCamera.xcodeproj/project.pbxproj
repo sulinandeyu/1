@@ -46,7 +46,18 @@
 		E00000000000000000000001 /* PhotographyReferenceMatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = E00000000000000000000101 /* PhotographyReferenceMatcher.swift */; };
 		F00000000000000000000001 /* AutomaticPhotographyDirectorV2.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000101 /* AutomaticPhotographyDirectorV2.swift */; };
 		900000000000000000000001 /* OriginalPhotoRetentionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 900000000000000000000101 /* OriginalPhotoRetentionStore.swift */; };
+		2A0000000000000000000001 /* CoreImageRendererHostedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0000000000000000000011 /* CoreImageRendererHostedTests.swift */; };
 /* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		2A0000000000000000000080 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = A00000000000000000000051 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A00000000000000000000050;
+			remoteInfo = MasterCamera;
+		};
+/* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
 		A00000000000000000000010 /* MasterCamera.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MasterCamera.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -91,10 +102,19 @@
 		E00000000000000000000102 /* PhotographyReferenceIndex.v1.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = PhotographyReferenceIndex.v1.json; sourceTree = "<group>"; };
 		F00000000000000000000101 /* AutomaticPhotographyDirectorV2.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AutomaticPhotographyDirectorV2.swift; sourceTree = "<group>"; };
 		900000000000000000000101 /* OriginalPhotoRetentionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OriginalPhotoRetentionStore.swift; sourceTree = "<group>"; };
+		2A0000000000000000000011 /* CoreImageRendererHostedTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoreImageRendererHostedTests.swift; sourceTree = "<group>"; };
+		2A0000000000000000000012 /* MasterCameraAppTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = MasterCameraAppTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		A00000000000000000000030 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		2A0000000000000000000030 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -109,6 +129,7 @@
 			children = (
 				A00000000000000000000020 /* Info.plist */,
 				A00000000000000000000041 /* MasterCamera */,
+				2A0000000000000000000040 /* MasterCameraAppTests */,
 				A00000000000000000000042 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -140,8 +161,17 @@
 			isa = PBXGroup;
 			children = (
 				A00000000000000000000010 /* MasterCamera.app */,
+				2A0000000000000000000012 /* MasterCameraAppTests.xctest */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		2A0000000000000000000040 /* MasterCameraAppTests */ = {
+			isa = PBXGroup;
+			children = (
+				2A0000000000000000000011 /* CoreImageRendererHostedTests.swift */,
+			);
+			path = MasterCameraAppTests;
 			sourceTree = "<group>";
 		};
 		A00000000000000000000043 /* App */ = {
@@ -308,6 +338,23 @@
 			productReference = A00000000000000000000010 /* MasterCamera.app */;
 			productType = "com.apple.product-type.application";
 		};
+		2A0000000000000000000050 /* MasterCameraAppTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 2A0000000000000000000090 /* Build configuration list for PBXNativeTarget "MasterCameraAppTests" */;
+			buildPhases = (
+				2A0000000000000000000060 /* Sources */,
+				2A0000000000000000000030 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				2A0000000000000000000070 /* PBXTargetDependency */,
+			);
+			name = MasterCameraAppTests;
+			productName = MasterCameraAppTests;
+			productReference = 2A0000000000000000000012 /* MasterCameraAppTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -318,8 +365,16 @@
 				LastSwiftUpdateCheck = 1600;
 				LastUpgradeCheck = 1600;
 				TargetAttributes = {
+					2A0000000000000000000050 = {
+						CreatedOnToolsVersion = 16.0;
+						TestTargetID = A00000000000000000000050;
+					};
 					A00000000000000000000050 = {
 						CreatedOnToolsVersion = 16.0;
+					};
+					2A0000000000000000000050 = {
+						CreatedOnToolsVersion = 16.0;
+						TestTargetID = A00000000000000000000050;
 					};
 				};
 			};
@@ -337,6 +392,7 @@
 			projectRoot = "";
 			targets = (
 				A00000000000000000000050 /* MasterCamera */,
+				2A0000000000000000000050 /* MasterCameraAppTests */,
 			);
 		};
 /* End PBXProject section */
@@ -398,7 +454,23 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		2A0000000000000000000060 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				2A0000000000000000000001 /* CoreImageRendererHostedTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		2A0000000000000000000070 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = A00000000000000000000050 /* MasterCamera */;
+			targetProxy = 2A0000000000000000000080 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		A00000000000000000000080 /* Debug */ = {
@@ -568,6 +640,38 @@
 			};
 			name = Release;
 		};
+		2A0000000000000000000082 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.sulinandeyu.mastercamera.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/MasterCamera.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/MasterCamera";
+			};
+			name = Debug;
+		};
+		2A0000000000000000000083 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.sulinandeyu.mastercamera.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/MasterCamera.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/MasterCamera";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -585,6 +689,15 @@
 			buildConfigurations = (
 				A00000000000000000000080 /* Debug */,
 				A00000000000000000000081 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		2A0000000000000000000090 /* Build configuration list for PBXNativeTarget "MasterCameraAppTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				2A0000000000000000000082 /* Debug */,
+				2A0000000000000000000083 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

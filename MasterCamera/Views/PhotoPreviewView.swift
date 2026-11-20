@@ -316,7 +316,7 @@ struct PhotoPreviewView: View {
                                 } else {
                                     Image(systemName: "archivebox")
                                 }
-                                Text(isExportingDiagnostics ? "正在生成诊断 ZIP…" : "一键导出 A/B/D/E1/E2/M·R3-I 诊断 ZIP")
+                                Text(isExportingDiagnostics ? "正在生成诊断 ZIP…" : "一键导出 A/B/D/E1/E2/M·Task2A 诊断 ZIP")
                                     .font(.caption.weight(.semibold))
                             }
                             .foregroundStyle(.black)
@@ -326,7 +326,7 @@ struct PhotoPreviewView: View {
                         }
                         .buttonStyle(.plain)
                         .disabled(isExportingDiagnostics)
-                        .accessibilityLabel("一键导出 A、B、D、E1、E2、M R3-I 诊断证据 ZIP")
+                        .accessibilityLabel("一键导出 A、B、D、E1、E2、M Task 2-A 诊断证据 ZIP")
                     }
 
                     if !photo.processingStagePreviews.isEmpty {

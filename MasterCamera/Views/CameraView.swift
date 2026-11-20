@@ -5,6 +5,7 @@ struct CameraView: View {
     @StateObject private var viewModel = CameraViewModel()
     @State private var selectedSample: PhotosPickerItem?
     @State private var selectedBatchSamples: [PhotosPickerItem] = []
+    @State private var selectedTask2AValidationPair: [PhotosPickerItem] = []
 
     var body: some View {
         GeometryReader { geometry in
@@ -73,6 +74,25 @@ struct CameraView: View {
             guard !newValue.isEmpty else { return }
             viewModel.processImportedPhotoBatch(newValue)
             selectedBatchSamples = []
+        }
+        .onChange(of: selectedTask2AValidationPair) { _, newValue in
+            guard newValue.count == 2 else { return }
+            let pair = newValue
+            selectedTask2AValidationPair = []
+            Task {
+                do {
+                    guard let source = try await pair[0].loadTransferable(type: Data.self),
+                          let target = try await pair[1].loadTransferable(type: Data.self),
+                          !source.isEmpty, !target.isEmpty
+                    else {
+                        viewModel.reportImportFailure("Task 2-A 需要依次选择原图 A 与独立参考 T。")
+                        return
+                    }
+                    viewModel.processTask2AValidation(sourceData: source, targetData: target)
+                } catch {
+                    viewModel.reportImportFailure("Task 2-A A/T 读取失败：\(error.localizedDescription)")
+                }
+            }
         }
     }
 
@@ -244,6 +264,22 @@ struct CameraView: View {
                 .disabled(viewModel.processingState.isProcessing)
                 .accessibilityLabel("批量选择最多七张原图并生成诊断证据")
             }
+
+            PhotosPicker(
+                selection: $selectedTask2AValidationPair,
+                maxSelectionCount: 2,
+                selectionBehavior: .ordered,
+                matching: .images
+            ) {
+                Label("Task 2-A：依次选择 A、T 并生成本机 R-I", systemImage: "slider.horizontal.3")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Color(red: 0.78, green: 0.88, blue: 1))
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 32)
+                    .background(Color.white.opacity(0.07), in: Capsule())
+            }
+            .disabled(viewModel.processingState.isProcessing)
+            .accessibilityLabel("依次选择原图 A 和研究参考 T，在本机生成 Task 2-A 渲染证据")
         }
         .padding(.horizontal, 16)
         .padding(.top, isCompact ? 10 : 13)

@@ -11,11 +11,19 @@ final class CoreImageRenderer {
         .cacheIntermediates: true,
         .workingColorSpace: CGColorSpace(name: CGColorSpace.extendedLinearSRGB)!
     ])
+    /// Task 2-A uses an explicit half-float working contract. Production B keeps
+    /// its established context above until pixel-equivalence is approved.
+    private let diagnosticContext = CIContext(options: [
+        .cacheIntermediates: true,
+        .workingColorSpace: CGColorSpace(name: CGColorSpace.extendedLinearSRGB)!,
+        .workingFormat: CIFormat.RGBAh
+    ])
     private let outputColorSpace = CGColorSpace(name: CGColorSpace.sRGB)!
     private let localAdjustmentProcessor = LocalAdjustmentProcessor()
     private let skyAdjustmentProcessor = SkyAdjustmentProcessor()
     private let skinTextureProtectionProcessor = SkinTextureProtectionProcessor()
     private let cinematicToneMappingEngine = CinematicToneMappingEngine()
+    private let professionalRGBCurveProcessor = ProfessionalRGBCurveProcessor()
     private let professionalHSLProcessor = ProfessionalHSLProcessor()
     private let luminanceZoneProcessor = LuminanceZoneProcessor()
     private let cinematicColorGradingEngine = CinematicColorGradingEngine()
@@ -258,7 +266,7 @@ final class CoreImageRenderer {
             enableAutomaticRegionalAdjustments: false,
             manualRegionalToneAdjustments: parameters.regionalToneAdjustments
         )
-        guard let renderedJPEG = context.jpegRepresentation(
+        guard let renderedJPEG = diagnosticContext.jpegRepresentation(
             of: result.finalImage,
             colorSpace: outputColorSpace,
             options: [:]
@@ -266,7 +274,7 @@ final class CoreImageRenderer {
             throw ImageRenderingError.renderFailed
         }
         try validateEncodedGeometry(renderedJPEG, expectedCanvas: result.canvas)
-        return metadataPreservingJPEG(
+        return metadataPreservingSRGBJPEG(
             renderedData: renderedJPEG,
             originalData: data
         ) ?? renderedJPEG
@@ -283,6 +291,20 @@ final class CoreImageRenderer {
         orangeHSL.orangeSaturation = 0.12
         var blueHSL = ProfessionalHSLAdjustment.neutral
         blueHSL.blueSaturation = 0.12
+        var magentaHSL = ProfessionalHSLAdjustment.neutral
+        magentaHSL.magentaSaturation = 0.12
+        let redCurve = ProfessionalRGBCurves(
+            red: SevenPointChannelCurve(
+                black: 0, shadow: 0.075, lowerMidtone: 0.215,
+                midtone: 0.515, upperMidtone: 0.735,
+                highlight: 0.905, white: 1
+            ),
+            intensity: 1
+        )
+        let splitGrade = ProfessionalTonalColorGrade(
+            shadows: TonalColorVector(red: -0.03, green: 0, blue: 0.04, amount: 0.6),
+            highlights: TonalColorVector(red: 0.025, green: 0.006, blue: -0.02, amount: 0.25)
+        )
         let probes: [(String, ManualPhotographyParameters)] = [
             ("M 探针-曝光 -0.25EV", ManualPhotographyParameters(identifier: "exposure-minus", exposureEV: -0.25)),
             ("M 探针-曝光 +0.25EV", ManualPhotographyParameters(identifier: "exposure-plus", exposureEV: 0.25)),
@@ -295,6 +317,9 @@ final class CoreImageRenderer {
             ("M 探针-色调 +8", ManualPhotographyParameters(identifier: "tint-plus", tintShift: 8)),
             ("M 探针-橙色饱和 +0.12", ManualPhotographyParameters(identifier: "orange-hsl", hsl: orangeHSL)),
             ("M 探针-蓝色饱和 +0.12", ManualPhotographyParameters(identifier: "blue-hsl", hsl: blueHSL)),
+            ("M 探针-洋红饱和 +0.12", ManualPhotographyParameters(identifier: "magenta-hsl", hsl: magentaHSL)),
+            ("M 探针-红通道曲线", ManualPhotographyParameters(identifier: "red-rgb-curve", rgbCurves: redCurve)),
+            ("M 探针-冷阴影暖高光", ManualPhotographyParameters(identifier: "three-way-grade", tonalColorGrade: splitGrade)),
             ("M 探针-亮度范围", ManualPhotographyParameters(
                 identifier: "luminance-zones",
                 shadowZoneExposureEV: 0.12,
@@ -339,7 +364,8 @@ final class CoreImageRenderer {
         let blackAdjusted = applyBlackPoint(to: recovered, recipe: recipe)
         let baseCurved = applyToneCurve(to: blackAdjusted, recipe: recipe)
         let filmic = cinematicToneMappingEngine.apply(to: baseCurved, recipe: recipe)
-        let curved = try checkedCanvas(luminanceZoneProcessor.apply(to: filmic, recipe: recipe), canvas: canvas, stage: "亮度蒙版影调")
+        let channelCurved = professionalRGBCurveProcessor.apply(to: filmic, curves: recipe.rgbCurves)
+        let curved = try checkedCanvas(luminanceZoneProcessor.apply(to: channelCurved, recipe: recipe), canvas: canvas, stage: "亮度蒙版影调")
         let toneTime = ProcessInfo.processInfo.systemUptime - start
 
         start = ProcessInfo.processInfo.systemUptime
@@ -375,7 +401,7 @@ final class CoreImageRenderer {
         return (finished, canvas, [
             ("A 原始照片", input),
             ("曝光与动态范围", blackAdjusted),
-            ("自适应七段影调", curved),
+            ("自适应七段与RGB影调", curved),
             ("B 仅全局调整", graded),
             ("C 全局+局部蒙版", local),
             ("E 自动选择最终结果", finished)
@@ -530,6 +556,62 @@ final class CoreImageRenderer {
         return output as Data
     }
 
+    /// Diagnostic-only metadata contract. The rendered source already carries
+    /// the output sRGB profile, so only non-colour capture metadata is copied.
+    /// Production B retains `metadataPreservingJPEG` above until a separate
+    /// baseline-equivalence approval permits changing its metadata behavior.
+    private func metadataPreservingSRGBJPEG(
+        renderedData: Data,
+        originalData: Data
+    ) -> Data? {
+        guard let originalSource = CGImageSourceCreateWithData(originalData as CFData, nil),
+              let renderedSource = CGImageSourceCreateWithData(renderedData as CFData, nil),
+              let originalProperties = CGImageSourceCopyPropertiesAtIndex(originalSource, 0, nil) as? [CFString: Any]
+        else { return nil }
+        var properties: [CFString: Any] = [kCGImagePropertyOrientation: 1]
+        for key in [
+            kCGImagePropertyExifDictionary,
+            kCGImagePropertyGPSDictionary,
+            kCGImagePropertyIPTCDictionary,
+            kCGImagePropertyTIFFDictionary
+        ] where originalProperties[key] != nil {
+            properties[key] = originalProperties[key]
+        }
+        if var tiff = properties[kCGImagePropertyTIFFDictionary] as? [CFString: Any] {
+            tiff[kCGImagePropertyTIFFOrientation] = 1
+            properties[kCGImagePropertyTIFFDictionary] = tiff
+        }
+        if var exif = properties[kCGImagePropertyExifDictionary] as? [CFString: Any] {
+            exif[kCGImagePropertyExifColorSpace] = 1 // sRGB
+            exif.removeValue(forKey: kCGImagePropertyExifPixelXDimension)
+            exif.removeValue(forKey: kCGImagePropertyExifPixelYDimension)
+            properties[kCGImagePropertyExifDictionary] = exif
+        }
+        let output = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(
+            output, UTType.jpeg.identifier as CFString, 1, nil
+        ) else { return nil }
+        CGImageDestinationAddImageFromSource(
+            destination, renderedSource, 0, properties as CFDictionary
+        )
+        guard CGImageDestinationFinalize(destination) else { return nil }
+        let data = output as Data
+        guard outputUsesRGBContract(data) else {
+            AppLogger.imageEngine.error("Task 2-A 输出 JPEG 色彩合同校验失败；保留初始 sRGB 编码结果")
+            return nil
+        }
+        return data
+    }
+
+    private func outputUsesRGBContract(_ data: Data) -> Bool {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any]
+        else { return false }
+        let model = properties[kCGImagePropertyColorModel] as? String
+        return model == "RGB"
+            && properties[kCGImagePropertyOrientation] as? Int == 1
+    }
+
     private func makeStagePreviewData(from image: CIImage) -> Data? {
         let maximumLongEdge: CGFloat = 720
         let translated = image.transformed(
@@ -561,12 +643,15 @@ final class CoreImageRenderer {
         if recipe.blackPoint > 0.001 { modules.append("黑位") }
         if recipe.toneCurveAmount > 0.001 { modules.append("\(recipe.toneCurveStyle.rawValue)曲线") }
         modules.append("自适应七段影调/\(recipe.cinematicIntensity.title)")
+        if !recipe.rgbCurves.isIdentity { modules.append("独立 RGB 七段曲线") }
         if abs(recipe.temperatureShift) > 0.5 || abs(recipe.tintShift) > 0.01 { modules.append("白平衡") }
         modules.append("色彩控制")
         if recipe.vibrance > 0.001 { modules.append("自然饱和度") }
         if recipe.hsl != .neutral { modules.append("分区 HSL") }
         if recipe.luminanceMaskStrength > 0.001 { modules.append("亮度蒙版高光/阴影") }
-        if recipe.colorGradeIntensity > 0.001 {
+        if !recipe.tonalColorGrade.isNeutral {
+            modules.append("显式阴影/中间调/高光色彩分级")
+        } else if recipe.colorGradeIntensity > 0.001 {
             modules.append(
                 recipe.cinematicColorGradeMode == .measuredCoolCinematic
                     ? "实测冷灰阴影/中间调/高光协调"

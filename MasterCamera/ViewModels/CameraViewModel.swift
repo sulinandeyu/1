@@ -86,6 +86,54 @@ final class CameraViewModel: ObservableObject {
         )
     }
 
+    /// Device-local Task 2-A evidence flow. Only A enters PhotoProcessingPipeline.
+    /// T is retained by this task solely for the final local ZIP and can never
+    /// influence analysis, parameters, masks or rendered pixels.
+    func processTask2AValidation(sourceData: Data, targetData: Data) {
+        guard !processingState.isProcessing else { return }
+        guard !sourceData.isEmpty, !targetData.isEmpty else {
+            errorMessage = "Task 2-A 的 A 或 T 数据为空。"
+            return
+        }
+        errorMessage = nil
+        if let previousArchive = diagnosticBatchArchive?.url {
+            try? FileManager.default.removeItem(at: previousArchive)
+        }
+        diagnosticBatchArchive = nil
+        processingState = .analyzing
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let input = CapturedPhoto(
+                    originalImageData: sourceData,
+                    editedImageData: nil,
+                    capturedAt: Date(),
+                    isDiagnosticImport: true
+                )
+                processingState = .rendering
+                let processed = try await Task.detached(priority: .userInitiated) {
+                    try PhotoProcessingPipeline().process(input)
+                }.value
+                processingState = .finalizing
+                let archiveURL = try await Task.detached(priority: .utility) {
+                    try DiagnosticBundleExporter().makeArchive(
+                        for: processed,
+                        externalResearchTargetData: targetData
+                    )
+                }.value
+                diagnosticBatchArchive = DiagnosticBatchArchive(
+                    url: archiveURL,
+                    requestedCount: 1,
+                    completedCount: 1,
+                    failedCount: 0
+                )
+            } catch {
+                errorMessage = "Task 2-A 本机渲染或证据导出失败：\(error.localizedDescription)"
+            }
+            processingState = .idle
+        }
+    }
+
     /// Runs the exact production analysis/solver/Core Image pipeline for up to
     /// seven private library assets. Processing is deliberately serial: only
     /// one original and one full-resolution CapturedPhoto are resident at a

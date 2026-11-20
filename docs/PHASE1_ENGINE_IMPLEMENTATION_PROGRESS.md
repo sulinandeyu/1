@@ -114,6 +114,76 @@ Apple CI 真实证据（2026-11-20）：
 
 可按文件撤销 Task 1 修改并从 Xcode/Package 移除新增文件；App 私有目录中的既有原图和 manifest 不应随代码回滚自动删除。回滚前必须先为仍处于 recoverable/needsReconciliation 的原图保留恢复工具。
 
-## 下一任务入口（未开始）
+## Task 1 结束时记录的下一任务入口（历史状态）
 
 Task 2 从 `CoreImageRenderer.swift`、`AutomaticEditingRecipe.swift` 与 `CinematicImagingEngines.swift` 的隔离渲染表达能力验证开始。不得在 Task 1 未完成 Apple 编译与真机存储验收前切换正式 B。
+
+## Task 2-A：专业电影影调渲染表达能力
+
+状态（2026-11-20）：
+
+- `SOURCE_IMPLEMENTED`
+- `APPLE_PIXEL_TEST_VERIFIED = PENDING`
+- `IPHONE_RENDER_VERIFIED = PENDING`
+- `HUMAN_AESTHETIC_APPROVED = PENDING`
+
+本轮只实现隔离诊断渲染表达能力，没有开始 Task 3 自动摄影目标选择，也没有改变正式 B 的参数、决策或正常拍照保存流程。
+
+### 已完成源码
+
+- `AutomaticEditingRecipe.swift`
+  - 新增三通道独立七锚点 RGB 曲线，支持 identity、单调约束和显式强度。
+  - HSL 从橙/黄/绿/青/蓝扩展为红/橙/黄/绿/青/蓝/紫/洋红八色域；各色域均有 Hue/Saturation/Luminance。
+  - 新增阴影/中间调/高光显式色向结构；色向与亮度调整分离。
+  - 所有新增字段默认 identity/neutral；现有 B 配方不设置这些字段。
+  - 新增 `task2ACinematicExpression`，仅由诊断 M 入口使用。它是人工声明的渲染表达探针，不是自动摄影目标，也不读取参考 T。
+- `CinematicImagingEngines.swift`
+  - 新增 `ProfessionalRGBCurveProcessor`：在 extended-linear sRGB 工作链中显式转换至 encoded sRGB 执行摄影 RGB 曲线，再转换回 linear。
+  - `ProfessionalHSLProcessor` 已真正执行八色域连续色相权重，保留低色度中性色 chroma guard。
+  - `CinematicColorGradingEngine` 新增显式三段色彩分级：柔和亮度权重、去亮度色向、低色度/高光中性色保护；可同时表达冷阴影与克制暖高光，不使用统一冷色 LUT。
+- `CoreImageRenderer.swift`
+  - 在七段亮度曲线之后接入独立 RGB 曲线；HSL 和三段分级随后进入同一全分辨率 Core Image 链。
+  - Task 2-A 手动诊断使用显式 `extendedLinearSRGB + RGBAh` 工作合同并编码为 sRGB JPEG。
+  - Task 2-A 只复制 EXIF/GPS/IPTC/TIFF 等非色彩元数据，不把原输入 ICC 重新附到 sRGB 像素；正式 B 仍保留既有 context/编码方法，避免未经基线验证改变正式成片。
+  - 新增红通道曲线、洋红 HSL、冷阴影/暖高光单参数探针与结构化执行模块记录。
+- `ProcessingConfiguration.swift`、`PhotoProcessingPipeline.swift` 既有 M 链
+  - 诊断导入的 M 现在使用 Task 2-A 人工表达参数；仍经过全分辨率真实渲染、区域执行回执和既有技术质检，不替换 B/D/V2。
+- 真机诊断准备
+  - `CameraView.swift` / `CameraViewModel.swift` 增加按顺序选择 A、T 的本机 Task 2-A 入口。
+  - 只有 A 进入 `PhotoProcessingPipeline`；T 只在处理结束后交给本地证据导出器，不能影响分析、参数、蒙版或像素。
+  - `DiagnosticBundleExporter.swift` 导出 A、正式 B、M/R-I、用户明确选择的本地 T、参数/质检/设备/Git 证据以及 `task2a-comparison.html`。T 不进入 App 资源、公开仓库或 CI。
+
+### 色彩与执行合同
+
+- 既有七段亮度曲线保留原来的 extended-linear sRGB 工作域数学，避免本轮改变正式 B；新增 RGB 曲线、八色域 HSL 与三段色彩分级才在 encoded-sRGB 感知域求值，并在各自算子边界显式完成线性/编码转换。
+
+`输入 JPEG/HEIC（读取 orientation/ICC） → 方向标准化 → extended-linear sRGB → 动态范围/亮度曲线 → encoded-sRGB 定义的 RGB 曲线（输出回 linear） → 白平衡/全局颜色 → encoded-sRGB 八色域 HSL（输出回 linear） → 三段色彩分级 → 可靠语义蒙版区域调整 → 细节/镜头 → sRGB JPEG`。
+
+普通 JPEG/HEIC 不使用 Log 视频 LUT。本轮没有新增 3D LUT。区域处理继续依赖现有真实蒙版及羽化；蒙版不可用时明确跳过该区域，不伪造执行。
+
+### A/T 本地证据状态
+
+已确认本地文件真实存在（未加入 Git）：
+
+- `output/inverse_solver/autumn_street/A_source.jpg`，SHA-256 `7A6C4F182538C5C5FB7A3F3C090E034CF13F47D6A83595D51C15D5DE96220402`
+- `T_target_original.jpg`，SHA-256 `B5944CDA017CA89E3DA4D5691B331EF37B0B0044FF1ACCA34CF2E53CDBC53F59`
+- `T_target_registered.jpg`，SHA-256 `ED8DD35913ACB0167B07F516C7F20B8507BFC33B72F8855718F4B0EBF77EFE60`
+
+Windows 无法执行 Apple Core Image，因此本轮没有生成并冒充 R-I。真实 R-I 必须由后续 Apple/iPhone 运行产生。
+
+### 测试准备（尚未执行 Apple 运行）
+
+- `MasterCameraDecisionCoreTests/CinematicRenderingPixelTests.swift`：数学审查后扩展为 11 项 macOS Core Image 像素测试，覆盖正式配方新增控制保持 identity、像素 identity、RGB 曲线锚点间 identity/单调性、八色域 HSL lightness 的色相/饱和稳定性、extended-linear 超范围高光残差、1024 级梯度断层、冷阴影/暖高光、高光肩部/暗部方向和局部蒙版。旧五色域继续使用 legacy HSV-value，Task 2-A 显式使用 perceptual HSL，避免改变正式 B。
+- `MasterCameraAppTests/CoreImageRendererHostedTests.swift`：5 项 app-hosted 测试，覆盖真实 renderer 的尺寸/方向/RGB 输出、Task 2-A 全分辨率及模块回执、P3 输入不被错误作为输出 ICC 重新附着、重新解码色差、A/T 实际编码扩展名和无可靠蒙版时区域明确跳过。
+- Xcode 工程新增 `MasterCameraAppTests` target；共享 scheme 与 `iOS Build` 工作流已准备动态选择可用 iPhone Simulator 并执行 `xcodebuild test`。
+- 当前 Windows 没有 `swift` 或 `xcodebuild`，因此上述 16 项不能标记为通过。最终静态收尾已完成：`git diff --check` 通过（仅行尾提示），工作流 YAML 通过 `yaml-lint`，共享 scheme XML 可解析，PBX 新增对象 ID 无重复，Task 2-A 工程/工作流差异中未发现私人素材路径或诊断 ZIP 引用。以上均不是 Swift 编译或 Apple 像素测试证据。
+
+### 正式 B 隔离
+
+- 新字段的默认值严格为 identity/neutral，现有正式配方没有启用。
+- 正式 B 仍使用原有 `CIContext` 与 `metadataPreservingJPEG`；Task 2-A 的半浮点工作格式和安全 ICC 输出合同只在 `renderManualEdit` 诊断路径启用。
+- 没有修改 `PhotographyDecisionEngine`、`AutomaticPhotographyDirectorV2`、正式 B 参数、质量阈值、Task 1 存储机制或正常照片保存逻辑。
+
+### 下一步（本轮不执行）
+
+取得单独授权后，将当前源码提交并运行 Apple CI：先要求 `swift test` 与 app-hosted `xcodebuild test` 全部通过，再执行 Simulator build。之后仍需 TestFlight 明确授权，才能在真实 iPhone 选择 A/T、生成 R-I、导出 A/T/R-I，并由人工检查冷暖、黑位、道路纹理、黄绿分离、空间深度、中性色和蒙版边缘。未完成这些步骤前不得标记 `APPLE_PIXEL_TEST_VERIFIED`、`IPHONE_RENDER_VERIFIED` 或 `HUMAN_AESTHETIC_APPROVED`。

@@ -103,6 +103,136 @@ final class CinematicToneMappingEngine {
     }
 }
 
+/// PT-RENDER-001. Independent per-channel seven-anchor curves. The Core Image context works in
+/// extended-linear sRGB, while photographic RGB curves are defined in encoded
+/// sRGB. The colour cube performs that conversion explicitly and returns linear
+/// samples to the shared renderer pipeline.
+final class ProfessionalRGBCurveProcessor {
+    private let dimension = 32
+    private let inputAnchors: [Float] = [0, 0.08, 0.22, 0.50, 0.72, 0.90, 1]
+
+    func apply(to image: CIImage, curves requested: ProfessionalRGBCurves) -> CIImage {
+        let curves = requested.clamped()
+        guard !curves.isIdentity else { return image }
+        let strength = curves.intensity
+        let redAnchors = mixedAnchors(curves.red.anchors, strength: strength)
+        let greenAnchors = mixedAnchors(curves.green.anchors, strength: strength)
+        let blueAnchors = mixedAnchors(curves.blue.anchors, strength: strength)
+        var cube: [Float] = []
+        cube.reserveCapacity(dimension * dimension * dimension * 4)
+        let denominator = Float(dimension - 1)
+        for blueIndex in 0..<dimension {
+            for greenIndex in 0..<dimension {
+                for redIndex in 0..<dimension {
+                    let linear = SIMD3<Float>(
+                        Float(redIndex) / denominator,
+                        Float(greenIndex) / denominator,
+                        Float(blueIndex) / denominator
+                    )
+                    let encoded = SIMD3<Float>(
+                        linearToSRGB(linear.x), linearToSRGB(linear.y), linearToSRGB(linear.z)
+                    )
+                    cube.append(contentsOf: [
+                        sRGBToLinear(map(encoded.x, outputs: redAnchors)),
+                        sRGBToLinear(map(encoded.y, outputs: greenAnchors)),
+                        sRGBToLinear(map(encoded.z, outputs: blueAnchors)),
+                        1
+                    ])
+                }
+            }
+        }
+        let data = cube.withUnsafeBufferPointer { Data(buffer: $0) }
+        return ExtendedRangeColorCube.apply(
+            to: image,
+            dimension: dimension,
+            data: data,
+            preserveExtendedRange: true
+        )
+    }
+
+    private func mixedAnchors(_ requested: [Float], strength: Float) -> [Float] {
+        zip(inputAnchors, requested).map { identity, target in
+            clamp(identity + (target - identity) * strength)
+        }
+    }
+
+    private func map(_ value: Float, outputs: [Float]) -> Float {
+        guard value > inputAnchors[0] else { return outputs[0] }
+        for index in 1..<inputAnchors.count where value <= inputAnchors[index] {
+            let range = inputAnchors[index] - inputAnchors[index - 1]
+            let fraction = range > 0 ? (value - inputAnchors[index - 1]) / range : 0
+            // Piecewise linear interpolation is deliberately used as the safe
+            // baseline: identity anchors produce y == x at every in-between
+            // sample, and monotonic anchors cannot introduce overshoot/ripples.
+            return outputs[index - 1] + (outputs[index] - outputs[index - 1]) * fraction
+        }
+        return outputs.last ?? value
+    }
+
+    private func linearToSRGB(_ value: Float) -> Float {
+        let bounded = clamp(value)
+        return bounded <= 0.0031308
+            ? bounded * 12.92
+            : 1.055 * pow(bounded, 1 / 2.4) - 0.055
+    }
+
+    private func sRGBToLinear(_ value: Float) -> Float {
+        let bounded = clamp(value)
+        return bounded <= 0.04045
+            ? bounded / 12.92
+            : pow((bounded + 0.055) / 1.055, 2.4)
+    }
+
+    private func clamp(_ value: Float) -> Float { min(max(value, 0), 1) }
+}
+
+/// CIColorCube is defined on [0, 1]. Preserve extended-linear residuals around
+/// the perceptual cube operation so recoverable super-white/negative samples are
+/// not silently clipped by Task 2-A. Existing production HSL keeps its legacy
+/// path; this helper is enabled only by new diagnostic operators.
+private enum ExtendedRangeColorCube {
+    private static let restoreExtendedRangeKernel = CIColorKernel(source: """
+        kernel vec4 restoreExtendedRange(__sample transformed, __sample original) {
+            vec3 boundedOriginal = clamp(original.rgb, vec3(0.0), vec3(1.0));
+            return vec4(transformed.rgb + original.rgb - boundedOriginal, transformed.a);
+        }
+        """)
+
+    static func apply(
+        to image: CIImage,
+        dimension: Int,
+        data: Data,
+        preserveExtendedRange: Bool
+    ) -> CIImage {
+        let parameters: [String: Any] = [
+            "inputCubeDimension": dimension,
+            "inputCubeData": data
+        ]
+        guard preserveExtendedRange else {
+            return image.applyingFilter("CIColorCube", parameters: parameters)
+                .cropped(to: image.extent)
+        }
+
+        let bounded = image.applyingFilter("CIColorClamp", parameters: [
+            "inputMinComponents": CIVector(x: 0, y: 0, z: 0, w: 0),
+            "inputMaxComponents": CIVector(x: 1, y: 1, z: 1, w: 1)
+        ]).cropped(to: image.extent)
+        let transformed = bounded.applyingFilter("CIColorCube", parameters: parameters)
+            .cropped(to: image.extent)
+        guard let restoreExtendedRangeKernel,
+              let restored = restoreExtendedRangeKernel.apply(
+                  extent: image.extent,
+                  arguments: [transformed, image]
+              )
+        else {
+            // Failing closed preserves source highlight data rather than
+            // returning a colour-cube result with silent super-white clipping.
+            return image
+        }
+        return restored.cropped(to: image.extent)
+    }
+}
+
 /// Shared, deterministic Core Image parameter mapping used by the production
 /// renderer and the macOS pixel tests.  Neutral values return the input image
 /// without inserting a filter, which is required for uncontaminated M probes.
@@ -188,7 +318,7 @@ enum CoreImageParameterKernel {
     }
 }
 
-/// 以连续色相权重执行真正的分区 HSL 调整，避免用全局饱和度冒充调色。
+/// PT-RENDER-001：以连续色相权重执行真正的八色域 HSL，避免用全局饱和度冒充调色。
 final class ProfessionalHSLProcessor {
     private let dimension = 32
 
@@ -208,42 +338,76 @@ final class ProfessionalHSLProcessor {
                         Float(greenIndex) / denominator,
                         Float(blueIndex) / denominator
                     )
-                    var hsv = rgbToHSV(SIMD3(
+                    let encodedInput = SIMD3<Float>(
                         linearToSRGB(linearRGB.x),
                         linearToSRGB(linearRGB.y),
                         linearToSRGB(linearRGB.z)
-                    ))
-                    let orange = hueWeight(hsv.x, center: 0.075, width: 0.095)
-                    let yellow = hueWeight(hsv.x, center: 0.155, width: 0.09)
-                    let green = hueWeight(hsv.x, center: 0.33, width: 0.13)
-                    let cyan = hueWeight(hsv.x, center: 0.50, width: 0.10)
-                    let blue = hueWeight(hsv.x, center: 0.64, width: 0.13)
-                    let chromaGuard = min(1, hsv.y * 3.2)
+                    )
+                    let hue = rgbToHSV(encodedInput).x
+                    let red = hueWeight(hue, center: 0.0, width: 0.095)
+                    let orange = hueWeight(hue, center: 0.075, width: 0.095)
+                    let yellow = hueWeight(hue, center: 0.155, width: 0.09)
+                    let green = hueWeight(hue, center: 0.33, width: 0.13)
+                    let cyan = hueWeight(hue, center: 0.50, width: 0.10)
+                    let blue = hueWeight(hue, center: 0.64, width: 0.13)
+                    let purple = hueWeight(hue, center: 0.755, width: 0.105)
+                    let magenta = hueWeight(hue, center: 0.89, width: 0.115)
+                    let maximum = max(encodedInput.x, encodedInput.y, encodedInput.z)
+                    let minimum = min(encodedInput.x, encodedInput.y, encodedInput.z)
+                    let encodedChroma = maximum - minimum
+                    let chromaGuard: Float
+                    if adjustment.mathMode == .perceptualHSL {
+                        chromaGuard = clamp(encodedChroma / 0.12)
+                    } else {
+                        let hsv = rgbToHSV(encodedInput)
+                        chromaGuard = min(1, hsv.y * 3.2)
+                    }
                     let hueDelta = (
+                        red * adjustment.redHue +
                         orange * adjustment.orangeHue +
                         yellow * adjustment.yellowHue +
                         green * adjustment.greenHue +
                         cyan * adjustment.cyanHue +
-                        blue * adjustment.blueHue
+                        blue * adjustment.blueHue +
+                        purple * adjustment.purpleHue +
+                        magenta * adjustment.magentaHue
                     ) * chromaGuard
                     let saturationDelta = (
+                        red * adjustment.redSaturation +
                         orange * adjustment.orangeSaturation +
                         yellow * adjustment.yellowSaturation +
                         green * adjustment.greenSaturation +
                         cyan * adjustment.cyanSaturation +
-                        blue * adjustment.blueSaturation
+                        blue * adjustment.blueSaturation +
+                        purple * adjustment.purpleSaturation +
+                        magenta * adjustment.magentaSaturation
                     ) * chromaGuard
                     let luminanceDelta = (
+                        red * adjustment.redLuminance +
                         orange * adjustment.orangeLuminance +
                         yellow * adjustment.yellowLuminance +
                         green * adjustment.greenLuminance +
                         cyan * adjustment.cyanLuminance +
-                        blue * adjustment.blueLuminance
+                        blue * adjustment.blueLuminance +
+                        purple * adjustment.purpleLuminance +
+                        magenta * adjustment.magentaLuminance
                     ) * chromaGuard
-                    hsv.x = wrappedHue(hsv.x + hueDelta)
-                    hsv.y = clamp(hsv.y * (1 + saturationDelta))
-                    hsv.z = clamp(hsv.z + luminanceDelta)
-                    let encodedOutput = hsvToRGB(hsv)
+                    let encodedOutput: SIMD3<Float>
+                    if adjustment.mathMode == .perceptualHSL {
+                        var hsl = rgbToHSL(encodedInput)
+                        hsl.x = wrappedHue(hsl.x + hueDelta)
+                        hsl.y = clamp(hsl.y * (1 + saturationDelta))
+                        // Task 2-A luminance means HSL lightness, not HSV value.
+                        hsl.z = clamp(hsl.z + luminanceDelta)
+                        encodedOutput = hslToRGB(hsl)
+                    } else {
+                        // Preserve established B/D five-band pixel semantics.
+                        var hsv = rgbToHSV(encodedInput)
+                        hsv.x = wrappedHue(hsv.x + hueDelta)
+                        hsv.y = clamp(hsv.y * (1 + saturationDelta))
+                        hsv.z = clamp(hsv.z + luminanceDelta)
+                        encodedOutput = hsvToRGB(hsv)
+                    }
                     cube.append(contentsOf: [
                         sRGBToLinear(encodedOutput.x),
                         sRGBToLinear(encodedOutput.y),
@@ -254,10 +418,12 @@ final class ProfessionalHSLProcessor {
             }
         }
         let data = cube.withUnsafeBufferPointer { Data(buffer: $0) }
-        return image.applyingFilter("CIColorCube", parameters: [
-            "inputCubeDimension": dimension,
-            "inputCubeData": data
-        ]).cropped(to: image.extent)
+        return ExtendedRangeColorCube.apply(
+            to: image,
+            dimension: dimension,
+            data: data,
+            preserveExtendedRange: adjustment.mathMode == .perceptualHSL
+        )
     }
 
     private func hueWeight(_ hue: Float, center: Float, width: Float) -> Float {
@@ -287,6 +453,41 @@ final class ProfessionalHSLProcessor {
         let chroma = hsv.z * hsv.y
         let x = chroma * (1 - abs(sector.truncatingRemainder(dividingBy: 2) - 1))
         let m = hsv.z - chroma
+        let value: SIMD3<Float>
+        switch Int(floor(sector)) % 6 {
+        case 0: value = SIMD3(chroma, x, 0)
+        case 1: value = SIMD3(x, chroma, 0)
+        case 2: value = SIMD3(0, chroma, x)
+        case 3: value = SIMD3(0, x, chroma)
+        case 4: value = SIMD3(x, 0, chroma)
+        default: value = SIMD3(chroma, 0, x)
+        }
+        return SIMD3(clamp(value.x + m), clamp(value.y + m), clamp(value.z + m))
+    }
+
+    private func rgbToHSL(_ rgb: SIMD3<Float>) -> SIMD3<Float> {
+        let maximum = max(rgb.x, rgb.y, rgb.z)
+        let minimum = min(rgb.x, rgb.y, rgb.z)
+        let delta = maximum - minimum
+        let lightness = (maximum + minimum) * 0.5
+        var hue: Float = 0
+        if delta > 0.0001 {
+            if maximum == rgb.x { hue = ((rgb.y - rgb.z) / delta).truncatingRemainder(dividingBy: 6) }
+            else if maximum == rgb.y { hue = ((rgb.z - rgb.x) / delta) + 2 }
+            else { hue = ((rgb.x - rgb.y) / delta) + 4 }
+            hue /= 6
+            if hue < 0 { hue += 1 }
+        }
+        let denominator = max(0.0001, 1 - abs(2 * lightness - 1))
+        let saturation = delta > 0.0001 ? delta / denominator : 0
+        return SIMD3(hue, clamp(saturation), clamp(lightness))
+    }
+
+    private func hslToRGB(_ hsl: SIMD3<Float>) -> SIMD3<Float> {
+        let chroma = (1 - abs(2 * hsl.z - 1)) * hsl.y
+        let sector = hsl.x * 6
+        let x = chroma * (1 - abs(sector.truncatingRemainder(dividingBy: 2) - 1))
+        let m = hsl.z - chroma * 0.5
         let value: SIMD3<Float>
         switch Int(floor(sector)) % 6 {
         case 0: value = SIMD3(chroma, x, 0)
@@ -479,6 +680,9 @@ final class LuminanceZoneProcessor {
 /// Independently grades shadows, midtones and highlights with soft luminance masks.
 final class CinematicColorGradingEngine {
     func apply(to image: CIImage, recipe: AutomaticEditingRecipe) -> CIImage {
+        if !recipe.tonalColorGrade.isNeutral {
+            return applyProfessionalTonalGrade(to: image, requested: recipe.tonalColorGrade)
+        }
         let intensity = recipe.colorGradeIntensity
         guard intensity > 0.001 else { return image }
 
@@ -531,6 +735,101 @@ final class CinematicColorGradingEngine {
         }
         return output.cropped(to: image.extent)
     }
+
+    /// PT-RENDER-001. Explicit three-way grade used by Task 2-A. A 32³ colour cube evaluates
+    /// soft luminance zones in encoded sRGB, removes each vector's luminance
+    /// component, and attenuates the grade on neutral/highlight samples. This
+    /// allows cool shadows and restrained warm highlights to coexist without a
+    /// uniform blue overlay or an exposure side effect.
+    private func applyProfessionalTonalGrade(
+        to image: CIImage,
+        requested: ProfessionalTonalColorGrade
+    ) -> CIImage {
+        let grade = requested.clamped()
+        guard !grade.isNeutral else { return image }
+        let dimension = 32
+        var cube: [Float] = []
+        cube.reserveCapacity(dimension * dimension * dimension * 4)
+        let denominator = Float(dimension - 1)
+        for blueIndex in 0..<dimension {
+            for greenIndex in 0..<dimension {
+                for redIndex in 0..<dimension {
+                    let linear = SIMD3<Float>(
+                        Float(redIndex) / denominator,
+                        Float(greenIndex) / denominator,
+                        Float(blueIndex) / denominator
+                    )
+                    let encoded = SIMD3<Float>(
+                        linearToSRGB(linear.x), linearToSRGB(linear.y), linearToSRGB(linear.z)
+                    )
+                    let luminance = clamp(encoded.x * 0.2126 + encoded.y * 0.7152 + encoded.z * 0.0722)
+                    let maximum = max(encoded.x, encoded.y, encoded.z)
+                    let minimum = min(encoded.x, encoded.y, encoded.z)
+                    let chroma = maximum - minimum
+                    let chromaGuard = clamp(chroma / 0.18)
+                    let neutralScale = (1 - grade.neutralChromaProtection)
+                        + grade.neutralChromaProtection * chromaGuard
+                    let highlightNeutralScale = 1 - grade.highlightNeutralProtection
+                        * (1 - chromaGuard) * smoothstep(0.68, 0.96, luminance)
+                    let shadowWeight = 1 - smoothstep(0.12, 0.50, luminance)
+                    let highlightWeight = smoothstep(0.55, 0.92, luminance)
+                    let midtoneWeight = clamp(1 - shadowWeight - highlightWeight)
+                    var delta = SIMD3<Float>(repeating: 0)
+                    delta += chromaticVector(grade.shadows)
+                        * shadowWeight * neutralScale
+                    delta += chromaticVector(grade.midtones)
+                        * midtoneWeight * neutralScale
+                    delta += chromaticVector(grade.highlights)
+                        * highlightWeight * neutralScale * highlightNeutralScale
+                    let output = SIMD3<Float>(
+                        clamp(encoded.x + delta.x),
+                        clamp(encoded.y + delta.y),
+                        clamp(encoded.z + delta.z)
+                    )
+                    cube.append(contentsOf: [
+                        sRGBToLinear(output.x),
+                        sRGBToLinear(output.y),
+                        sRGBToLinear(output.z),
+                        1
+                    ])
+                }
+            }
+        }
+        let data = cube.withUnsafeBufferPointer { Data(buffer: $0) }
+        return ExtendedRangeColorCube.apply(
+            to: image,
+            dimension: dimension,
+            data: data,
+            preserveExtendedRange: true
+        )
+    }
+
+    private func chromaticVector(_ value: TonalColorVector) -> SIMD3<Float> {
+        let requested = SIMD3<Float>(value.red, value.green, value.blue)
+        let luminance = requested.x * 0.2126 + requested.y * 0.7152 + requested.z * 0.0722
+        return (requested - SIMD3<Float>(repeating: luminance)) * value.amount
+    }
+
+    private func smoothstep(_ lower: Float, _ upper: Float, _ value: Float) -> Float {
+        let x = clamp((value - lower) / max(upper - lower, 0.0001))
+        return x * x * (3 - 2 * x)
+    }
+
+    private func linearToSRGB(_ value: Float) -> Float {
+        let bounded = clamp(value)
+        return bounded <= 0.0031308
+            ? bounded * 12.92
+            : 1.055 * pow(bounded, 1 / 2.4) - 0.055
+    }
+
+    private func sRGBToLinear(_ value: Float) -> Float {
+        let bounded = clamp(value)
+        return bounded <= 0.04045
+            ? bounded / 12.92
+            : pow((bounded + 0.055) / 1.055, 2.4)
+    }
+
+    private func clamp(_ value: Float) -> Float { min(max(value, 0), 1) }
 
     /// PT-AESTHETIC-012. Unlike the legacy grade, this path treats the master
     /// intensity and each tonal-zone amount as independently measured controls.
