@@ -6,7 +6,7 @@
 
 ## Task 1：原图安全保存闭环
 
-状态：**SOURCE_IMPLEMENTED / APPLE_EXECUTION_PENDING**
+状态：**APPLE_CI_VERIFIED / DEVICE_VERIFICATION_PENDING**
 
 已完成的代码行为：
 
@@ -51,7 +51,7 @@
 
 ## 测试证据
 
-已编写但尚未在 Apple/Swift 环境执行的 **28 项**测试覆盖：
+已在 Apple/Swift 环境执行并通过的 **28 项** Task 1 测试覆盖：
 
 1. 正常暂存、原始字节与 SHA-256 一致。
 2. 同 capture ID 暂存幂等。
@@ -87,13 +87,21 @@ Windows 当前验证：
 - `git diff --check`：通过（仅存在工作区行尾提示，无空白错误）。
 - Xcode 工程已引用新增 Swift 文件。
 - 禁止修改的摄影决策、分析、Core Image 参数文件没有本轮差异。
-- 当前 Windows 环境没有 `swift` / `xcodebuild`，因此 **Swift 编译、XCTest、Photos 事务和 iPhone 重启恢复均未执行，不能标记为通过**。
-- `.github/workflows/ios-build.yml` 已包含 `swift test`，会发现 `MasterCameraDecisionCoreTests/OriginalPhotoRetentionStoreTests.swift`；随后执行 iOS Simulator `xcodebuild build`。本轮无需改动工作流。
+- 当前 Windows 环境没有 `swift` / `xcodebuild`；本地未将静态检查冒充 Apple 验证。
+- `.github/workflows/ios-build.yml` 无需改动，已实际运行 `swift test` 和 iOS Simulator `xcodebuild build`。
 
-## 尚待 Apple/iPhone 验证
+Apple CI 真实证据（2026-11-20）：
 
-- macOS `swift test` 编译并执行新增故障注入测试。
-- iOS Simulator 编译，确认 Swift 并发检查和 Photos API 可用性。
+- Git 提交：`29b63082616f71e2a216f73a80a23c9b684e4c62`。
+- GitHub Actions：`iOS Build #121`，run ID `44723230359`，<https://github.com/sulinandeyu/1/actions/runs/44723230359>。
+- `OriginalPhotoRetentionStoreTests`：28 项通过，0 失败。
+- 完整 `swift test`：137 项通过，0 失败。
+- 两项最终边界：同 capture ID 数据身份冲突的并发请求拒绝测试通过；已确认原图清理本地缓存后不重复创建 Photos 原图、仍可保存正式 B 的回归测试通过。
+- iOS Simulator：`xcodebuild build` 完成，日志结果为 `BUILD SUCCEEDED`。
+- 该证据仅支持 `APPLE_CI_VERIFIED`；没有执行真实 iPhone、锁屏、低存储或强制终止验收，不能标记为 `DEVICE_VERIFIED`。
+
+## 尚待 iPhone 验证
+
 - 真机验证 Data Protection、低存储、强制终止、重启恢复、权限拒绝和连续点击保存。
 - 使用真实拍照验证原始 JPEG 哈希、正式 B 像素与基线一致。
 - `.addOnly` 下的 `needsReconciliation` 用户提示流程；不扩大照片读取权限。
