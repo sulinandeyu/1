@@ -284,6 +284,29 @@ struct PhotoPreviewView: View {
         }
     }
 
+#if XIAOSU_INTERNAL_CAPTURE_EVIDENCE
+    private func exportProductionCaptureEvidence() {
+        guard !isExportingDiagnostics else { return }
+        isExportingDiagnostics = true
+        diagnosticExportError = nil
+        let capturedPhoto = photo
+        DispatchQueue.global(qos: .userInitiated).async {
+            let result = Result {
+                try DiagnosticBundleExporter().makeProductionCaptureArchive(for: capturedPhoto)
+            }
+            DispatchQueue.main.async {
+                isExportingDiagnostics = false
+                switch result {
+                case let .success(url):
+                    diagnosticArchive = DiagnosticArchiveShareItem(url: url)
+                case let .failure(error):
+                    diagnosticExportError = error.localizedDescription
+                }
+            }
+        }
+    }
+#endif
+
     @ViewBuilder
     private var saveStatusPill: some View {
         if let message = saveState.message {
@@ -306,6 +329,33 @@ struct PhotoPreviewView: View {
         } else {
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 12) {
+#if XIAOSU_INTERNAL_CAPTURE_EVIDENCE
+                    if !photo.isDiagnosticImport, photo.hasCompletedProcessing {
+                        Button(action: exportProductionCaptureEvidence) {
+                            HStack(spacing: 8) {
+                                if isExportingDiagnostics {
+                                    ProgressView()
+                                        .progressViewStyle(.circular)
+                                        .tint(.black)
+                                } else {
+                                    Image(systemName: "archivebox")
+                                }
+                                Text(isExportingDiagnostics
+                                    ? "正在生成正式 B 取证 ZIP…"
+                                    : "导出本次正常拍照 A/B 取证 ZIP")
+                                    .font(.caption.weight(.semibold))
+                            }
+                            .foregroundStyle(.black)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 10)
+                            .background(.white, in: RoundedRectangle(cornerRadius: 10))
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(isExportingDiagnostics)
+                        .accessibilityLabel("导出本次正常拍照原图与正式 B 证据 ZIP")
+                    }
+#endif
+
                     if photo.isDiagnosticImport {
                         Button(action: exportDiagnosticBundle) {
                             HStack(spacing: 8) {

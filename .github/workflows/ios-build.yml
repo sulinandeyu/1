@@ -51,3 +51,26 @@ jobs:
             GIT_COMMIT_SHA="$GITHUB_SHA" \
             CODE_SIGNING_ALLOWED=NO
 
+      - name: Verify ordinary and internal Release build boundaries
+        run: |
+          set -euo pipefail
+
+          xcodebuild build \
+            -project MasterCamera.xcodeproj \
+            -scheme MasterCamera \
+            -configuration Release \
+            -sdk iphonesimulator \
+            -derivedDataPath "$RUNNER_TEMP/release-production" \
+            GIT_COMMIT_SHA="$GITHUB_SHA" \
+            CODE_SIGNING_ALLOWED=NO
+
+          xcodebuild build \
+            -project MasterCamera.xcodeproj \
+            -scheme MasterCamera \
+            -configuration Release \
+            -sdk iphonesimulator \
+            -derivedDataPath "$RUNNER_TEMP/release-internal-evidence" \
+            GIT_COMMIT_SHA="$GITHUB_SHA" \
+            SWIFT_ACTIVE_COMPILATION_CONDITIONS="XIAOSU_INTERNAL_CAPTURE_EVIDENCE" \
+            CODE_SIGNING_ALLOWED=NO
+

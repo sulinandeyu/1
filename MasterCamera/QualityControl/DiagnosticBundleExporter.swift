@@ -5,12 +5,176 @@ import ImageIO
 import UIKit
 import UniformTypeIdentifiers
 
+/// Release builds distributed through the internal TestFlight workflow opt in
+/// explicitly. App Store/ordinary Release builds do not define this condition,
+/// so normal-capture evidence UI is not compiled into those products.
+enum InternalCaptureEvidenceBuildPolicy {
+#if XIAOSU_INTERNAL_CAPTURE_EVIDENCE
+    static let isEnabled = true
+#else
+    static let isEnabled = false
+#endif
+}
+
+struct ProductionCaptureEvidenceIdentity: Equatable, Sendable {
+    let captureID: UUID
+    let sourceSHA256: String
+    let formalBSHA256: String
+    let sourceByteCount: Int
+    let formalBByteCount: Int
+}
+
 /// Builds a self-contained, uncompressed ZIP so TestFlight evidence can be
 /// exported through the native share sheet without adding a third-party archive
 /// dependency.  Every rendered image is tied to the same source SHA-256.
 final class DiagnosticBundleExporter {
+    private let allowsProductionCaptureEvidence: Bool
+
+    init(
+        allowsProductionCaptureEvidence: Bool = InternalCaptureEvidenceBuildPolicy.isEnabled
+    ) {
+        self.allowsProductionCaptureEvidence = allowsProductionCaptureEvidence
+    }
+
     static func sourceSHA256(_ data: Data) -> String {
         SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+    }
+
+    /// Packages the already-delivered normal-capture A/B bytes and their exact
+    /// retained execution record. It never invokes a renderer or save API.
+    func makeProductionCaptureArchive(for photo: CapturedPhoto) throws -> URL {
+        guard allowsProductionCaptureEvidence else {
+            throw DiagnosticBundleExportError.internalEvidenceDisabled
+        }
+        guard !photo.isDiagnosticImport else {
+            throw DiagnosticBundleExportError.notNormalCapture
+        }
+        guard
+            !photo.originalImageData.isEmpty,
+            !photo.editedImageData.isEmpty,
+            photo.analysis != nil,
+            photo.decision != nil,
+            photo.qualityCheck != nil,
+            photo.processingDiagnostics != nil
+        else {
+            throw DiagnosticBundleExportError.incompleteProductionEvidence
+        }
+
+        let identity = try productionCaptureEvidenceIdentity(for: photo)
+        let sourcePath = "images/A_original.\(Self.imageFileExtension(photo.originalImageData))"
+        let formalBPath = "images/B_formal_output.\(Self.imageFileExtension(photo.editedImageData))"
+        var entries = [
+            DiagnosticExportEntry(
+                path: sourcePath,
+                data: photo.originalImageData,
+                role: "A exact original capture bytes retained for this capture ID"
+            ),
+            DiagnosticExportEntry(
+                path: formalBPath,
+                data: photo.editedImageData,
+                role: "B exact formal output bytes already displayed by the preview"
+            )
+        ]
+
+        let execution = productionExecutionObject(photo: photo, identity: identity)
+        entries.append(DiagnosticExportEntry(
+            path: "evidence/formal_b_execution.json",
+            data: try jsonData(execution),
+            role: "formal B target, final recipe, regional execution and selection provenance"
+        ))
+        entries.append(DiagnosticExportEntry(
+            path: "evidence/scene_analysis_and_targets.json",
+            data: try jsonData(sceneAnalysisObject(
+                photo: photo,
+                sourceHash: identity.sourceSHA256
+            )),
+            role: "analysis and target evidence retained by the production pipeline"
+        ))
+        entries.append(DiagnosticExportEntry(
+            path: "evidence/quality_checks.json",
+            data: try jsonData(qualityObject(photo: photo)),
+            role: "formal B technical quality, candidate selection and fallback evidence"
+        ))
+        entries.append(DiagnosticExportEntry(
+            path: "evidence/performance.json",
+            data: try jsonData(performanceObject(photo: photo)),
+            role: "production processing stage duration evidence"
+        ))
+
+        let inventory = entries.map { entry -> [String: Any] in
+            var record: [String: Any] = [
+                "path": entry.path,
+                "role": entry.role,
+                "bytes": entry.data.count,
+                "sha256": Self.sourceSHA256(entry.data)
+            ]
+            if let size = Self.encodedPixelSize(entry.data) {
+                record["encodedPixelWidth"] = size.width
+                record["encodedPixelHeight"] = size.height
+            }
+            record.merge(Self.encodedImageIdentity(entry.data)) { current, _ in current }
+            return record
+        }
+        let manifest: [String: Any] = [
+            "schemaVersion": 1,
+            "evidenceType": "internal_normal_capture_formal_b",
+            "captureID": identity.captureID.uuidString,
+            "capturedAt": ISO8601DateFormatter().string(from: photo.capturedAt),
+            "createdAt": ISO8601DateFormatter().string(from: Date()),
+            "sourceSha256": identity.sourceSHA256,
+            "formalBSha256": identity.formalBSHA256,
+            "sameCaptureIDVerified": true,
+            "renderPolicy": "read_existing_bytes_only_no_rerender",
+            "uploadPolicy": "local_archive_only_user_initiated_share",
+            "app": appIdentityObject(),
+            "device": deviceIdentityObject(),
+            "files": inventory
+        ]
+        entries.append(DiagnosticExportEntry(
+            path: "manifest.json",
+            data: try jsonData(manifest),
+            role: "normal-capture evidence manifest"
+        ))
+        let readme = """
+        小苏相机内部正常拍照 A/B 取证包
+
+        capture ID：\(identity.captureID.uuidString)
+        A SHA-256：\(identity.sourceSHA256)
+        B SHA-256：\(identity.formalBSHA256)
+
+        A 与 B 直接来自本次正常快门的 CapturedPhoto，导出过程不重新分析、不重新渲染、不保存到 Photos。
+        本包不包含 M、V2、T 或其他研究候选。formal_b_execution.json 记录正式 B 的最终目标、实际配方、
+        候选选择、区域执行、质量回退和处理耗时。分享仅由用户在 iOS 系统分享菜单中主动完成。
+        摄影审美状态仍为 pending_human_review；技术成功不代表专业摄影效果已获认可。
+        """
+        entries.append(DiagnosticExportEntry(
+            path: "README.txt",
+            data: Data(readme.utf8),
+            role: "human-readable normal capture evidence guide"
+        ))
+
+        let stamp = Self.fileTimestamp.string(from: Date())
+        let destination = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "XiaoSuCamera_FormalB_Evidence_\(stamp)_\(identity.captureID.uuidString.prefix(8)).zip"
+        )
+        try? FileManager.default.removeItem(at: destination)
+        try NativeZipArchiveWriter.write(entries: entries, to: destination)
+        return destination
+    }
+
+    func productionCaptureEvidenceIdentity(
+        for photo: CapturedPhoto
+    ) throws -> ProductionCaptureEvidenceIdentity {
+        guard !photo.originalImageData.isEmpty, !photo.editedImageData.isEmpty else {
+            throw DiagnosticBundleExportError.incompleteProductionEvidence
+        }
+        return ProductionCaptureEvidenceIdentity(
+            captureID: photo.id,
+            sourceSHA256: Self.sourceSHA256(photo.originalImageData),
+            formalBSHA256: Self.sourceSHA256(photo.editedImageData),
+            sourceByteCount: photo.originalImageData.count,
+            formalBByteCount: photo.editedImageData.count
+        )
     }
 
     func makeArchive(
@@ -644,6 +808,228 @@ final class DiagnosticBundleExporter {
         ]
     }
 
+    private func productionExecutionObject(
+        photo: CapturedPhoto,
+        identity: ProductionCaptureEvidenceIdentity
+    ) -> [String: Any] {
+        guard let decision = photo.decision else {
+            return [
+                "captureID": identity.captureID.uuidString,
+                "status": "unavailable",
+                "reason": "formal B decision was not retained"
+            ]
+        }
+        let diagnostics = photo.processingDiagnostics
+        return [
+            "captureID": identity.captureID.uuidString,
+            "sourceSha256": identity.sourceSHA256,
+            "formalBSha256": identity.formalBSHA256,
+            "sameCaptureIDVerified": true,
+            "formalBBytesWereRerenderedForExport": false,
+            "sceneStrategy": decision.sceneStrategy.rawValue,
+            "intent": decision.intent,
+            "target": [
+                "summary": decision.adaptiveTarget.summaryText,
+                "rationale": decision.adaptiveTarget.rationale,
+                "luminance": decision.adaptiveTarget.luminance,
+                "luminanceMinimum": decision.adaptiveTarget.luminanceMinimum,
+                "luminanceMaximum": decision.adaptiveTarget.luminanceMaximum,
+                "contrast": decision.adaptiveTarget.contrast,
+                "shadowRatio": decision.adaptiveTarget.shadowRatio,
+                "highlightRatio": decision.adaptiveTarget.highlightRatio,
+                "saturation": decision.adaptiveTarget.saturation,
+                "atmosphereProtection": decision.adaptiveTarget.atmosphereProtection,
+                "aestheticPlan": decision.aestheticPlan?.traceSummary ?? "unavailable"
+            ] as [String: Any],
+            "finalRecipe": recipeObject(decision.recipe),
+            "recipeLifecycle": decision.recipeLifecycle.map {
+                [
+                    "stage": $0.stage,
+                    "recipeSummary": $0.recipeSummary,
+                    "changes": $0.changes
+                ] as [String: Any]
+            },
+            "parameterEvidence": decision.parameterEvidence.map {
+                [
+                    "parameter": $0.key.rawValue,
+                    "purpose": $0.purpose,
+                    "sourceMeasurement": $0.inputEvidence,
+                    "target": $0.target,
+                    "minimumValue": $0.minimumValue,
+                    "maximumValue": $0.maximumValue,
+                    "actualValue": $0.actualValue,
+                    "expectedResult": $0.expectedResult,
+                    "fallbackBehavior": $0.fallbackBehavior,
+                    "affectedRegion": $0.affectedRegion.rawValue,
+                    "status": $0.decisionStatus.rawValue,
+                    "knowledgeRuleIDs": $0.knowledgeRuleIDs.map(\.rawValue)
+                ] as [String: Any]
+            },
+            "regionalPlan": [
+                "status": decision.adaptiveRegionalTonePlan == nil ? "not_planned" : "planned",
+                "evidence": decision.adaptiveRegionalTonePlan?.evidence ?? [],
+                "adjustments": decision.adaptiveRegionalTonePlan?.adjustments.map {
+                    regionalAdjustmentObject($0)
+                } ?? [],
+                "executionReceipts": diagnostics?.regionalExecutionDetails ?? [],
+                "regionPixelImpacts": diagnostics?.finalRegionImpacts.map { impact in
+                    [
+                        "region": impact.region.rawValue,
+                        "maskCoverage": impact.maskCoverage,
+                        "luminanceDelta": impact.luminanceDelta,
+                        "colorDelta": impact.colorDelta,
+                        "contrastDelta": impact.contrastDelta,
+                        "changedPixelRatio": impact.changedPixelRatio,
+                        "detailEnergyRatio": impact.detailEnergyRatio
+                    ] as [String: Any]
+                } ?? []
+            ] as [String: Any],
+            "executedModules": diagnostics?.executedModules ?? [],
+            "parameterExecutionResults": diagnostics?.parameterExecutionResults ?? [],
+            "candidateEvaluations": diagnostics?.candidateEvaluations.map { evaluation in
+                [
+                    "planID": evaluation.planID,
+                    "title": evaluation.title,
+                    "status": evaluation.status.rawValue,
+                    "score": evaluation.score,
+                    "selected": evaluation.selected,
+                    "reason": evaluation.reason,
+                    "selectionBasis": evaluation.selectionBasis.rawValue,
+                    "durationMilliseconds": evaluation.durationMilliseconds,
+                    "humanPreferenceStatus": evaluation.preferenceEvidenceStatus.rawValue
+                ] as [String: Any]
+            } ?? [],
+            "fallbackReason": diagnostics?.fallbackReason ?? "none",
+            "quality": photo.qualityCheck.map {
+                [
+                    "status": $0.status.rawValue,
+                    "issues": $0.issues.map(\.rawValue),
+                    "fallbackApplied": $0.fallbackApplied
+                ] as [String: Any]
+            } ?? ["status": "unavailable"],
+            "processingStages": diagnostics?.stages.map {
+                [
+                    "name": $0.name,
+                    "durationMilliseconds": $0.durationMilliseconds,
+                    "executed": $0.executed,
+                    "detail": $0.detail
+                ] as [String: Any]
+            } ?? []
+        ]
+    }
+
+    private func recipeObject(_ recipe: AutomaticEditingRecipe) -> [String: Any] {
+        [
+            "traceSummary": recipe.traceSummary,
+            "global": [
+                "exposureEV": recipe.exposureEV,
+                "highlightAmount": recipe.highlightAmount,
+                "shadowAmount": recipe.shadowAmount,
+                "brightness": recipe.brightness,
+                "contrast": recipe.contrast,
+                "blackPoint": recipe.blackPoint,
+                "whitePoint": recipe.whitePoint,
+                "shadowRollOff": recipe.shadowRollOff,
+                "lowerMidtoneLift": recipe.lowerMidtoneLift,
+                "midtoneBias": recipe.midtoneBias,
+                "upperMidtoneSeparation": recipe.upperMidtoneSeparation,
+                "highlightRollOff": recipe.highlightRollOff,
+                "localContrastAmount": recipe.localContrastAmount,
+                "saturation": recipe.saturation,
+                "vibrance": recipe.vibrance,
+                "temperatureShift": recipe.temperatureShift,
+                "tintShift": recipe.tintShift,
+                "noiseReductionAmount": recipe.noiseReductionAmount,
+                "sharpeningAmount": recipe.sharpeningAmount
+            ],
+            "rgbCurves": [
+                "intensity": recipe.rgbCurves.intensity,
+                "red": recipe.rgbCurves.red.anchors,
+                "green": recipe.rgbCurves.green.anchors,
+                "blue": recipe.rgbCurves.blue.anchors,
+                "identity": recipe.rgbCurves.isIdentity
+            ],
+            "hsl": hslObject(recipe.hsl),
+            "tonalColorGrade": [
+                "shadows": tonalColorVectorObject(recipe.tonalColorGrade.shadows),
+                "midtones": tonalColorVectorObject(recipe.tonalColorGrade.midtones),
+                "highlights": tonalColorVectorObject(recipe.tonalColorGrade.highlights),
+                "neutralChromaProtection": recipe.tonalColorGrade.neutralChromaProtection,
+                "highlightNeutralProtection": recipe.tonalColorGrade.highlightNeutralProtection,
+                "neutral": recipe.tonalColorGrade.isNeutral
+            ],
+            "legacyColorGrade": [
+                "mode": recipe.cinematicColorGradeMode.rawValue,
+                "intensity": recipe.colorGradeIntensity,
+                "shadowCoolAmount": recipe.shadowCoolAmount,
+                "midtoneCoolAmount": recipe.midtoneCoolAmount,
+                "midtoneWarmAmount": recipe.midtoneWarmAmount,
+                "highlightWarmAmount": recipe.highlightWarmAmount,
+                "colorContrast": recipe.colorContrast,
+                "neutralHighlightProtection": recipe.neutralHighlightProtection
+            ]
+        ]
+    }
+
+    private func hslObject(_ hsl: ProfessionalHSLAdjustment) -> [String: Any] {
+        [
+            "mathMode": hsl.mathMode.rawValue,
+            "red": ["hue": hsl.redHue, "saturation": hsl.redSaturation, "luminance": hsl.redLuminance],
+            "orange": ["hue": hsl.orangeHue, "saturation": hsl.orangeSaturation, "luminance": hsl.orangeLuminance],
+            "yellow": ["hue": hsl.yellowHue, "saturation": hsl.yellowSaturation, "luminance": hsl.yellowLuminance],
+            "green": ["hue": hsl.greenHue, "saturation": hsl.greenSaturation, "luminance": hsl.greenLuminance],
+            "cyan": ["hue": hsl.cyanHue, "saturation": hsl.cyanSaturation, "luminance": hsl.cyanLuminance],
+            "blue": ["hue": hsl.blueHue, "saturation": hsl.blueSaturation, "luminance": hsl.blueLuminance],
+            "purple": ["hue": hsl.purpleHue, "saturation": hsl.purpleSaturation, "luminance": hsl.purpleLuminance],
+            "magenta": ["hue": hsl.magentaHue, "saturation": hsl.magentaSaturation, "luminance": hsl.magentaLuminance]
+        ]
+    }
+
+    private func tonalColorVectorObject(_ vector: TonalColorVector) -> [String: Any] {
+        ["red": vector.red, "green": vector.green, "blue": vector.blue, "amount": vector.amount]
+    }
+
+    private func regionalAdjustmentObject(_ adjustment: ManualRegionalToneAdjustment) -> [String: Any] {
+        [
+            "region": adjustment.region.rawValue,
+            "exposureEV": adjustment.exposureEV,
+            "highlightAmount": adjustment.highlightAmount,
+            "shadowAmount": adjustment.shadowAmount,
+            "blackPoint": adjustment.blackPoint,
+            "shadowRollOff": adjustment.shadowRollOff,
+            "whitePoint": adjustment.whitePoint,
+            "lowerMidtoneLift": adjustment.lowerMidtoneLift,
+            "midtoneBias": adjustment.midtoneBias,
+            "upperMidtoneSeparation": adjustment.upperMidtoneSeparation,
+            "highlightRollOff": adjustment.highlightRollOff,
+            "contrast": adjustment.contrast,
+            "saturation": adjustment.saturation,
+            "hsl": hslObject(adjustment.hsl),
+            "luminanceLowerBound": adjustment.luminanceLowerBound,
+            "luminanceUpperBound": adjustment.luminanceUpperBound,
+            "luminanceFeather": adjustment.luminanceFeather
+        ]
+    }
+
+    private func appIdentityObject() -> [String: Any] {
+        [
+            "name": Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String ?? "小苏相机",
+            "version": Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "unknown",
+            "build": Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "unknown",
+            "gitCommitSha": Bundle.main.object(forInfoDictionaryKey: "XGitCommitSHA") as? String ?? "unknown"
+        ]
+    }
+
+    private func deviceIdentityObject() -> [String: Any] {
+        [
+            "model": UIDevice.current.model,
+            "hardwareIdentifier": Self.deviceHardwareIdentifier(),
+            "name": UIDevice.current.name,
+            "systemName": UIDevice.current.systemName,
+            "systemVersion": UIDevice.current.systemVersion
+        ]
+    }
+
     private func jsonData(_ object: Any) throws -> Data {
         try JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
     }
@@ -1053,11 +1439,17 @@ private struct DiagnosticFileExportEntry {
 
 private enum DiagnosticBundleExportError: LocalizedError {
     case notDiagnosticImport
+    case notNormalCapture
+    case internalEvidenceDisabled
+    case incompleteProductionEvidence
     case archiveTooLarge
 
     var errorDescription: String? {
         switch self {
         case .notDiagnosticImport: return "只有诊断导入照片可以导出证据包。"
+        case .notNormalCapture: return "普通拍照 A/B 取证不能用于诊断导入照片。"
+        case .internalEvidenceDisabled: return "当前构建未启用内部正常拍照取证。"
+        case .incompleteProductionEvidence: return "本次拍照缺少完整的 A/B、最终参数或执行记录，不能生成取证包。"
         case .archiveTooLarge: return "诊断证据包超过 ZIP32 可导出范围。"
         }
     }

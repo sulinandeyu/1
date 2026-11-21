@@ -86,6 +86,13 @@ final class CoreImageRendererHostedTests: XCTestCase {
         XCTAssertFalse(details.contains { $0.contains("已执行") })
     }
 
+    func testNormalReleaseDoesNotAuthorizeProductionCaptureEvidence() {
+        XCTAssertFalse(
+            InternalCaptureEvidenceBuildPolicy.isEnabled,
+            "The ordinary CI/Release configuration must not expose the internal normal-capture exporter."
+        )
+    }
+
     func testFormalBPipelineRendersTheRecordedFinalRecipe() throws {
         let source = try productionJPEG(width: 160, height: 112, variant: .balanced)
         let input = CapturedPhoto(
@@ -125,6 +132,38 @@ final class CoreImageRendererHostedTests: XCTestCase {
             0.001,
             "A measured correction must not be silently cleared after candidate selection."
         )
+
+        let deliveredB = result.editedImageData
+        let exporter = DiagnosticBundleExporter(allowsProductionCaptureEvidence: true)
+        let identity = try exporter.productionCaptureEvidenceIdentity(for: result)
+        XCTAssertEqual(identity.captureID, result.id)
+        XCTAssertEqual(identity.sourceSHA256, DiagnosticBundleExporter.sourceSHA256(source))
+        XCTAssertEqual(identity.formalBSHA256, DiagnosticBundleExporter.sourceSHA256(deliveredB))
+
+        let archive = try exporter.makeProductionCaptureArchive(for: result)
+        defer { try? FileManager.default.removeItem(at: archive) }
+        let archiveBytes = try Data(contentsOf: archive)
+        XCTAssertNotNil(
+            archiveBytes.range(of: source),
+            "The stored ZIP must contain the exact original bytes, not a re-encoded A."
+        )
+        XCTAssertNotNil(
+            archiveBytes.range(of: deliveredB),
+            "The stored ZIP must contain the exact delivered B bytes, not a rerender."
+        )
+        for value in [
+            result.id.uuidString,
+            identity.sourceSHA256,
+            identity.formalBSHA256,
+            "formal_b_execution.json",
+            "read_existing_bytes_only_no_rerender"
+        ] {
+            XCTAssertNotNil(
+                archiveBytes.range(of: Data(value.utf8)),
+                "Missing normal-capture evidence marker: \(value)"
+            )
+        }
+        XCTAssertEqual(result.editedImageData, deliveredB)
     }
 
     func testFormalBMeasuredRegionalPlanChangesRenderedPixels() throws {

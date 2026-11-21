@@ -284,3 +284,23 @@ Apple 像素验证已经完成。后续仍需 TestFlight 明确授权，才能�
 ### 下一验证入口（本轮不执行）
 
 Apple CI 已完成。下一阶段只需用同源秋季道路、建筑、阴天植被与人物在真实 iPhone 正常快门链生成正式 B，检查道路/植被层级、中性色、肤色、暗部、高光和蒙版边缘。只有用户实际审片认可后才能标记摄影审美通过。
+
+## 正式 B 正常快门内部 A/B 取证（2026-11-21）
+
+当前状态：
+
+- `SOURCE_IMPLEMENTED`
+- `APPLE_CI_VERIFICATION = PENDING`
+- `INTERNAL_TESTFLIGHT_READY = PENDING`
+- `IPHONE_NORMAL_CAPTURE_EVIDENCE = PENDING`
+- `HUMAN_AESTHETIC_APPROVED = PENDING`
+
+本轮只补齐正常快门正式 B 的内部取证缺口，没有修改摄影分析、参数求解、Core Image 渲染、质量阈值、Task 1 原图保存或 Photos 保存行为。
+
+- `PhotoPreviewView` 的成片信息面板在显式 `XIAOSU_INTERNAL_CAPTURE_EVIDENCE` 编译条件下，为非诊断且处理完成的正常快门照片显示“导出本次正常拍照 A/B 取证 ZIP”。普通 Release 不编译该按钮；不能用 `DEBUG` 误开 TestFlight 功能。
+- `DiagnosticBundleExporter.makeProductionCaptureArchive` 直接封装该 `CapturedPhoto` 已持有的 A 原始字节和正式 B 实际字节，不重新分析、不重新渲染、不调用 Photos 保存。ZIP 记录同一 capture ID、A/B SHA-256、最终目标、完整 RGB 曲线、八色域 HSL、三段分级、区域计划/执行回执、候选评分与选择依据、质量回退、阶段耗时、Git/build/设备/iOS。
+- 正常快门包不生成或包含 M、V2、T 等研究候选；只在设备临时目录生成，由用户主动打开 iOS 系统分享菜单后才会离开本机。
+- `testflight-release.yml` 仅对内部 TestFlight archive 显式定义该编译条件；普通 Release 配置保持无条件。`ios-build.yml` 将分别编译普通 Release 和内部取证 Release，以验证边界。
+- app-hosted 回归测试已加入 capture ID、A/B SHA、ZIP 内实际字节、执行 JSON 标记以及“导出前后 B 字节不变”的检查；默认 CI 构建同时断言内部取证策略关闭。
+
+Windows 当前没有 Swift/Xcode，无法在本机运行 Apple 测试；`git diff --check` 已通过。只有远程 Swift、macOS Core Image、iOS app-hosted 测试、Debug Simulator build 及两种 Release 边界编译全部通过后，才可进入本次获批的内部 TestFlight 上传。
