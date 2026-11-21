@@ -144,7 +144,7 @@ final class CinematicRenderingPixelTests: XCTestCase {
     }
 
     func testTask2AColorCubesPreserveExtendedLinearHighlights() throws {
-        let source = colorPatch(red: 1.30, green: 0.42, blue: 0.20)
+        let source = extendedLinearPatch(red: 1.30, green: 0.42, blue: 0.20)
         let curves = ProfessionalRGBCurves(
             red: SevenPointChannelCurve(midtone: 0.54),
             intensity: 1
@@ -205,20 +205,22 @@ final class CinematicRenderingPixelTests: XCTestCase {
     func testToneMapChangesBlackAndHighlightZonesInExpectedDirection() throws {
         var recipe = AutomaticEditingRecipe.naturalEnhancement
         recipe.cinematicIntensity = .dramatic
-        recipe.shadowRollOff = 0.20
+        recipe.shadowRollOff = 0.35
         recipe.highlightRollOff = 0.50
         recipe.whitePoint = 0.94
         let engine = CinematicToneMappingEngine()
-        let shadowBefore = try pixel(colorPatch(red: 0.08, green: 0.08, blue: 0.08))
-        let shadowAfter = try pixel(engine.apply(
-            to: colorPatch(red: 0.08, green: 0.08, blue: 0.08), recipe: recipe
+        let shadowSource = extendedLinearPatch(red: 0.08, green: 0.08, blue: 0.08)
+        let shadowBefore = try linearPixel(shadowSource)
+        let shadowAfter = try linearPixel(engine.apply(
+            to: shadowSource, recipe: recipe
         ))
-        let highlightBefore = try pixel(colorPatch(red: 0.92, green: 0.92, blue: 0.92))
-        let highlightAfter = try pixel(engine.apply(
-            to: colorPatch(red: 0.92, green: 0.92, blue: 0.92), recipe: recipe
+        let highlightSource = extendedLinearPatch(red: 0.92, green: 0.92, blue: 0.92)
+        let highlightBefore = try linearPixel(highlightSource)
+        let highlightAfter = try linearPixel(engine.apply(
+            to: highlightSource, recipe: recipe
         ))
-        XCTAssertGreaterThan(luminance(shadowAfter), luminance(shadowBefore))
-        XCTAssertLessThan(luminance(highlightAfter), luminance(highlightBefore))
+        XCTAssertGreaterThan(shadowAfter.x, shadowBefore.x + 0.0005)
+        XCTAssertLessThan(highlightAfter.x, highlightBefore.x - 0.005)
     }
 
     func testRegionalMaskPrimarilyAffectsSelectedHalf() throws {
@@ -251,6 +253,18 @@ final class CinematicRenderingPixelTests: XCTestCase {
                 x: 0, y: 0,
                 width: CGFloat(width), height: CGFloat(height)
             ))
+    }
+
+    private func extendedLinearPatch(red: Float, green: Float, blue: Float) -> CIImage {
+        let values: [Float] = [red, green, blue, 1]
+        let data = values.withUnsafeBufferPointer { Data(buffer: $0) }
+        return CIImage(
+            bitmapData: data,
+            bytesPerRow: MemoryLayout<Float>.size * 4,
+            size: CGSize(width: 1, height: 1),
+            format: .RGBAf,
+            colorSpace: linear
+        )
     }
 
     private func horizontalGrayGradient(width: Int) -> CIImage {
