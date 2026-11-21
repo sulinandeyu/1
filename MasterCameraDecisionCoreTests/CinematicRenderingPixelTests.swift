@@ -359,9 +359,16 @@ final class CinematicRenderingPixelTests: XCTestCase {
             ),
             format: .RGBA8, colorSpace: sRGB
         )
-        return stride(from: 0, to: bytes.count, by: 4).map {
-            (Int(bytes[$0]), Int(bytes[$0 + 1]), Int(bytes[$0 + 2]), Int(bytes[$0 + 3]))
+        var result: [(Int, Int, Int, Int)] = []
+        result.reserveCapacity(width * height)
+        for offset in stride(from: 0, to: bytes.count, by: 4) {
+            let red = Int(bytes[offset])
+            let green = Int(bytes[offset + 1])
+            let blue = Int(bytes[offset + 2])
+            let alpha = Int(bytes[offset + 3])
+            result.append((red, green, blue, alpha))
         }
+        return result
     }
 
     private func assertPixel(
