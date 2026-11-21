@@ -240,8 +240,8 @@ Apple 像素验证已经完成。后续仍需 TestFlight 明确授权，才能�
 
 - `SOURCE_IMPLEMENTED`
 - `WINDOWS_STATIC_CHECK_PASSED`
-- `APPLE_COMPILE_AND_TEST = PENDING`
-- `APPLE_FORMAL_B_PIXEL_VERIFIED = PENDING`
+- `APPLE_COMPILE_AND_TEST = VERIFIED`
+- `APPLE_FORMAL_B_PIXEL_VERIFIED = VERIFIED_ON_SYNTHETIC_APP_HOSTED_INPUTS`
 - `IPHONE_NORMAL_CAPTURE_VERIFIED = PENDING`
 - `HUMAN_AESTHETIC_APPROVED = PENDING`
 
@@ -265,6 +265,22 @@ Apple 像素验证已经完成。后续仍需 TestFlight 明确授权，才能�
 - 历史 Apple CI 只证明 Task 2-A/2-B 算子本身可运行，不能证明本轮正式 B 新接线已经编译或产生正确成片。
 - 秋季道路及其他场景尚未由本轮源码重新产生 Apple Core Image 正式 B；因此没有新图片可被诚实地标记为摄影改善证据，审美结论保持 `PENDING`。
 
+### Apple CI 首次正式 B 验证（2026-11-21）
+
+- 源码提交 `948aa94329628d4c4bf8ff62ebea680f0f510b0e` 触发 `iOS Build #129`（run ID `44887859318`，<https://github.com/sulinandeyu/1/actions/runs/44887859318>）。150 项 Swift 测试中 149 项通过；唯一失败是历史契约 `testRecognitionFailureKeepsMeasuredMaskBackedRegions` 同时要求保留可靠蒙版区域又要求 HSL 完全 neutral，与本轮“场景标签失败但可靠像素证据仍可驱动有界颜色调整”的规则冲突。没有删除测试或降低画质阈值，而是把断言改为验证 perceptual HSL 的绿色调整必须为正、且饱和度/明度均不超过 `0.03`，红/蓝仍保持 neutral；相邻的无可靠证据降级测试保持不变。
+- 修复提交 `49ed45b4a4b674f90fa3bce98649847351773642` 通过 `iOS Build #130`（run ID `44888093794`，<https://github.com/sulinandeyu/1/actions/runs/44888093794>）：完整 `swift test` 150/150，包含 macOS `CinematicRenderingPixelTests` 11/11；iOS Simulator app-hosted `CoreImageRendererHostedTests` 7/7；最终 Simulator build 为 `BUILD SUCCEEDED`。
+- 两项新增 app-hosted 正式 B 测试均真实执行 Core Image：`testFormalBPipelineRendersTheRecordedFinalRecipe` 从非诊断 `CapturedPhoto` 运行完整 `PhotoProcessingPipeline.process`，确认正式候选已选择、`PT-PRODUCTION-001` 证据存在、最终 B 与记录配方/区域计划复渲染一致且没有在候选选择后被清零；`testFormalBMeasuredRegionalPlanChangesRenderedPixels` 在没有场景标签、但具有可靠地面/植被测量时选择 measured-color-separation，并证明动态区域计划相对同配方的全局-only 渲染产生可测像素差异和 `executed` 回执。
+
+### 近中性与弱调色偏好审查结论
+
+- `measured-natural` 仍会在暖色重点 `< 0.34`、低色度环境 `< 0.22`、可用区域少于 2 个或综合色彩分离证据 `< 0.34` 时选择。这不是强制 neutral：曝光、端点、影调曲线和可靠局部关系仍由当前图测量求解；但若照片本身没有可测技术问题且没有可靠区域/颜色证据，结果可以合理地接近原图。当前尚无真实 iPhone 跨场景证据证明这些门槛不会过度选择自然目标。
+- 候选选择已不再对小像素差异给额外奖励；`preservationScore` 只对超过安全包络的大幅全图位移、技术问题和色彩完整性风险扣分，未达到问题改善且没有区域审美进展的候选会被额外扣分。合成 app-hosted 测试证明最终选中配方未被清零，但不能证明真实照片上工程代理一定选中最美候选。
+- 质量反馈只在首轮技术质检 `failed` 时触发，并只在一次修正版的技术状态更好时采用；真实损伤仍会拒绝输出。颜色/人物/中性色问题会有界收回相关参数，因此可能削弱初始摄影表达，但不会因“与原图差异大”单独触发。是否在秋季道路、建筑或人物上过度收回，仍须正常快门真机证据核对。
+
+### 下一次正常拍照取证条件
+
+工程条件已具备：正常 `CameraView → PhotoProcessingPipeline → measuredProduction → PhotographyDirector/solver → 候选 → 全分辨率 Core Image → 质量反馈 → 正式 B` 已通过 Apple 编译和合成像素验证。下一步必须在真实 iPhone 正常快门链记录 A/B、自动方向、候选分数/拒绝原因、初始与最终配方、RGB/HSL/三段分级、区域执行及质量反馈，并先复验秋季道路，再验证至少两类不同场景。私人样片不得上传公开 CI；在取得真实成片与用户审片前，专业摄影审美仍为 `PENDING`。
+
 ### 下一验证入口（本轮不执行）
 
-先在不混入其他工作区修改的独立提交上执行完整 `swift test`、macOS Core Image、app-hosted iOS 测试和 Simulator build；通过后再用同源秋季道路、建筑、阴天植被与人物在真实 iPhone 正常快门链生成正式 B，检查道路/植被层级、中性色、肤色、暗部、高光和蒙版边缘。只有用户实际审片认可后才能标记摄影审美通过。
+Apple CI 已完成。下一阶段只需用同源秋季道路、建筑、阴天植被与人物在真实 iPhone 正常快门链生成正式 B，检查道路/植被层级、中性色、肤色、暗部、高光和蒙版边缘。只有用户实际审片认可后才能标记摄影审美通过。
