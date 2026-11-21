@@ -195,7 +195,7 @@ Apple 像素验证已经完成。后续仍需 TestFlight 明确授权，才能�
 状态（2026-11-21）：
 
 - `SOURCE_IMPLEMENTED`
-- `APPLE_PIXEL_TEST_VERIFIED = PENDING`（Task 2-A 已由 #126 验证；本节最终提交仍需复验）
+- `APPLE_PIXEL_TEST_VERIFIED`
 - `IPHONE_RENDER_VERIFIED = PENDING`
 - `HUMAN_AESTHETIC_APPROVED = PENDING`
 
@@ -209,6 +209,7 @@ Apple 像素验证已经完成。后续仍需 TestFlight 明确授权，才能�
 - `task2a-comparison.html` 以原始比例提供 A/B/T/R-I 放大对照，显示执行状态、技术质检与参数来源；人工状态默认且强制为 `pending_human_review`，仅允许人工导出 reached / partially_reached / not_reached / pending_human_review。
 - ZIP inventory 记录每个真实文件的 SHA-256、编码 UTI、尺寸、方向、色彩模型/配置；A/T 使用实际编码扩展名。T 不存在或 R-I 未执行时只记录 unavailable，不使用 A、B 或旧预览顶替。
 - macOS Core Image 11 项测试与 iOS app-hosted 5 项测试覆盖 RGB 曲线、八色域 HSL、三段色彩分级、高光残差、中性色、区域蒙版、JPEG/ICC/方向及真实 renderer 模块回执。它们是技术像素证据，不是摄影审美结论。
+- Task 2-B 最终源码提交 `6392953114d4e5f1f1468c2ce6e91b5861227f9c` 已由 GitHub Actions `iOS Build #127`（run ID `44863011941`，<https://github.com/sulinandeyu/1/actions/runs/44863011941>）复验：完整 `swift test`、app-hosted Core Image 测试和 iOS Simulator build 三个步骤均成功。
 
 ### 仍需真实设备完成
 
