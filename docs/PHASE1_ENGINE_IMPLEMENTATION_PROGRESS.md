@@ -290,8 +290,8 @@ Apple CI 已完成。下一阶段只需用同源秋季道路、建筑、阴天�
 当前状态：
 
 - `SOURCE_IMPLEMENTED`
-- `APPLE_CI_VERIFICATION = PENDING`
-- `INTERNAL_TESTFLIGHT_READY = PENDING`
+- `APPLE_CI_VERIFICATION = VERIFIED`
+- `INTERNAL_TESTFLIGHT_READY = VERIFIED_BUILD_39`
 - `IPHONE_NORMAL_CAPTURE_EVIDENCE = PENDING`
 - `HUMAN_AESTHETIC_APPROVED = PENDING`
 
@@ -303,4 +303,8 @@ Apple CI 已完成。下一阶段只需用同源秋季道路、建筑、阴天�
 - `testflight-release.yml` 仅对内部 TestFlight archive 显式定义该编译条件；普通 Release 配置保持无条件。`ios-build.yml` 将分别编译普通 Release 和内部取证 Release，以验证边界。
 - app-hosted 回归测试已加入 capture ID、A/B SHA、ZIP 内实际字节、执行 JSON 标记以及“导出前后 B 字节不变”的检查；默认 CI 构建同时断言内部取证策略关闭。
 
-Windows 当前没有 Swift/Xcode，无法在本机运行 Apple 测试；`git diff --check` 已通过。只有远程 Swift、macOS Core Image、iOS app-hosted 测试、Debug Simulator build 及两种 Release 边界编译全部通过后，才可进入本次获批的内部 TestFlight 上传。
+Windows 当前没有 Swift/Xcode，无法在本机运行 Apple 测试；`git diff --check` 已通过。源码提交 `1e1279d54f72ef31dab1494e90036965544795da` 已通过 GitHub Actions `iOS Build #132`（run ID `44918084530`，<https://github.com/sulinandeyu/1/actions/runs/44918084530>）：完整 Swift 150/150（其中 macOS Core Image 11/11）、iOS app-hosted 8/8、Debug Simulator build、普通 Release build 及显式内部取证 Release build 均成功。新增 app-hosted 取证断言在正式 B 端到端管线结果上确认同一 capture ID、A/B SHA、ZIP 内逐字节 A/B、执行证据标记以及导出前后正式 B 字节不变。
+
+同一源码提交随后由 `TestFlight Release #53`（run ID `44919066585`，<https://github.com/sulinandeyu/1/actions/runs/44919066585>）以版本 `1.0`、Build `39` 完成签名、Release archive、IPA 导出和上传。只读状态核验 `TestFlight Release #54`（run ID `44919392927`，<https://github.com/sulinandeyu/1/actions/runs/44919392927>）确认 App Store Connect `processingState=VALID`、`internalBuildState=IN_BETA_TESTING`、内部组数量 `1`，因此现有内部测试组可以安装。
+
+尚未完成的是实际 iPhone 正常快门验收：需要分别拍摄秋季道路、室内自然光、室外风景/城市建筑，打开预览右上角信息按钮，通过“导出本次正常拍照 A/B 取证 ZIP”保存本次 A/B 与完整决策证据。未取得这些真实照片和人工审片前，`IPHONE_NORMAL_CAPTURE_EVIDENCE` 与 `HUMAN_AESTHETIC_APPROVED` 必须保持 `PENDING`。
