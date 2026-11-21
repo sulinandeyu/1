@@ -123,7 +123,7 @@ Task 2 从 `CoreImageRenderer.swift`、`AutomaticEditingRecipe.swift` 与 `Cinem
 状态（2026-11-20）：
 
 - `SOURCE_IMPLEMENTED`
-- `APPLE_PIXEL_TEST_VERIFIED = PENDING`
+- `APPLE_PIXEL_TEST_VERIFIED`
 - `IPHONE_RENDER_VERIFIED = PENDING`
 - `HUMAN_AESTHETIC_APPROVED = PENDING`
 
@@ -171,12 +171,14 @@ Task 2 从 `CoreImageRenderer.swift`、`AutomaticEditingRecipe.swift` 与 `Cinem
 
 Windows 无法执行 Apple Core Image，因此本轮没有生成并冒充 R-I。真实 R-I 必须由后续 Apple/iPhone 运行产生。
 
-### 测试准备（尚未执行 Apple 运行）
+### Apple 像素测试证据
 
 - `MasterCameraDecisionCoreTests/CinematicRenderingPixelTests.swift`：数学审查后扩展为 11 项 macOS Core Image 像素测试，覆盖正式配方新增控制保持 identity、像素 identity、RGB 曲线锚点间 identity/单调性、八色域 HSL lightness 的色相/饱和稳定性、extended-linear 超范围高光残差、1024 级梯度断层、冷阴影/暖高光、高光肩部/暗部方向和局部蒙版。旧五色域继续使用 legacy HSV-value，Task 2-A 显式使用 perceptual HSL，避免改变正式 B。
 - `MasterCameraAppTests/CoreImageRendererHostedTests.swift`：5 项 app-hosted 测试，覆盖真实 renderer 的尺寸/方向/RGB 输出、Task 2-A 全分辨率及模块回执、P3 输入不被错误作为输出 ICC 重新附着、重新解码色差、A/T 实际编码扩展名和无可靠蒙版时区域明确跳过。
 - Xcode 工程新增 `MasterCameraAppTests` target；共享 scheme 与 `iOS Build` 工作流已准备动态选择可用 iPhone Simulator 并执行 `xcodebuild test`。
-- 当前 Windows 没有 `swift` 或 `xcodebuild`，因此上述 16 项不能标记为通过。最终静态收尾已完成：`git diff --check` 通过（仅行尾提示），工作流 YAML 通过 `yaml-lint`，共享 scheme XML 可解析，PBX 新增对象 ID 无重复，Task 2-A 工程/工作流差异中未发现私人素材路径或诊断 ZIP 引用。以上均不是 Swift 编译或 Apple 像素测试证据。
+- GitHub Actions `iOS Build #126`（run ID `44861631662`，<https://github.com/sulinandeyu/1/actions/runs/44861631662>）在提交 `4d3dfa6f934bf697621dff6c116e84e240401db5` 上实际运行：完整 `swift test` 148/148 通过，其中 `CinematicRenderingPixelTests` 11/11；iOS Simulator app-hosted `CoreImageRendererHostedTests` 5/5；最终 Simulator build 为 `BUILD SUCCEEDED`。
+- 首轮 CI 暴露并修复了区域调色 `traceSummary` getter 的漏 return；后续 CI 发现原 HDR 测试色块被输入构造先钳为 1.0、8-bit 采样抹平小幅阴影变化，已改用真实 `.RGBAf` extended-linear 输入和 Float 像素采样，没有降低断言或画质阈值。
+- 上述证据支持 `APPLE_PIXEL_TEST_VERIFIED`，但它仍不是 iPhone、性能或摄影审美证据。
 
 ### 正式 B 隔离
 
@@ -186,4 +188,30 @@ Windows 无法执行 Apple Core Image，因此本轮没有生成并冒充 R-I。
 
 ### 下一步（本轮不执行）
 
-取得单独授权后，将当前源码提交并运行 Apple CI：先要求 `swift test` 与 app-hosted `xcodebuild test` 全部通过，再执行 Simulator build。之后仍需 TestFlight 明确授权，才能在真实 iPhone 选择 A/T、生成 R-I、导出 A/T/R-I，并由人工检查冷暖、黑位、道路纹理、黄绿分离、空间深度、中性色和蒙版边缘。未完成这些步骤前不得标记 `APPLE_PIXEL_TEST_VERIFIED`、`IPHONE_RENDER_VERIFIED` 或 `HUMAN_AESTHETIC_APPROVED`。
+Apple 像素验证已经完成。后续仍需 TestFlight 明确授权，才能在真实 iPhone 选择 A/T、生成 R-I、导出 A/T/R-I，并由人工检查冷暖、黑位、道路纹理、黄绿分离、空间深度、中性色和蒙版边缘。未完成这些步骤前不得标记 `IPHONE_RENDER_VERIFIED` 或 `HUMAN_AESTHETIC_APPROVED`。
+
+## Task 2-B：真实摄影成片证据闭环
+
+状态（2026-11-21）：
+
+- `SOURCE_IMPLEMENTED`
+- `APPLE_PIXEL_TEST_VERIFIED = PENDING`（Task 2-A 已由 #126 验证；本节最终提交仍需复验）
+- `IPHONE_RENDER_VERIFIED = PENDING`
+- `HUMAN_AESTHETIC_APPROVED = PENDING`
+
+本阶段没有新增摄影风格、没有进入 Task 3，也没有改变正式 B。它只补全 Task 2-A 隔离 M/R-I 候选从“声明参数”到“实际像素、区域影响、技术安全和人工审片”的可追溯证据。
+
+### 已完成的证据闭环
+
+- M/R-I 仍由 `PhotoProcessingPipeline.evaluateManualCandidate` 调用生产 `CoreImageRenderer.renderManualEdit` 生成全分辨率 JPEG；A 是唯一渲染输入，T 只在用户明确选择后交给本地导出器。
+- 候选记录分别保留 planned、executed、rejected、fallback、unavailable；只有存在真实预览且阶段匹配时，导出器才写入 `M_manual_render.jpg`。
+- 实际执行证据增加输出影调分区（shadow/midtone/highlight/black/white）、对比度、饱和度、中性色覆盖/色度/冷暖偏移、肤色覆盖/色差/暖偏和区域蒙版影响；这些字段来自渲染后 `QualityCheckService` 重新测量，不是计划参数。
+- `task2a-comparison.html` 以原始比例提供 A/B/T/R-I 放大对照，显示执行状态、技术质检与参数来源；人工状态默认且强制为 `pending_human_review`，仅允许人工导出 reached / partially_reached / not_reached / pending_human_review。
+- ZIP inventory 记录每个真实文件的 SHA-256、编码 UTI、尺寸、方向、色彩模型/配置；A/T 使用实际编码扩展名。T 不存在或 R-I 未执行时只记录 unavailable，不使用 A、B 或旧预览顶替。
+- macOS Core Image 11 项测试与 iOS app-hosted 5 项测试覆盖 RGB 曲线、八色域 HSL、三段色彩分级、高光残差、中性色、区域蒙版、JPEG/ICC/方向及真实 renderer 模块回执。它们是技术像素证据，不是摄影审美结论。
+
+### 仍需真实设备完成
+
+- 在 iPhone 上选择本地 A/T，生成全分辨率 R-I，并导出同次运行 A/B/T/R-I 与执行证据。
+- 核对设备型号、iOS、真实耗时和内存；macOS/Simulator 数据不得冒充 iPhone 性能。
+- 由用户检查道路纹理、冷暖层次、黄绿分离、天空/白色车辆中性色、人物 100% 纹理与蒙版边缘；未评价前审美状态保持 pending。

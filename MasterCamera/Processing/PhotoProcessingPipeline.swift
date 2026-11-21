@@ -506,7 +506,21 @@ final class PhotoProcessingPipeline {
     ) -> DiagnosticCandidateEvidence {
         let lines = details ?? []
         let plannedKeywords = ["视觉理解", "摄影问题", "审美目标", "动态参数", "声明参数", "目标=", "参数=", "局部计划", "参数生命周期"]
-        let executedKeywords = ["renderStatus=completed", "区域执行", "执行模块", "技术质检", "耗时=", "同定义复测", "有限反馈", "最终实际参数", "参数生命周期"]
+        let executedKeywords = [
+            "renderStatus=completed",
+            "区域执行",
+            "执行模块",
+            "技术质检",
+            "输出影调实测",
+            "色彩/人物保护实测",
+            "失败阈值证据",
+            "区域实测",
+            "耗时=",
+            "同定义复测",
+            "有限反馈",
+            "最终实际参数",
+            "参数生命周期"
+        ]
         let rejectedKeywords = [
             "technicalQualityStatus=failed",
             "qualityEvaluationFailed",
@@ -1933,6 +1947,23 @@ final class PhotoProcessingPipeline {
                     "[M] 区域影调回执=\(regionalExecution.joined(separator: "；"))",
                     "[M] 安全反馈=\(safetyTrace)；rules=PT-QA-003；质检阈值未修改",
                     "[M] 技术质检=\(quality.status.rawValue)；问题=[\(quality.issues.map(\.rawValue).joined(separator: ","))]；RGB_MAE=\(String(format: "%.4f", quality.processingImpact.normalizedMeanAbsoluteRGBDifference))",
+                    String(format: "[M] 输出影调实测=avg %.4f；shadow %.4f；midtone %.4f；highlight %.4f；black %.4f；white %.4f；contrast %.4f；saturation %.4f",
+                           quality.measuredAnalysis.averageLuminance,
+                           quality.measuredAnalysis.shadowRatio,
+                           quality.measuredAnalysis.midtoneRatio,
+                           quality.measuredAnalysis.highlightRatio,
+                           quality.measuredAnalysis.blackRatio,
+                           quality.measuredAnalysis.whiteRatio,
+                           quality.measuredAnalysis.contrastRange,
+                           quality.measuredAnalysis.averageSaturation),
+                    String(format: "[M] 色彩/人物保护实测=neutralCoverage %.4f；neutralChromaIncrease %+.4f；neutralWarmShift %+.4f；neutralGreenShift %+.4f；skinCoverage %.4f；skinColorDifference %.4f；skinWarmShift %+.4f",
+                           quality.colorIntegrity.neutralCoverage,
+                           quality.colorIntegrity.neutralChromaIncrease,
+                           quality.colorIntegrity.neutralWarmShift,
+                           quality.colorIntegrity.neutralGreenShift,
+                           quality.colorIntegrity.skinCoverage,
+                           quality.colorIntegrity.skinColorDifference,
+                           quality.colorIntegrity.skinWarmShift),
                     String(format: "[M] 失败阈值证据=tooHarsh: contrastRange %.4f / 上限 0.9000；neutralLuminanceLoss: protectedCoverage %.4f / 启用阈值 0.0150，protectedShift %+.4f / 下限 -0.0650；intentionalToneCoverage %.4f / shift %+.4f",
                            quality.measuredAnalysis.contrastRange,
                            quality.colorIntegrity.protectedNeutralCoverage,
