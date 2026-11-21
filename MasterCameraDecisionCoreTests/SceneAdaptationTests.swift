@@ -533,7 +533,18 @@ final class SceneAdaptationTests: XCTestCase {
 
         XCTAssertTrue(result.treatmentPlan.regionalTreatments.contains { $0.region == .ground })
         XCTAssertTrue(result.treatmentPlan.regionalTreatments.contains { $0.region == .vegetation })
-        XCTAssertEqual(result.recipe.hsl, .neutral)
+        // Recognition failure removes label-derived colour assumptions, but it
+        // must not erase bounded colour evidence measured inside a reliable
+        // vegetation mask. This is not a scene preset: changing/removing the
+        // measured mask still exercises the neutral fallback in the adjacent
+        // failure test.
+        XCTAssertEqual(result.recipe.hsl.mathMode, .perceptualHSL)
+        XCTAssertGreaterThan(result.recipe.hsl.greenSaturation, 0)
+        XCTAssertLessThanOrEqual(result.recipe.hsl.greenSaturation, 0.03)
+        XCTAssertGreaterThan(result.recipe.hsl.greenLuminance, 0)
+        XCTAssertLessThanOrEqual(result.recipe.hsl.greenLuminance, 0.03)
+        XCTAssertEqual(result.recipe.hsl.redSaturation, 0)
+        XCTAssertEqual(result.recipe.hsl.blueSaturation, 0)
     }
 
     func testV8CandidatesComeFromMeasuredProblemsAndAreNotOnePreset() throws {
