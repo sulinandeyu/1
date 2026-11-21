@@ -12,9 +12,9 @@ struct PhotographyDecision: Equatable, Sendable {
     let parameterEvidence: [PhotographyParameterEvidence]
     let recipeLifecycle: [PhotographyRecipeLifecycleSnapshot]
     let aestheticPlan: AestheticPhotographyPlan?
-    /// Diagnostic-only, measurement-derived regional tone controls.  The plan
-    /// is nil for the formal B path and is rendered only when the caller
-    /// explicitly enables measured aesthetic planning (D/E diagnostics).
+    /// Measurement-derived regional tone controls. Production B and diagnostics
+    /// share this one plan; every caller must pass it to the Core Image render
+    /// that produces the corresponding pixels.
     let adaptiveRegionalTonePlan: AdaptiveRegionalTonePlan?
 
     var summaryText: String {
@@ -158,6 +158,7 @@ enum PhotographyKnowledgeRuleID: String, Equatable, Hashable, Sendable {
     case measuredIntentSelection = "PT-AESTHETIC-009"
     case renderedTargetExploration = "PT-AESTHETIC-010"
     case measuredCoolCinematicStandard = "PT-AESTHETIC-011"
+    case productionMeasuredAutomaticEdit = "PT-PRODUCTION-001"
     case protectedRegionalBlend = "PT-QA-003"
     case parameterLifecycleAudit = "PT-QA-004"
     case attributedNeutralProtection = "PT-QA-005"
@@ -403,35 +404,48 @@ struct PhotographyParameterEvidence: Equatable, Sendable {
         case .highlights: return recipe.highlightAmount
         case .shadows: return recipe.shadowAmount
         case .contrast: return recipe.contrast
-        case .toneCurve: return recipe.toneCurveAmount
+        case .toneCurve: return max(recipe.toneCurveAmount, recipe.rgbCurves.intensity)
         case .whitePoint: return recipe.whitePoint
         case .blackPoint: return recipe.blackPoint
         case .temperature: return recipe.temperatureShift
         case .tint: return recipe.tintShift
         case .hue:
             return [
+                abs(recipe.hsl.redHue),
                 abs(recipe.hsl.orangeHue),
                 abs(recipe.hsl.yellowHue),
                 abs(recipe.hsl.greenHue),
                 abs(recipe.hsl.cyanHue),
-                abs(recipe.hsl.blueHue)
+                abs(recipe.hsl.blueHue),
+                abs(recipe.hsl.purpleHue),
+                abs(recipe.hsl.magentaHue)
             ].max() ?? 0
         case .saturation: return recipe.saturation
         case .vibrance: return recipe.vibrance
         case .localContrast: return recipe.localContrastAmount
         case .midtoneContrast: return recipe.upperMidtoneSeparation
-        case .shadowColor: return recipe.shadowCoolAmount
-        case .midtoneColor: return max(recipe.midtoneCoolAmount, recipe.midtoneWarmAmount)
-        case .highlightColor: return recipe.highlightWarmAmount
+        case .shadowColor:
+            return max(recipe.shadowCoolAmount, recipe.tonalColorGrade.shadows.amount)
+        case .midtoneColor:
+            return max(
+                max(recipe.midtoneCoolAmount, recipe.midtoneWarmAmount),
+                recipe.tonalColorGrade.midtones.amount
+            )
+        case .highlightColor:
+            return max(recipe.highlightWarmAmount, recipe.tonalColorGrade.highlights.amount)
         case .localExposure: return recipe.subjectExposureEV
         case .localHighlights: return abs(recipe.highlightZoneExposureEV)
         case .localShadows: return recipe.shadowZoneExposureEV
         case .localColor:
             return [
+                abs(recipe.hsl.redSaturation),
                 abs(recipe.hsl.orangeSaturation),
                 abs(recipe.hsl.yellowSaturation),
                 abs(recipe.hsl.greenSaturation),
-                abs(recipe.hsl.blueSaturation)
+                abs(recipe.hsl.cyanSaturation),
+                abs(recipe.hsl.blueSaturation),
+                abs(recipe.hsl.purpleSaturation),
+                abs(recipe.hsl.magentaSaturation)
             ].max() ?? 0
         case .localTexture: return recipe.localContrastAmount
         case .noiseReduction: return recipe.noiseReductionAmount

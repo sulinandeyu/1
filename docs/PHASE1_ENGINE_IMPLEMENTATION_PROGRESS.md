@@ -216,3 +216,55 @@ Apple 像素验证已经完成。后续仍需 TestFlight 明确授权，才能�
 - 在 iPhone 上选择本地 A/T，生成全分辨率 R-I，并导出同次运行 A/B/T/R-I 与执行证据。
 - 核对设备型号、iOS、真实耗时和内存；macOS/Simulator 数据不得冒充 iPhone 性能。
 - 由用户检查道路纹理、冷暖层次、黄绿分离、天空/白色车辆中性色、人物 100% 纹理与蒙版边缘；未评价前审美状态保持 pending。
+
+## Task 2-C：内部 TestFlight 与真实 iPhone A/T/R-I 验证
+
+状态（2026-11-21）：
+
+- `INTERNAL_TESTFLIGHT_READY`
+- `IPHONE_RENDER_VERIFIED = PENDING`
+- `HUMAN_AESTHETIC_APPROVED = PENDING`
+
+发布事实：
+
+- 发布源码固定为分支 `codex/automatic-photography-director-v2-20261114` 的 `a0a7931057a58c35000c2a672e47bf114e83f925`；它与成功的 Apple CI `iOS Build #128` 完全一致。
+- `TestFlight Release #51`（run ID `44865402355`，<https://github.com/sulinandeyu/1/actions/runs/44865402355>）使用版本 `1.0`、Build `38` 完成 Release archive、签名、IPA 导出与一次正常上传；上传日志为 `UPLOAD SUCCEEDED`。
+- `TestFlight Release #52`（run ID `44865759191`，<https://github.com/sulinandeyu/1/actions/runs/44865759191>）只执行状态核验：App Store Connect `processingState=VALID`、`internalBuildState=IN_BETA_TESTING`、内部测试组数量为 1，因此 Build 38 已可供现有内部测试组安装。
+- Release 中保留正式 B、Task 1 原图保留和普通拍照路径；Task 2-A 按钮只处理用户本机选择的 A，并将 T 作为本地 ZIP 的独立评价参考。私人 A/T、诊断 ZIP、`output/` 和工作区未跟踪资料均未提交或上传到 GitHub。
+
+真实 iPhone 验收仍必须由产品负责人完成：安装 Build 38，在相机主界面底部选择“Task 2-A：依次选择 A、T 并生成本机 R-I”，按顺序选择 A、T；处理完成后通过系统分享表保存诊断 ZIP。ZIP 应包含 A、正式 B、T、真实 M/R-I、参数生命周期、区域实测、技术质检、设备/版本/Git 信息及 `task2a-comparison.html`。R-I 缺失、OOM、质量拒绝或蒙版跳过时必须保留失败证据，不得用 A/B 顶替。
+
+## 正式 B 测量驱动自动摄影接线（PT-PRODUCTION-001）
+
+状态（2026-11-21）：
+
+- `SOURCE_IMPLEMENTED`
+- `WINDOWS_STATIC_CHECK_PASSED`
+- `APPLE_COMPILE_AND_TEST = PENDING`
+- `APPLE_FORMAL_B_PIXEL_VERIFIED = PENDING`
+- `IPHONE_NORMAL_CAPTURE_VERIFIED = PENDING`
+- `HUMAN_AESTHETIC_APPROVED = PENDING`
+
+本轮已获授权改变正式 B 的自动摄影决策与渲染接线，但没有上传 TestFlight、没有提交/推送，也没有改动 Task 1 原图安全保存。
+
+### 已完成源码
+
+- `PhotographyTargetProfile.measuredProduction` 只从当前照片的曝光、低色度环境、暖色重点、可靠区域、混合光、噪声及人物证据选择“测量自然”或“测量冷暖分离”目标；不读取场景固定参数、参考 T、图片哈希或反求答案。
+- `PhotoProcessingPipeline.process` 的正式 B 现在把 `StructuredPhotographyDiagnosis` 与 production target 传入 `PhotographyDecisionEngine`，并启用现有 `AestheticPhotographyPlanner`、`AdaptivePhotographyParameterSolver` 与 `AdaptiveRegionalTonePlanner`。
+- 低分辨率候选、最终全分辨率渲染、一次质量反馈重渲染、阶段预览和诊断回执均传递同一 `adaptiveRegionalTonePlan`，不再出现“计划已记录但区域像素未执行”的接线断点。
+- `AdaptivePhotographyParameterSolver` 在当前图证据支持时生成 perceptual 八色域 HSL、独立 RGB 七锚点曲线及显式阴影/中间调/高光色彩分级；显式三段分级启用后关闭旧分级，避免重复应用。人物证据存在时这些全局颜色表达保持 identity/neutral，继续只允许安全摄影影调。
+- 场景分类失败或不确定不再自动等于弱调色：当中性色或可靠区域像素证据存在时保留测量驱动决定；没有独立像素证据时仍执行安全降级。
+- 候选“保真”评分不再把接近原图本身当成主要奖励；真实裁切、中性色、人物、细节和区域风险继续由未降低阈值的 `QualityCheckService` 排除。
+- 参数证据已覆盖专业 RGB/HSL/三段分级实际值，并关联稳定规则 `PT-PRODUCTION-001`。
+
+### 本轮验证边界
+
+- `git diff --check` 通过；Windows 当前没有 Swift/Apple Core Image 运行时，不能执行 `swift test`、iOS Simulator 或真实 Core Image。
+- 新增 Swift 决策测试覆盖：有充分当前图证据时选择测量冷暖分离并产生 RGB/HSL/三段分级和区域计划；证据不足时选择测量自然；人物关闭全局颜色表达；规则来源可追踪。
+- 新增 app-hosted 正式 B 端到端像素测试：第一项从非诊断 `CapturedPhoto` 直接运行 `PhotoProcessingPipeline.process`，要求候选选择、最终配方、区域计划和重新渲染像素一致；第二项使用无场景标签但具备可靠地面/植被测量的合成照片，要求 `PT-PRODUCTION-001` 选择测量冷暖分离、动态区域计划非空且真实改变 Core Image 像素。测试输入为代码生成的合成图，不含私人照片，也不代表摄影审美通过。
+- 历史 Apple CI 只证明 Task 2-A/2-B 算子本身可运行，不能证明本轮正式 B 新接线已经编译或产生正确成片。
+- 秋季道路及其他场景尚未由本轮源码重新产生 Apple Core Image 正式 B；因此没有新图片可被诚实地标记为摄影改善证据，审美结论保持 `PENDING`。
+
+### 下一验证入口（本轮不执行）
+
+先在不混入其他工作区修改的独立提交上执行完整 `swift test`、macOS Core Image、app-hosted iOS 测试和 Simulator build；通过后再用同源秋季道路、建筑、阴天植被与人物在真实 iPhone 正常快门链生成正式 B，检查道路/植被层级、中性色、肤色、暗部、高光和蒙版边缘。只有用户实际审片认可后才能标记摄影审美通过。

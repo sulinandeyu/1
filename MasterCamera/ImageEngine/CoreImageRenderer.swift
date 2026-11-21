@@ -11,8 +11,8 @@ final class CoreImageRenderer {
         .cacheIntermediates: true,
         .workingColorSpace: CGColorSpace(name: CGColorSpace.extendedLinearSRGB)!
     ])
-    /// Task 2-A uses an explicit half-float working contract. Production B keeps
-    /// its established context above until pixel-equivalence is approved.
+    /// Task 2-A diagnostics use an explicit half-float working contract. Formal B
+    /// uses the established extended-linear context and the same verified operators.
     private let diagnosticContext = CIContext(options: [
         .cacheIntermediates: true,
         .workingColorSpace: CGColorSpace(name: CGColorSpace.extendedLinearSRGB)!,
@@ -64,13 +64,15 @@ final class CoreImageRenderer {
         from data: Data,
         recipe: AutomaticEditingRecipe,
         analysis: PhotoAnalysis?,
+        adaptiveRegionalTonePlan: AdaptiveRegionalTonePlan? = nil,
         maximumLongEdge: CGFloat = 640
     ) throws -> Data {
         let result = try processImage(
             data: data,
             recipe: recipe,
             analysis: analysis,
-            maximumLongEdge: maximumLongEdge
+            maximumLongEdge: maximumLongEdge,
+            manualRegionalToneAdjustments: adaptiveRegionalTonePlan?.adjustments ?? []
         )
         return try evaluationJPEG(from: result.finalImage)
     }
@@ -78,7 +80,8 @@ final class CoreImageRenderer {
     func renderStagePreviews(
         from data: Data,
         recipe: AutomaticEditingRecipe,
-        analysis: PhotoAnalysis?
+        analysis: PhotoAnalysis?,
+        adaptiveRegionalTonePlan: AdaptiveRegionalTonePlan? = nil
     ) throws -> [ProcessingStagePreview] {
         // Stage cards are evidence thumbnails, not export masters.  Running the
         // entire stage pipeline again at full resolution needlessly multiplies
@@ -87,7 +90,8 @@ final class CoreImageRenderer {
             data: data,
             recipe: recipe,
             analysis: analysis,
-            maximumLongEdge: 960
+            maximumLongEdge: 960,
+            manualRegionalToneAdjustments: adaptiveRegionalTonePlan?.adjustments ?? []
         )
         return result.stages.compactMap { name, image in
             guard let imageData = makeStagePreviewData(from: image) else { return nil }
@@ -712,9 +716,9 @@ final class CoreImageRenderer {
             analysis: analysis,
             adjustments: plan.adjustments
         ).map {
-            $0.replacingOccurrences(of: "M 区域影调", with: "D 增强区域影调")
-                .replacingOccurrences(of: "（M；", with: "（D 动态实测；")
-                .replacingOccurrences(of: "（M ", with: "（D 动态实测 ")
+            $0.replacingOccurrences(of: "M 区域影调", with: "自适应区域影调")
+                .replacingOccurrences(of: "（M；", with: "（逐图动态实测；")
+                .replacingOccurrences(of: "（M ", with: "（逐图动态实测 ")
         }
     }
 

@@ -54,8 +54,20 @@ final class PhotoProcessingPipeline {
             in: analysis,
             report: problemReport
         )
-        // 3–4. 生成逐图摄影目标并动态求解参数
-        let decision = photographyDirector.direct(analysis: analysis, problems: problemReport)
+        // 3–4. PT-PRODUCTION-001：正式 B 使用当前照片的结构化诊断、
+        // 测量摄影目标和同一动态求解器。场景标签只提供边界信号，
+        // 不再把“未知场景”直接降级成近中性配方。
+        let productionTarget = PhotographyTargetProfile.measuredProduction(
+            analysis: analysis,
+            problems: problemReport
+        )
+        let decision = photographyDirector.direct(
+            analysis: analysis,
+            problems: problemReport,
+            targetProfile: productionTarget,
+            structuredDiagnosis: structuredDiagnosis,
+            enableMeasuredAestheticPlanning: true
+        )
         let decisionDuration = ProcessInfo.processInfo.systemUptime - decisionStart
         let treatmentTrace = decision.treatmentPlan.regionalTreatments
             .map { treatment in
@@ -94,11 +106,15 @@ final class PhotoProcessingPipeline {
         let initialEditedData = try renderer.renderAutomaticEdit(
             from: photo.originalImageData,
             recipe: selectedDecision.recipe,
-            analysis: analysis
+            analysis: analysis,
+            adaptiveRegionalTonePlan: selectedDecision.adaptiveRegionalTonePlan
         )
         let initialRegionalExecutionDetails = renderer.regionalExecutionDetails(
             for: selectedDecision.recipe,
             analysis: analysis
+        ) + renderer.adaptiveRegionalExecutionDetails(
+            analysis: analysis,
+            plan: selectedDecision.adaptiveRegionalTonePlan
         )
         let recognitionReason = analysis.sceneRecognitionDiagnostics.reason ?? "none"
         let segmentationReason = analysis.segmentationDiagnostics.reason ?? "none"
@@ -123,7 +139,8 @@ final class PhotoProcessingPipeline {
             initialRecipe: selectedDecision.recipe,
             target: selectedDecision.adaptiveTarget,
             analysis: analysis,
-            expectedRegions: selectedDecision.treatmentPlan.regionalTreatments.map(\.region)
+            expectedRegions: selectedDecision.treatmentPlan.regionalTreatments.map(\.region),
+            adaptiveRegionalTonePlan: selectedDecision.adaptiveRegionalTonePlan
         )
         let finalDecision = selectedDecision.replacingRecipe(
             with: finalEdit.recipe,
@@ -245,11 +262,15 @@ final class PhotoProcessingPipeline {
                 editedData: finalEdit.data,
                 executedModules: renderer.executedModuleNames(
                     for: finalEdit.recipe,
-                    analysis: finalEdit.analysis
+                    analysis: finalEdit.analysis,
+                    manualRegionalAdjustments: finalDecision.adaptiveRegionalTonePlan?.adjustments ?? []
                 ),
                 regionalExecutionDetails: renderer.regionalExecutionDetails(
                     for: finalEdit.recipe,
                     analysis: finalEdit.analysis
+                ) + renderer.adaptiveRegionalExecutionDetails(
+                    analysis: finalEdit.analysis,
+                    plan: finalDecision.adaptiveRegionalTonePlan
                 ),
                 parameterExecutionResults: parameterExecutionResults(
                     decision: finalDecision,
@@ -278,7 +299,8 @@ final class PhotoProcessingPipeline {
             let renderedStages = try renderer.renderStagePreviews(
                 from: photo.originalImageData,
                 recipe: finalEdit.recipe,
-                analysis: finalEdit.analysis
+                analysis: finalEdit.analysis,
+                adaptiveRegionalTonePlan: finalDecision.adaptiveRegionalTonePlan
             )
             if photo.isDiagnosticImport {
                 let maskDiagnostics = try renderer.renderMaskDiagnosticPreviews(
@@ -2138,11 +2160,12 @@ final class PhotoProcessingPipeline {
                 let preview = try renderer.renderEvaluationPreview(
                     from: originalData,
                     recipe: plan.recipe,
-                    analysis: analysis
+                    analysis: analysis,
+                    adaptiveRegionalTonePlan: decision.adaptiveRegionalTonePlan
                 )
                 if retainPreviews {
                     candidatePreviews.append(ProcessingStagePreview(
-                        name: "D V9逐图候选-\(plan.intent.rawValue)",
+                        name: "正式B逐图候选-\(plan.intent.rawValue)",
                         imageData: preview
                     ))
                 }
@@ -2153,6 +2176,9 @@ final class PhotoProcessingPipeline {
                 let executionDetails = renderer.regionalExecutionDetails(
                     for: plan.recipe,
                     analysis: analysis
+                ) + renderer.adaptiveRegionalExecutionDetails(
+                    analysis: analysis,
+                    plan: decision.adaptiveRegionalTonePlan
                 )
                 let quality = try qualityService.check(
                     originalData: originalPreview,
@@ -2279,10 +2305,15 @@ final class PhotoProcessingPipeline {
         hasProblems: Bool
     ) -> Float {
         let impact = quality.processingImpact.normalizedMeanAbsoluteRGBDifference
-        let upperComfort: Float = hasProblems ? 0.105 : 0.055
-        let overProcessingPenalty = max(0, impact - upperComfort) * 7
+        // Preservation is a technical-integrity score, not a similarity-to-source
+        // reward. Deliberate tone/colour work is judged by clipping, neutrals,
+        // people and detail in QualityCheckService; only an unusually large
+        // whole-image displacement adds a secondary penalty here.
+        let upperSafetyEnvelope: Float = hasProblems ? 0.22 : 0.18
+        let overProcessingPenalty = max(0, impact - upperSafetyEnvelope) * 4
         let warningPenalty = Float(quality.issues.count) * 0.07
-        return min(1, max(0, 1 - overProcessingPenalty - warningPenalty))
+        let colorIntegrityPenalty = quality.colorIntegrity.riskPenalty * 0.38
+        return min(1, max(0, 1 - overProcessingPenalty - warningPenalty - colorIntegrityPenalty))
     }
 
     private func chooseFinalEdit(
@@ -2292,7 +2323,8 @@ final class PhotoProcessingPipeline {
         initialRecipe: AutomaticEditingRecipe,
         target: AdaptivePhotographyTarget,
         analysis: PhotoAnalysis,
-        expectedRegions: [TreatmentRegion]
+        expectedRegions: [TreatmentRegion],
+        adaptiveRegionalTonePlan: AdaptiveRegionalTonePlan?
     ) throws -> (
         data: Data,
         qualityCheck: QualityCheckResult,
@@ -2322,11 +2354,15 @@ final class PhotoProcessingPipeline {
             let correctiveData = try renderer.renderAutomaticEdit(
                 from: originalData,
                 recipe: correctiveRecipe,
-                analysis: analysis
+                analysis: analysis,
+                adaptiveRegionalTonePlan: adaptiveRegionalTonePlan
             )
             let correctiveRegionalExecutionDetails = renderer.regionalExecutionDetails(
                 for: correctiveRecipe,
                 analysis: analysis
+            ) + renderer.adaptiveRegionalExecutionDetails(
+                analysis: analysis,
+                plan: adaptiveRegionalTonePlan
             )
             let correctiveQualityCheck = try qualityService
                 .check(

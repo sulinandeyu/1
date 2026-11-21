@@ -535,7 +535,7 @@ struct RegionalPixelAdjustment: Equatable, Sendable {
 enum CinematicColorGradeMode: String, Equatable, Sendable {
     /// Existing production/B mathematics. Do not change its pixel semantics.
     case legacy
-    /// PT-AESTHETIC-012 diagnostic-only measured cool-cinematic separation.
+    /// PT-AESTHETIC-012 measured cool-cinematic separation.
     case measuredCoolCinematic
 }
 
@@ -587,8 +587,8 @@ struct AutomaticEditingRecipe: Equatable, Sendable {
     var shadowZoneExposureEV: Float
     var highlightZoneExposureEV: Float
     var luminanceMaskStrength: Float
-    /// Task 2-A diagnostic controls. Defaults are strict identity so existing
-    /// production/B recipes retain their established pixel semantics.
+    /// Task 2-A professional controls. Defaults are strict identity; the formal
+    /// B solver enables them only when current-image evidence supports it.
     var rgbCurves: ProfessionalRGBCurves = .identity
     var tonalColorGrade: ProfessionalTonalColorGrade = .neutral
 

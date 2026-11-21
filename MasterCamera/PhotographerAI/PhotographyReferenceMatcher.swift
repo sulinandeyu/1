@@ -441,8 +441,7 @@ struct PhotographyTargetProfile: Equatable, Sendable {
             analysis: analysis,
             problems: problems
         )
-        // The production B target deliberately remains unchanged. D uses this
-        // source-relative target so a bright image with a large white sky is not
+        // This source-relative baseline prevents a bright image with a large white sky from being
         // compared against a generic mid-grey destination. Every correction is
         // derived from recoverable endpoint evidence in the current photo.
         let recoverableHighlights = max(0, analysis.highlightRatio - analysis.whiteRatio)
@@ -463,7 +462,7 @@ struct PhotographyTargetProfile: Equatable, Sendable {
         // A high source range is not itself a request to flatten the photograph.
         // Preserve most of the measured range and let endpoint/region controls
         // handle recoverable highlights and spatial hierarchy.  This remains
-        // source-relative and is used only by the diagnostic D path.
+        // source-relative and is shared by production planning and diagnostics.
         let measuredContrast = max(
             baseline.contrast,
             analysis.contrastRange
@@ -512,7 +511,120 @@ struct PhotographyTargetProfile: Equatable, Sendable {
         )
     }
 
-    /// PT-AESTHETIC-011: diagnostic-only balanced cool-cinematic target. The
+    /// PT-PRODUCTION-001: chooses the formal B photographic direction from
+    /// current-image measurements. This is deliberately not a scene-to-look
+    /// mapping: a colour-separated treatment is eligible only when the pixels
+    /// contain a reliable warm accent, a low-chroma environment and usable
+    /// regional evidence. Otherwise production keeps a measured natural target
+    /// while still allowing exposure, tone and reliable local relationships to
+    /// be solved from the image.
+    static func measuredProduction(
+        analysis: PhotoAnalysis,
+        problems: PhotoProblemReport
+    ) -> PhotographyTargetProfile {
+        let baseline = measuredBaseline(analysis: analysis, problems: problems)
+        let reliableSubjectMask = !analysis.containsPersonEvidence
+            && analysis.salientSubjectPriorityConfidence >= 0.58
+            ? analysis.salientSubjectMask : nil
+        let usableMasks = [
+            analysis.groundMask,
+            analysis.vegetationMask,
+            analysis.skyMask,
+            analysis.architectureMask,
+            analysis.waterMask,
+            reliableSubjectMask
+        ].compactMap { mask in
+            mask?.qualityAssessment.isUsable == true ? mask : nil
+        }
+        let regionalEvidence = (Float(usableMasks.count) / 3).clamped(to: 0...1)
+        let vegetation = analysis.vegetationMask?.qualityAssessment.isUsable == true
+            ? analysis.vegetationStatistics : nil
+        let warmAccentRegion = vegetation ?? analysis.nonPersonPrimarySubjectStatistics
+        let warmAccentEvidence: Float = warmAccentRegion.map { statistics in
+            let yellowPresence = (statistics.yellowColorRatio / 0.34).clamped(to: 0...1)
+            let yellowSeparation = (
+                (statistics.yellowColorRatio - statistics.greenColorRatio * 0.45) / 0.30
+            ).clamped(to: 0...1)
+            let colorHeadroom = ((0.55 - statistics.averageSaturation) / 0.55)
+                .clamped(to: 0.20...1)
+            return (yellowPresence * 0.58 + yellowSeparation * 0.42) * colorHeadroom
+        } ?? 0
+        let lowChromaRegions = [
+            analysis.groundMask?.qualityAssessment.isUsable == true
+                ? analysis.groundStatistics : nil,
+            analysis.skyMask?.qualityAssessment.isUsable == true
+                ? analysis.skyStatistics : nil,
+            analysis.architectureMask?.qualityAssessment.isUsable == true
+                ? analysis.architectureStatistics : nil
+        ].compactMap { $0 }
+        let neutralEnvironmentEvidence: Float = {
+            guard !lowChromaRegions.isEmpty else {
+                return ((0.24 - analysis.averageSaturation) / 0.24).clamped(to: 0...0.45)
+            }
+            let measured = lowChromaRegions.map {
+                ((0.30 - $0.averageSaturation) / 0.30).clamped(to: 0...1)
+            }.reduce(0, +) / Float(lowChromaRegions.count)
+            return measured
+        }()
+        let mixedLightEvidence = (
+            analysis.mixedLightScore * (analysis.highlightSourceCount > 0 ? 1 : 0.35)
+        ).clamped(to: 0...1)
+        let portraitScale: Float = analysis.containsPersonEvidence ? 0.16 : 1
+        let colorSeparationEvidence = (
+            warmAccentEvidence * 0.48
+                + neutralEnvironmentEvidence * 0.27
+                + regionalEvidence * 0.17
+                + mixedLightEvidence * 0.08
+        ) * portraitScale
+
+        guard colorSeparationEvidence >= 0.34,
+              warmAccentEvidence >= 0.34,
+              neutralEnvironmentEvidence >= 0.22,
+              usableMasks.count >= 2 else {
+            return PhotographyTargetProfile(
+                hypothesisIdentifier: "B-production-measured-natural",
+                baselineTarget: baseline.baselineTarget,
+                resolvedTarget: baseline.resolvedTarget,
+                referenceMatch: .unavailable("正式 B 不读取摄影参考；自然目标来自当前照片测量。"),
+                referenceInfluence: 0,
+                localContrastTarget: baseline.localContrastTarget,
+                regionalColorSeparationTarget: 0,
+                subjectBackgroundDeltaTarget: baseline.subjectBackgroundDeltaTarget,
+                regionalIntent: nil,
+                rationale: baseline.rationale + [String(
+                    format: "PT-PRODUCTION-001 选择测量自然目标：暖色重点证据 %.3f、中性环境 %.3f、可靠区域 %.3f、综合色彩分离证据 %.3f；证据不足时不强套电影色彩。",
+                    warmAccentEvidence,
+                    neutralEnvironmentEvidence,
+                    regionalEvidence,
+                    colorSeparationEvidence
+                )],
+                preservedProperties: baseline.preservedProperties
+            )
+        }
+
+        let separated = measuredCinematicDiagnostic(analysis: analysis, problems: problems)
+        return PhotographyTargetProfile(
+            hypothesisIdentifier: "B-production-measured-color-separation",
+            baselineTarget: separated.baselineTarget,
+            resolvedTarget: separated.resolvedTarget,
+            referenceMatch: .unavailable("正式 B 不读取摄影参考；冷暖分离方向来自当前照片的色彩与区域关系。"),
+            referenceInfluence: 0,
+            localContrastTarget: separated.localContrastTarget,
+            regionalColorSeparationTarget: separated.regionalColorSeparationTarget,
+            subjectBackgroundDeltaTarget: separated.subjectBackgroundDeltaTarget,
+            regionalIntent: separated.regionalIntent,
+            rationale: separated.rationale + [String(
+                format: "PT-PRODUCTION-001 选择测量冷暖分离目标：暖色重点证据 %.3f、中性环境 %.3f、可靠区域 %.3f、综合色彩分离证据 %.3f；并非按场景名称加载预设。",
+                warmAccentEvidence,
+                neutralEnvironmentEvidence,
+                regionalEvidence,
+                colorSeparationEvidence
+            )],
+            preservedProperties: separated.preservedProperties
+        )
+    }
+
+    /// PT-AESTHETIC-011: measured balanced cool-cinematic target. The
     /// aesthetic direction is a product constraint, while every magnitude and
     /// every regional target is recomputed from this image's measured pixels.
     /// It never reads a scene name, reference target T or inverse-solved values.

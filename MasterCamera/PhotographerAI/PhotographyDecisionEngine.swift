@@ -128,33 +128,58 @@ final class PhotographyDecisionEngine {
         recipe: inout AutomaticEditingRecipe,
         actions: inout [PhotographyAction]
     ) {
+        let hasReliablePixelColorEvidence = analysis.neutralColorStatistics?.isReliable == true
+            || [
+                analysis.skyMask,
+                analysis.groundMask,
+                analysis.vegetationMask,
+                analysis.waterMask,
+                analysis.architectureMask
+            ].contains { $0?.qualityAssessment.isUsable == true }
         switch analysis.sceneRecognitionDiagnostics.status {
         case .failed:
-            // Keep metric-driven exposure/dynamic-range work, but remove semantic color
-            // assumptions when Vision did not produce a result at all.
-            recipe.hsl = .neutral
-            recipe.colorGradeIntensity = min(recipe.colorGradeIntensity, 0.12)
-            recipe.shadowCoolAmount = min(recipe.shadowCoolAmount, 0.025)
-            recipe.midtoneCoolAmount = min(recipe.midtoneCoolAmount, 0.02)
-            recipe.midtoneWarmAmount = min(recipe.midtoneWarmAmount, 0.04)
-            recipe.highlightWarmAmount = min(recipe.highlightWarmAmount, 0.05)
-            recipe.colorContrast = min(recipe.colorContrast, 0.05)
+            // A failed label classifier is not evidence that the pixels need weak
+            // processing. Retain current-image colour/region decisions when their
+            // own measurements are reliable; otherwise remove semantic colour.
+            if !hasReliablePixelColorEvidence {
+                recipe.hsl = .neutral
+                recipe.rgbCurves = .identity
+                recipe.tonalColorGrade = .neutral
+                recipe.colorGradeIntensity = min(recipe.colorGradeIntensity, 0.12)
+                recipe.shadowCoolAmount = min(recipe.shadowCoolAmount, 0.025)
+                recipe.midtoneCoolAmount = min(recipe.midtoneCoolAmount, 0.02)
+                recipe.midtoneWarmAmount = min(recipe.midtoneWarmAmount, 0.04)
+                recipe.highlightWarmAmount = min(recipe.highlightWarmAmount, 0.05)
+                recipe.colorContrast = min(recipe.colorContrast, 0.05)
+            }
             actions.append(PhotographyAction(
-                title: "场景识别失败：采用安全传统后期",
+                title: hasReliablePixelColorEvidence
+                    ? "场景标签失败：保留可靠像素测量决策"
+                    : "场景识别失败：采用安全传统后期",
                 reason: analysis.sceneRecognitionDiagnostics.reason
-                    ?? "只执行实测曝光、动态范围、白平衡和亮度蒙版，不宣称已完成场景化调色。"
+                    ?? (hasReliablePixelColorEvidence
+                        ? "标签不可用，但中性色或区域像素证据可靠；继续执行实测目标，不按未知标签削弱为近中性。"
+                        : "只执行实测曝光、动态范围、白平衡和亮度蒙版，不宣称已完成场景化调色。")
             ))
         case .uncertain:
-            recipe.colorGradeIntensity = min(recipe.colorGradeIntensity, 0.2)
-            recipe.shadowCoolAmount = min(recipe.shadowCoolAmount, 0.06)
-            recipe.midtoneCoolAmount = min(recipe.midtoneCoolAmount, 0.045)
-            recipe.midtoneWarmAmount = min(recipe.midtoneWarmAmount, 0.09)
-            recipe.highlightWarmAmount = min(recipe.highlightWarmAmount, 0.12)
-            recipe.colorContrast = min(recipe.colorContrast, 0.09)
+            if !hasReliablePixelColorEvidence {
+                recipe.colorGradeIntensity = min(recipe.colorGradeIntensity, 0.2)
+                recipe.shadowCoolAmount = min(recipe.shadowCoolAmount, 0.06)
+                recipe.midtoneCoolAmount = min(recipe.midtoneCoolAmount, 0.045)
+                recipe.midtoneWarmAmount = min(recipe.midtoneWarmAmount, 0.09)
+                recipe.highlightWarmAmount = min(recipe.highlightWarmAmount, 0.12)
+                recipe.colorContrast = min(recipe.colorContrast, 0.09)
+                recipe.rgbCurves.intensity = min(recipe.rgbCurves.intensity, 0.18)
+                recipe.tonalColorGrade.shadows.amount = min(recipe.tonalColorGrade.shadows.amount, 0.18)
+                recipe.tonalColorGrade.midtones.amount = min(recipe.tonalColorGrade.midtones.amount, 0.14)
+                recipe.tonalColorGrade.highlights.amount = min(recipe.tonalColorGrade.highlights.amount, 0.10)
+            }
             actions.append(PhotographyAction(
-                title: "场景识别不确定：限制风格强度",
+                title: hasReliablePixelColorEvidence
+                    ? "场景标签不确定：由可靠像素证据继续规划"
+                    : "场景识别不确定：限制风格强度",
                 reason: analysis.sceneRecognitionDiagnostics.reason
-                    ?? "保留问题驱动的摄影调整，避免按低置信度标签强制套用色彩语言。"
+                    ?? "保留问题驱动的摄影调整；场景标签只作安全边界，不直接决定风格参数。"
             ))
         case .recognized, .notEvaluated:
             break
@@ -289,6 +314,9 @@ final class PhotographyDecisionEngine {
         recipe.hsl.orangeHue = 0
         recipe.hsl.orangeLuminance = 0
         recipe.hsl.orangeSaturation = 0
+        recipe.hsl = .neutral
+        recipe.rgbCurves = .identity
+        recipe.tonalColorGrade = .neutral
         recipe.skySaturation = min(recipe.skySaturation, 1)
 
         actions.append(
@@ -347,6 +375,27 @@ final class PhotographyDecisionEngine {
             recipe.hsl.greenSaturation = min(0.01, recipe.hsl.greenSaturation)
             recipe.skySaturation = min(recipe.skySaturation, 1)
             recipe.exposureEV = max(recipe.exposureEV, -0.025)
+            recipe.rgbCurves.intensity = min(recipe.rgbCurves.intensity, 0.38)
+            recipe.tonalColorGrade.shadows.amount = min(
+                recipe.tonalColorGrade.shadows.amount,
+                0.34
+            )
+            recipe.tonalColorGrade.midtones.amount = min(
+                recipe.tonalColorGrade.midtones.amount,
+                0.24
+            )
+            recipe.tonalColorGrade.highlights.amount = min(
+                recipe.tonalColorGrade.highlights.amount,
+                0.08
+            )
+            recipe.tonalColorGrade.neutralChromaProtection = max(
+                recipe.tonalColorGrade.neutralChromaProtection,
+                0.84
+            )
+            recipe.tonalColorGrade.highlightNeutralProtection = max(
+                recipe.tonalColorGrade.highlightNeutralProtection,
+                0.92
+            )
             actions.append(PhotographyAction(
                 title: "阴天中性色保护",
                 reason: "阴天与低色度天空不具备蓝天证据，因此禁止强制青蓝或暖黄分离，只保留动态范围、结构和局部层次。"
@@ -374,6 +423,15 @@ final class PhotographyDecisionEngine {
                 recipe.highlightWarmAmount = min(recipe.highlightWarmAmount, 0.045)
                 recipe.colorContrast = min(recipe.colorContrast, 0.045)
             }
+            recipe.rgbCurves.intensity = min(recipe.rgbCurves.intensity, 0.42)
+            recipe.tonalColorGrade.neutralChromaProtection = max(
+                recipe.tonalColorGrade.neutralChromaProtection,
+                0.82
+            )
+            recipe.tonalColorGrade.highlightNeutralProtection = max(
+                recipe.tonalColorGrade.highlightNeutralProtection,
+                0.92
+            )
             actions.append(PhotographyAction(
                 title: "白色与灰色材质保护",
                 reason: "画面包含大面积低色度或建筑中性色，限制全局色偏，避免白车、灰墙和阴天天空被染色。"
@@ -1423,8 +1481,8 @@ struct AestheticPhotographyPlan: Equatable, Sendable {
 
 /// Turns measured scene evidence into relationships the solver can pursue. It
 /// never selects a preset: every target is a bounded residual from this image.
-/// This is used only by isolated C/D/E diagnostic paths until real iPhone blind
-/// tests show that any hypothesis is preferable to the current B result.
+/// Production B and isolated diagnostics share this planner; the production
+/// profile determines whether measured colour separation is justified.
 struct AestheticPhotographyPlanner {
     func makePlan(
         analysis: PhotoAnalysis,
@@ -1726,10 +1784,10 @@ struct AestheticPhotographyPlanner {
     }
 }
 
-/// PT-AESTHETIC-007. Converts measured regional relationships into the exact
-/// enhanced regional operators already proven by M.  It is diagnostic-only and
-/// deliberately ignores scene names: masks, luminance, colour occupancy, noise
-/// and the per-image target are the only parameter sources.
+/// PT-AESTHETIC-007 / PT-PRODUCTION-001. Converts measured regional
+/// relationships into the same enhanced regional operators used by diagnostics
+/// and formal B. It deliberately ignores scene names: masks, luminance, colour
+/// occupancy, noise and the per-image target are the only parameter sources.
 struct AdaptiveRegionalTonePlanner {
     func makePlan(
         analysis: PhotoAnalysis,
@@ -2373,8 +2431,7 @@ struct AdaptivePhotographyParameterSolver {
         recipe.hsl = .neutral
         if let aestheticPlan {
             // PT-AESTHETIC-011: reduce environmental colour density while the
-            // warm accent is rebuilt selectively below. This is diagnostic-only
-            // because `aestheticPlan` is absent from the formal B path.
+            // warm accent is rebuilt selectively below.
             recipe.saturation = min(
                 recipe.saturation,
                 1 - aestheticPlan.ambientDesaturationStrength * 0.28
@@ -2476,9 +2533,15 @@ struct AdaptivePhotographyParameterSolver {
                 -0.085...0.055
             )
         }
+        if recipe.hsl != .neutral {
+            // Task 2-A's production-capable HSL operator uses true HSL
+            // lightness. The historical HSV-value semantics remain available
+            // to legacy recipes, but measured formal-B plans use the verified
+            // perceptual path.
+            recipe.hsl.mathMode = .perceptualHSL
+        }
 
-        // PT-AESTHETIC-012. The formal B path keeps the legacy grade untouched.
-        // Diagnostic D/E uses explicit tonal-colour targets so the requested
+        // PT-AESTHETIC-012. Explicit tonal-colour targets ensure the requested
         // cool-neutral environment is not multiplied down twice into an invisible
         // bias. Every amount below comes from this image's measured plan.
         let channelSpread = max(
@@ -2549,6 +2612,105 @@ struct AdaptivePhotographyParameterSolver {
                 0...0.026
             )
         }
+        if let aestheticPlan, !hasPerson {
+            let coolStrength = max(
+                aestheticPlan.environmentCoolStrength,
+                max(aestheticPlan.shadowCoolTarget, aestheticPlan.midtoneCoolTarget)
+            ).clamped(to: 0...0.75)
+            let warmStrength = max(
+                aestheticPlan.warmAccentStrength,
+                aestheticPlan.highlightWarmTarget * 4
+            ).clamped(to: 0...0.32)
+            let professionalColorDemand = max(
+                coolStrength,
+                max(warmStrength, aestheticPlan.warmCoolSeparationTarget)
+            )
+            if professionalColorDemand >= 0.055 {
+                let curveIntensity = (
+                    0.16
+                        + coolStrength * 0.42
+                        + warmStrength * 0.24
+                ).clamped(to: 0.16...0.58)
+                recipe.rgbCurves = ProfessionalRGBCurves(
+                    red: SevenPointChannelCurve(
+                        black: 0,
+                        shadow: 0.08 - coolStrength * 0.016,
+                        lowerMidtone: 0.22 - coolStrength * 0.010,
+                        midtone: 0.50,
+                        upperMidtone: 0.72 + warmStrength * 0.010,
+                        highlight: 0.90 + warmStrength * 0.012,
+                        white: 1
+                    ),
+                    green: SevenPointChannelCurve(
+                        black: 0,
+                        shadow: 0.08 + coolStrength * 0.002,
+                        lowerMidtone: 0.22 + coolStrength * 0.001,
+                        midtone: 0.50,
+                        upperMidtone: 0.72 + warmStrength * 0.002,
+                        highlight: 0.90 + warmStrength * 0.003,
+                        white: 1
+                    ),
+                    blue: SevenPointChannelCurve(
+                        black: 0,
+                        shadow: 0.08 + coolStrength * 0.014,
+                        lowerMidtone: 0.22 + coolStrength * 0.009,
+                        midtone: 0.50,
+                        upperMidtone: 0.72 - warmStrength * 0.006,
+                        highlight: 0.90 - warmStrength * 0.008,
+                        white: 1
+                    ),
+                    intensity: curveIntensity
+                ).clamped()
+                recipe.tonalColorGrade = ProfessionalTonalColorGrade(
+                    shadows: TonalColorVector(
+                        red: -0.052,
+                        green: 0.004,
+                        blue: 0.058,
+                        amount: max(aestheticPlan.shadowCoolTarget, coolStrength * 0.62)
+                            .clamped(to: 0...0.62)
+                    ),
+                    midtones: TonalColorVector(
+                        red: -0.038,
+                        green: 0.003,
+                        blue: 0.043,
+                        amount: max(aestheticPlan.midtoneCoolTarget, coolStrength * 0.42)
+                            .clamped(to: 0...0.42)
+                    ),
+                    highlights: TonalColorVector(
+                        red: 0.045,
+                        green: 0.010,
+                        blue: -0.038,
+                        amount: max(aestheticPlan.highlightWarmTarget, warmStrength * 0.15)
+                            .clamped(to: 0...0.12)
+                    ),
+                    neutralChromaProtection: aestheticPlan.neutralHighlightProtectionTarget
+                        .clamped(to: 0.68...0.94),
+                    highlightNeutralProtection: max(
+                        aestheticPlan.neutralHighlightProtectionTarget,
+                        0.84
+                    ).clamped(to: 0.84...0.97)
+                ).clamped()
+                // The explicit Task 2-A grade supersedes the older colour-grade
+                // branch; keeping both would apply the same intent twice.
+                recipe.colorGradeIntensity = 0
+                recipe.shadowCoolAmount = 0
+                recipe.midtoneCoolAmount = 0
+                recipe.midtoneWarmAmount = 0
+                recipe.highlightWarmAmount = 0
+                recipe.colorContrast = 0
+            }
+            switch aestheticPlan.tonalStructure {
+            case .spatialHierarchy, .restrainedDepth:
+                recipe.cinematicIntensity = .standard
+                recipe.cinematicToneStyle = targetLuminance < analysis.averageLuminance - 0.025
+                    ? .lowKey : .natural
+                recipe.toneCurveStyle = .cinematic
+            case .continuity, .referenceCalibration:
+                recipe.cinematicIntensity = .natural
+                recipe.cinematicToneStyle = targetLuminance > analysis.averageLuminance + 0.04
+                    ? .bright : .natural
+            }
+        }
         recipe.grainAmount = 0
 
         actions.append(PhotographyAction(
@@ -2572,7 +2734,7 @@ struct AdaptivePhotographyParameterSolver {
         }
         if let aestheticPlan {
             actions.append(PhotographyAction(
-                title: "逐图摄影审美规划（验证模式）",
+                title: "逐图摄影审美规划",
                 reason: aestheticPlan.traceSummary
             ))
         }
@@ -2589,7 +2751,9 @@ struct AdaptivePhotographyParameterSolver {
             let targetDrivenKeys: Set<PhotographyParameterKey> = [
                 .exposure, .brightness, .highlights, .shadows, .contrast,
                 .toneCurve, .saturation, .vibrance, .localContrast,
-                .midtoneContrast, .localExposure
+                .midtoneContrast, .shadowColor, .midtoneColor, .highlightColor,
+                .localExposure, .localColor, .orangeHSL, .yellowHSL,
+                .greenHSL, .blueHSL
             ]
             guard targetDrivenKeys.contains(item.key) else { return item }
             var rules: [PhotographyKnowledgeRuleID] = []
@@ -2608,6 +2772,9 @@ struct AdaptivePhotographyParameterSolver {
                     .measuredIntentSelection,
                     .atmospherePreservation
                 ]
+                if targetProfile?.hypothesisIdentifier.hasPrefix("B-production-") == true {
+                    rules.append(.productionMeasuredAutomaticEdit)
+                }
             }
             return rules.isEmpty ? item : item.appendingKnowledgeRules(rules)
         }
@@ -2847,8 +3014,12 @@ struct PhotographyCandidatePlanner {
             || abs(decision.adaptiveTarget.contrast - analysis.contrastRange) > 0.07
         let localResidual = !diagnosedKinds.isDisjoint(with: localKinds)
             || decision.treatmentPlan.regionalTreatments.contains { $0.region != .global }
-        if tonalResidual { intents.append(.dimensional) }
-        if localResidual { intents.append(.targeted) }
+        let measuredDepthIntent = (decision.aestheticPlan?.measuredIntentStrength ?? 0) >= 0.18
+            || decision.aestheticPlan?.tonalStructure == .spatialHierarchy
+            || decision.aestheticPlan?.tonalStructure == .restrainedDepth
+        let measuredRegionalIntent = !(decision.adaptiveRegionalTonePlan?.adjustments.isEmpty ?? true)
+        if tonalResidual || measuredDepthIntent { intents.append(.dimensional) }
+        if localResidual || measuredRegionalIntent { intents.append(.targeted) }
 
         return intents.map { intent in
             let recipe: AutomaticEditingRecipe
@@ -2892,6 +3063,10 @@ struct PhotographyCandidatePlanner {
         let kinds = Set(problems.problems.map(\.kind))
         let hasReliablePersonMask = analysis.personMask?.isValid == true
         let contrastDeficit = max(0, target.contrast - analysis.contrastRange)
+        let measuredIntentStrength = decisionIntentStrength(
+            target: target,
+            analysis: analysis
+        )
         let subjectLuminanceDeficit = max(
             0,
             analysis.averageLuminance
@@ -2901,6 +3076,20 @@ struct PhotographyCandidatePlanner {
         case .natural:
             break
         case .dimensional:
+            recipe.toneCurveAmount = min(
+                0.68,
+                recipe.toneCurveAmount + measuredIntentStrength * 0.11
+            )
+            recipe.localContrastAmount = min(
+                0.14,
+                recipe.localContrastAmount + measuredIntentStrength * 0.035
+            )
+            if !recipe.rgbCurves.isIdentity {
+                recipe.rgbCurves.intensity = min(
+                    0.62,
+                    recipe.rgbCurves.intensity + measuredIntentStrength * 0.08
+                )
+            }
             if kinds.contains(.flatContrast) || analysis.photographyContext.spatialDepthScore < 0.5 {
                 recipe.toneCurveAmount = min(0.62, recipe.toneCurveAmount + contrastDeficit * 0.32)
                 recipe.localContrastAmount = min(0.13, recipe.localContrastAmount + contrastDeficit * 0.16)
@@ -2970,9 +3159,9 @@ struct PhotographyCandidatePlanner {
             recipe.colorContrast = 0
             recipe.cinematicColorGradeMode = .legacy
             recipe.neutralHighlightProtection = 0
-            recipe.hsl.orangeHue = 0
-            recipe.hsl.orangeLuminance = 0
-            recipe.hsl.orangeSaturation = 0
+            recipe.hsl = .neutral
+            recipe.rgbCurves = .identity
+            recipe.tonalColorGrade = .neutral
         }
 
         if analysis.photographyContext.lightingConditions.contains(.overcast) {
@@ -2998,10 +3187,34 @@ struct PhotographyCandidatePlanner {
             recipe.hsl.blueSaturation = min(0, max(recipe.hsl.blueSaturation, -0.035))
             recipe.hsl.greenSaturation = min(0.01, recipe.hsl.greenSaturation)
             recipe.skySaturation = min(recipe.skySaturation, 1)
+            recipe.rgbCurves.intensity = min(recipe.rgbCurves.intensity, 0.38)
+            recipe.tonalColorGrade.shadows.amount = min(
+                recipe.tonalColorGrade.shadows.amount,
+                0.34
+            )
+            recipe.tonalColorGrade.midtones.amount = min(
+                recipe.tonalColorGrade.midtones.amount,
+                0.24
+            )
+            recipe.tonalColorGrade.highlights.amount = min(
+                recipe.tonalColorGrade.highlights.amount,
+                0.08
+            )
         }
 
-        if analysis.sceneRecognitionDiagnostics.status == .failed {
+        let hasReliablePixelColorEvidence = analysis.neutralColorStatistics?.isReliable == true
+            || [
+                analysis.skyMask,
+                analysis.groundMask,
+                analysis.vegetationMask,
+                analysis.waterMask,
+                analysis.architectureMask
+            ].contains { $0?.qualityAssessment.isUsable == true }
+        if analysis.sceneRecognitionDiagnostics.status == .failed,
+           !hasReliablePixelColorEvidence {
             recipe.hsl = .neutral
+            recipe.rgbCurves = .identity
+            recipe.tonalColorGrade = .neutral
             recipe.colorGradeIntensity = min(recipe.colorGradeIntensity, 0.1)
         }
         if analysis.segmentationDiagnostics.status == .failed
@@ -3011,6 +3224,17 @@ struct PhotographyCandidatePlanner {
             recipe.skySaturation = 1
         }
         return recipe.clamped()
+    }
+
+    private func decisionIntentStrength(
+        target: AdaptivePhotographyTarget,
+        analysis: PhotoAnalysis
+    ) -> Float {
+        (
+            abs(target.luminance - analysis.averageLuminance) * 2.4
+                + abs(target.contrast - analysis.contrastRange) * 1.8
+                + abs(target.saturation - analysis.averageSaturation) * 1.2
+        ).clamped(to: 0...1)
     }
 
     private func applyTargetedProblems(

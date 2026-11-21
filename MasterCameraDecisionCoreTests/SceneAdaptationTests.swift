@@ -3382,7 +3382,7 @@ final class SceneAdaptationTests: XCTestCase {
         XCTAssertLessThan(brightSeparation, darkSeparation * 0.55)
     }
 
-    func testMeasuredCinematicDecisionUsesDiagnosticGradeWithoutChangingFormalBMode() {
+    func testMeasuredCinematicDecisionUsesProfessionalGradeWithoutChangingUnplannedMode() {
         let analysis = fixture(
             luminance: 0.61,
             contrast: 0.78,
@@ -3408,10 +3408,11 @@ final class SceneAdaptationTests: XCTestCase {
         )
 
         XCTAssertEqual(formal.recipe.cinematicColorGradeMode, .legacy)
-        XCTAssertEqual(diagnostic.recipe.cinematicColorGradeMode, .measuredCoolCinematic)
-        XCTAssertGreaterThan(diagnostic.recipe.colorGradeIntensity, 0.08)
-        XCTAssertGreaterThan(diagnostic.recipe.midtoneCoolAmount, 0.02)
-        XCTAssertGreaterThan(diagnostic.recipe.neutralHighlightProtection, 0.45)
+        XCTAssertFalse(diagnostic.recipe.rgbCurves.isIdentity)
+        XCTAssertFalse(diagnostic.recipe.tonalColorGrade.isNeutral)
+        XCTAssertEqual(diagnostic.recipe.colorGradeIntensity, 0, accuracy: 0.0001)
+        XCTAssertGreaterThan(diagnostic.recipe.tonalColorGrade.shadows.amount, 0.05)
+        XCTAssertGreaterThan(diagnostic.recipe.tonalColorGrade.neutralChromaProtection, 0.45)
     }
 
     func testMeasuredCinematicDiagnosticDisablesGlobalGradeWhenPersonEvidenceExists() {
@@ -3447,6 +3448,104 @@ final class SceneAdaptationTests: XCTestCase {
         XCTAssertEqual(diagnostic.recipe.midtoneCoolAmount, 0, accuracy: 0.0001)
         XCTAssertEqual(diagnostic.recipe.highlightWarmAmount, 0, accuracy: 0.0001)
         XCTAssertEqual(diagnostic.recipe.colorContrast, 0, accuracy: 0.0001)
+        XCTAssertTrue(diagnostic.recipe.rgbCurves.isIdentity)
+        XCTAssertTrue(diagnostic.recipe.tonalColorGrade.isNeutral)
+        XCTAssertEqual(diagnostic.recipe.hsl, .neutral)
+    }
+
+    func testProductionProfileChoosesMeasuredColorSeparationOnlyFromCurrentPixelEvidence() {
+        let groundMask = NormalizedPhotoMask(
+            width: 2, height: 2, pixels: Data([255, 255, 0, 0])
+        )
+        let vegetationMask = NormalizedPhotoMask(
+            width: 2, height: 2, pixels: Data([0, 0, 255, 255])
+        )
+        let source = fixture(
+            luminance: 0.58,
+            contrast: 0.68,
+            saturation: 0.19,
+            labels: ["unknown"],
+            groundMask: groundMask,
+            vegetationMask: vegetationMask,
+            groundStatistics: regionStatistics(
+                luminance: 0.62, contrast: 0.55, saturation: 0.08,
+                red: 0.55, green: 0.56, blue: 0.57
+            ),
+            vegetationStatistics: regionStatistics(
+                luminance: 0.46, contrast: 0.51, saturation: 0.22,
+                red: 0.52, green: 0.43, blue: 0.25,
+                yellowColorRatio: 0.55, greenColorRatio: 0.08
+            ),
+            recognition: SceneRecognitionDiagnostics(
+                status: .uncertain,
+                topConfidence: 0.2,
+                acceptedLabelCount: 0,
+                reason: "test uncertain label"
+            ),
+            segmentation: SceneSegmentationDiagnostics(
+                status: .available,
+                reason: nil,
+                skyCoverage: 0,
+                groundCoverage: 0.5,
+                vegetationCoverage: 0.5,
+                waterCoverage: 0,
+                architectureCoverage: 0
+            )
+        )
+        let problems = detector.detect(in: source)
+        let profile = PhotographyTargetProfile.measuredProduction(
+            analysis: source,
+            problems: problems
+        )
+        let decision = engine.makeDecision(
+            for: source,
+            problems: problems,
+            targetProfile: profile,
+            structuredDiagnosis: detector.structuredDiagnosis(in: source, report: problems),
+            enableMeasuredAestheticPlanning: true
+        )
+
+        XCTAssertEqual(profile.hypothesisIdentifier, "B-production-measured-color-separation")
+        XCTAssertNotNil(decision.aestheticPlan)
+        XCTAssertNotNil(decision.adaptiveRegionalTonePlan)
+        XCTAssertFalse(decision.recipe.rgbCurves.isIdentity)
+        XCTAssertFalse(decision.recipe.tonalColorGrade.isNeutral)
+        XCTAssertEqual(decision.recipe.hsl.mathMode, .perceptualHSL)
+        XCTAssertTrue(decision.parameterEvidence.contains {
+            $0.knowledgeRuleIDs.contains(.productionMeasuredAutomaticEdit)
+        })
+    }
+
+    func testProductionProfileUsesMeasuredNaturalDirectionWhenColorRelationshipIsUnsupported() {
+        let source = fixture(
+            luminance: 0.50,
+            contrast: 0.57,
+            saturation: 0.18,
+            labels: ["unknown"],
+            recognition: SceneRecognitionDiagnostics(
+                status: .failed,
+                topConfidence: 0,
+                acceptedLabelCount: 0,
+                reason: "no classifier result"
+            )
+        )
+        let problems = detector.detect(in: source)
+        let profile = PhotographyTargetProfile.measuredProduction(
+            analysis: source,
+            problems: problems
+        )
+        let decision = engine.makeDecision(
+            for: source,
+            problems: problems,
+            targetProfile: profile,
+            structuredDiagnosis: detector.structuredDiagnosis(in: source, report: problems),
+            enableMeasuredAestheticPlanning: true
+        )
+
+        XCTAssertEqual(profile.hypothesisIdentifier, "B-production-measured-natural")
+        XCTAssertTrue(decision.recipe.rgbCurves.isIdentity)
+        XCTAssertTrue(decision.recipe.tonalColorGrade.isNeutral)
+        XCTAssertNotNil(decision.aestheticPlan)
     }
 
     func testMeasuredAestheticHypothesesChangeWithExposureNotSceneName() {

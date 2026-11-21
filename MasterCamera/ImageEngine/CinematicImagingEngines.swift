@@ -833,8 +833,7 @@ final class CinematicColorGradingEngine {
 
     /// PT-AESTHETIC-012. Unlike the legacy grade, this path treats the master
     /// intensity and each tonal-zone amount as independently measured controls.
-    /// It is enabled only for isolated D/E diagnostics; production B remains on
-    /// the legacy branch above. Bright neutral surfaces are protected by removing
+    /// Bright neutral surfaces are protected by removing
     /// the highlight mask from the cool-midtone mask instead of globally cancelling
     /// the intended colour relationship.
     private func applyMeasuredCoolCinematic(
