@@ -162,6 +162,77 @@ final class DiagnosticBundleExporter {
         return destination
     }
 
+    /// Exports a technically rejected formal-B render for local diagnosis. The
+    /// rejected bytes are labelled explicitly and are never written to Photos or
+    /// exposed as `editedImageData`.
+    func makeRejectedProductionCaptureArchive(for photo: CapturedPhoto) throws -> URL {
+        guard allowsProductionCaptureEvidence else {
+            throw DiagnosticBundleExportError.internalEvidenceDisabled
+        }
+        guard !photo.isDiagnosticImport else {
+            throw DiagnosticBundleExportError.notNormalCapture
+        }
+        guard !photo.originalImageData.isEmpty,
+              let evidence = photo.rejectedFormalBEvidence,
+              !evidence.candidateImageData.isEmpty
+        else { throw DiagnosticBundleExportError.incompleteProductionEvidence }
+
+        let sourceHash = Self.sourceSHA256(photo.originalImageData)
+        let rejectedHash = Self.sourceSHA256(evidence.candidateImageData)
+        let color = evidence.finalQualityCheck.colorIntegrity
+        var entries = [
+            DiagnosticExportEntry(
+                path: "images/A_original.\(Self.imageFileExtension(photo.originalImageData))",
+                data: photo.originalImageData,
+                role: "A exact original capture bytes"
+            ),
+            DiagnosticExportEntry(
+                path: "rejected/B_candidate_REJECTED.\(Self.imageFileExtension(evidence.candidateImageData))",
+                data: evidence.candidateImageData,
+                role: "rejected formal-B candidate; diagnostic only; never an accepted or saved B"
+            )
+        ]
+        let quality: [String: Any] = [
+            "schemaVersion": 1,
+            "state": "rejected",
+            "captureID": photo.id.uuidString,
+            "sourceSha256": sourceHash,
+            "rejectedCandidateSha256": rejectedHash,
+            "reason": evidence.rejectionReason,
+            "initialIssues": evidence.initialQualityCheck.issues.map(\.rawValue),
+            "finalIssues": evidence.finalQualityCheck.issues.map(\.rawValue),
+            "sourceAverageLuminance": evidence.analysis.averageLuminance,
+            "rejectedAverageLuminance": evidence.finalQualityCheck.measuredAnalysis.averageLuminance,
+            "protectedNeutralCoverage": color.protectedNeutralCoverage,
+            "protectedNeutralLuminanceShift": color.protectedNeutralLuminanceShift,
+            "intentionalToneNeutralCoverage": color.intentionalToneNeutralCoverage,
+            "intentionalToneNeutralLuminanceShift": color.intentionalToneNeutralLuminanceShift,
+            "recipe": evidence.recipe.traceSummary,
+            "regionalExecutionDetails": evidence.regionalExecutionDetails,
+            "issues": evidence.finalQualityCheck.issues.map(\.rawValue),
+            "app": appIdentityObject(),
+            "device": deviceIdentityObject(),
+            "uploadPolicy": "local_archive_only_user_initiated_share"
+        ]
+        entries.append(DiagnosticExportEntry(
+            path: "evidence/rejected_formal_b.json",
+            data: try jsonData(quality),
+            role: "quality attribution, executed recipe and rejection evidence"
+        ))
+        entries.append(DiagnosticExportEntry(
+            path: "REJECTED_NOT_A_FORMAL_B.txt",
+            data: Data("该候选未通过技术质检，不是正式 B，不会自动保存。仅供内部定位。".utf8),
+            role: "mandatory rejected-state marker"
+        ))
+        let stamp = Self.fileTimestamp.string(from: Date())
+        let destination = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "XiaoSuCamera_RejectedB_Evidence_\(stamp)_\(photo.id.uuidString.prefix(8)).zip"
+        )
+        try? FileManager.default.removeItem(at: destination)
+        try NativeZipArchiveWriter.write(entries: entries, to: destination)
+        return destination
+    }
+
     func productionCaptureEvidenceIdentity(
         for photo: CapturedPhoto
     ) throws -> ProductionCaptureEvidenceIdentity {

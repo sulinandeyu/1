@@ -130,6 +130,15 @@ final class PhotoProcessingPipeline {
             editedData: initialEditedData,
             sourceAnalysis: analysis,
             expectedRegions: selectedDecision.treatmentPlan.regionalTreatments.map(\.region),
+            regionalExecutionDetails: initialRegionalExecutionDetails,
+            intentionalNeutralToneRegions: selectedDecision.adaptiveRegionalTonePlan?
+                .intentionalNeutralToneRegions ?? []
+        )
+        logQualityEvidence(
+            label: "正式B全分辨率初版",
+            quality: initialQualityCheck,
+            sourceAverageLuminance: analysis.averageLuminance,
+            recipe: selectedDecision.recipe,
             regionalExecutionDetails: initialRegionalExecutionDetails
         )
         let finalEdit = try chooseFinalEdit(
@@ -2185,7 +2194,9 @@ final class PhotoProcessingPipeline {
                     editedData: preview,
                     sourceAnalysis: analysis,
                     expectedRegions: candidateDecision.treatmentPlan.regionalTreatments.map(\.region),
-                    regionalExecutionDetails: executionDetails
+                    regionalExecutionDetails: executionDetails,
+                    intentionalNeutralToneRegions: decision.adaptiveRegionalTonePlan?
+                        .intentionalNeutralToneRegions ?? []
                 )
                 let regionImpacts = try qualityService.measureRegionImpacts(
                     originalData: originalPreview,
@@ -2316,7 +2327,7 @@ final class PhotoProcessingPipeline {
         return min(1, max(0, 1 - overProcessingPenalty - warningPenalty - colorIntegrityPenalty))
     }
 
-    private func chooseFinalEdit(
+    func chooseFinalEdit(
         originalData: Data,
         initialEditedData: Data,
         initialQualityCheck: QualityCheckResult,
@@ -2349,7 +2360,8 @@ final class PhotoProcessingPipeline {
                 from: initialRecipe,
                 issues: initialQualityCheck.issues,
                 target: target,
-                measured: initialQualityCheck.measuredAnalysis
+                measured: initialQualityCheck.measuredAnalysis,
+                colorIntegrity: initialQualityCheck.colorIntegrity
             )
             let correctiveData = try renderer.renderAutomaticEdit(
                 from: originalData,
@@ -2370,9 +2382,18 @@ final class PhotoProcessingPipeline {
                     editedData: correctiveData,
                     sourceAnalysis: analysis,
                     expectedRegions: expectedRegions,
-                    regionalExecutionDetails: correctiveRegionalExecutionDetails
+                    regionalExecutionDetails: correctiveRegionalExecutionDetails,
+                    intentionalNeutralToneRegions: adaptiveRegionalTonePlan?
+                        .intentionalNeutralToneRegions ?? []
                 )
                 .applyingFallback()
+            logQualityEvidence(
+                label: "正式B一次性修正版",
+                quality: correctiveQualityCheck,
+                sourceAverageLuminance: analysis.averageLuminance,
+                recipe: correctiveRecipe,
+                regionalExecutionDetails: correctiveRegionalExecutionDetails
+            )
 
             if correctiveQualityCheck.status.isBetter(than: initialQualityCheck.status) {
                 AppLogger.imageEngine.warning("针对性重算结果更可靠，采用修正版成片；不再继续循环调整")
@@ -2386,8 +2407,18 @@ final class PhotoProcessingPipeline {
             }
 
             AppLogger.imageEngine.error("初版与一次针对性重算均未通过质量验证，拒绝把异常图片标记为 AI 成片")
-            throw PhotoProcessingError.qualityValidationFailed(
-                initialQualityCheck.issues.map(\.rawValue).joined(separator: ",")
+            let reason = correctiveQualityCheck.issues.map(\.rawValue).joined(separator: ",")
+            throw PhotoProcessingError.formalBRejected(
+                reason,
+                RejectedFormalBEvidence(
+                    candidateImageData: correctiveData,
+                    recipe: correctiveRecipe,
+                    initialQualityCheck: initialQualityCheck,
+                    finalQualityCheck: correctiveQualityCheck,
+                    analysis: analysis,
+                    regionalExecutionDetails: correctiveRegionalExecutionDetails,
+                    rejectionReason: reason
+                )
             )
         } catch {
             if let processingError = error as? PhotoProcessingError { throw processingError }
@@ -2398,11 +2429,12 @@ final class PhotoProcessingPipeline {
 
     /// V7 quality feedback is deliberately bounded: the original analysis is
     /// reused and at most one issue-specific correction render is attempted.
-    private func correctionRecipe(
+    func correctionRecipe(
         from original: AutomaticEditingRecipe,
         issues: [QualityIssue],
         target: AdaptivePhotographyTarget,
-        measured: PhotoAnalysis
+        measured: PhotoAnalysis,
+        colorIntegrity: ColorIntegrityMetrics = .neutral
     ) -> AutomaticEditingRecipe {
         var recipe = original
         let set = Set(issues)
@@ -2504,7 +2536,24 @@ final class PhotoProcessingPipeline {
         }
 
         if set.contains(.neutralLuminanceLoss) {
-            recipe.exposureEV = max(recipe.exposureEV, 0)
+            // Correct the operators that can actually depress protected neutral
+            // midtones. Do not reset the whole photograph to a bright/neutral
+            // fallback and do not touch chromatic grading, whose implementation
+            // is luminance preserving.
+            recipe.blackPoint *= 0.45
+            if recipe.exposureEV < 0 { recipe.exposureEV *= 0.45 }
+            if recipe.lowerMidtoneLift < 0 { recipe.lowerMidtoneLift *= 0.35 }
+            if recipe.midtoneBias < 0 { recipe.midtoneBias *= 0.35 }
+            if recipe.upperMidtoneSeparation < 0 { recipe.upperMidtoneSeparation *= 0.5 }
+            if recipe.contrast > 1 { recipe.contrast = 1 + ((recipe.contrast - 1) * 0.55) }
+            recipe.toneCurveAmount *= 0.72
+            recipe.rgbCurves = softenedRGBCurves(recipe.rgbCurves, factor: 0.48)
+            let protectedLoss = max(
+                0,
+                -colorIntegrity.protectedNeutralLuminanceShift
+                    + NeutralToneSafetyAttribution.protectedLuminanceLossThreshold
+            )
+            recipe.exposureEV += (protectedLoss * 0.22).clamped(to: 0...0.035)
             recipe.highlightAmount = max(recipe.highlightAmount, 0.78)
             recipe.whitePoint = max(recipe.whitePoint, 0.985)
             recipe.highlightZoneExposureEV = max(recipe.highlightZoneExposureEV, -0.045)
@@ -2529,6 +2578,46 @@ final class PhotoProcessingPipeline {
         }
 
         return recipe.clamped()
+    }
+
+    private func softenedRGBCurves(
+        _ curves: ProfessionalRGBCurves,
+        factor: Float
+    ) -> ProfessionalRGBCurves {
+        let amount = factor.clamped(to: 0...1)
+        func soften(_ curve: SevenPointChannelCurve) -> SevenPointChannelCurve {
+            let identity = SevenPointChannelCurve.identity
+            return SevenPointChannelCurve(
+                black: identity.black + ((curve.black - identity.black) * amount),
+                shadow: identity.shadow + ((curve.shadow - identity.shadow) * amount),
+                lowerMidtone: identity.lowerMidtone + ((curve.lowerMidtone - identity.lowerMidtone) * amount),
+                midtone: identity.midtone + ((curve.midtone - identity.midtone) * amount),
+                upperMidtone: identity.upperMidtone + ((curve.upperMidtone - identity.upperMidtone) * amount),
+                highlight: identity.highlight + ((curve.highlight - identity.highlight) * amount),
+                white: identity.white + ((curve.white - identity.white) * amount)
+            )
+        }
+        return ProfessionalRGBCurves(
+            red: soften(curves.red),
+            green: soften(curves.green),
+            blue: soften(curves.blue),
+            intensity: curves.intensity * 0.58
+        )
+    }
+
+    private func logQualityEvidence(
+        label: String,
+        quality: QualityCheckResult,
+        sourceAverageLuminance: Float,
+        recipe: AutomaticEditingRecipe,
+        regionalExecutionDetails: [String]
+    ) {
+        let color = quality.colorIntegrity
+        let issues = quality.issues.map(\.rawValue).joined(separator: ",")
+        let regions = regionalExecutionDetails.joined(separator: "；")
+        AppLogger.imageEngine.info(
+            "\(label, privacy: .public)：status=\(quality.status.rawValue, privacy: .public) issues=[\(issues, privacy: .public)] sourceLuminance=\(sourceAverageLuminance) editedLuminance=\(quality.measuredAnalysis.averageLuminance) protectedNeutralCoverage=\(color.protectedNeutralCoverage) protectedNeutralShift=\(color.protectedNeutralLuminanceShift) intentionalToneCoverage=\(color.intentionalToneNeutralCoverage) intentionalToneShift=\(color.intentionalToneNeutralLuminanceShift) regions=[\(regions, privacy: .public)] recipe=\(recipe.traceSummary, privacy: .public)"
+        )
     }
 
     private static func milliseconds(_ seconds: TimeInterval) -> Int {
@@ -2610,6 +2699,7 @@ private struct AutomaticDirectorV2ValidationResult {
 
 enum PhotoProcessingError: LocalizedError {
     case qualityValidationFailed(String)
+    case formalBRejected(String, RejectedFormalBEvidence)
     case safeFallbackFailed(String)
     case candidateEvaluationFailed(String)
 
@@ -2617,6 +2707,8 @@ enum PhotoProcessingError: LocalizedError {
         switch self {
         case .qualityValidationFailed(let issues):
             return "AI 成片未通过质量检查（\(issues)），已保留原图且未输出异常成片。"
+        case .formalBRejected(let issues, _):
+            return "AI 成片未通过质量检查（\(issues)），已保留原图；内部构建可导出 rejected 候选证据。"
         case .safeFallbackFailed(let reason):
             return "安全处理失败（\(reason)），已保留原图。"
         case .candidateEvaluationFailed(let reason):

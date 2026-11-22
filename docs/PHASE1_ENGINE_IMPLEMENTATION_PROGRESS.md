@@ -308,3 +308,24 @@ Windows 当前没有 Swift/Xcode，无法在本机运行 Apple 测试；`git dif
 同一源码提交随后由 `TestFlight Release #53`（run ID `44919066585`，<https://github.com/sulinandeyu/1/actions/runs/44919066585>）以版本 `1.0`、Build `39` 完成签名、Release archive、IPA 导出和上传。只读状态核验 `TestFlight Release #54`（run ID `44919392927`，<https://github.com/sulinandeyu/1/actions/runs/44919392927>）确认 App Store Connect `processingState=VALID`、`internalBuildState=IN_BETA_TESTING`、内部组数量 `1`，因此现有内部测试组可以安装。
 
 尚未完成的是实际 iPhone 正常快门验收：需要分别拍摄秋季道路、室内自然光、室外风景/城市建筑，打开预览右上角信息按钮，通过“导出本次正常拍照 A/B 取证 ZIP”保存本次 A/B 与完整决策证据。未取得这些真实照片和人工审片前，`IPHONE_NORMAL_CAPTURE_EVIDENCE` 与 `HUMAN_AESTHETIC_APPROVED` 必须保持 `PENDING`。
+
+## P0：正式 B neutralLuminanceLoss 错误归因修复（2026-11-22）
+
+当前状态：
+
+- `SOURCE_IMPLEMENTED`
+- `APPLE_CI_VERIFICATION = PENDING`
+- `IPHONE_NORMAL_CAPTURE_RECOVERY = PENDING`
+- `HUMAN_AESTHETIC_APPROVED = PENDING`
+
+Build 39 的真实正常快门证据确认正式 B 在 `neutralLuminanceLoss` 后被拒绝。根因是正式 B 的低分辨率候选、全分辨率初版和一次修正版三处质量检查均未传递 `adaptiveRegionalTonePlan.intentionalNeutralToneRegions`；因此已由可靠蒙版实际执行的灰色地面/道路影调被混入受保护中性色平均值。诊断路径已有该参数，正式路径接线不一致。
+
+本次沿既有 `PT-QA-005` 修复，不改变 `protectedNeutralCoverage >= 0.015` 与 `protectedNeutralLuminanceShift < -0.065` 阈值：
+
+- 三处正式 B 质检现在使用同一自适应区域计划进行归因。
+- `QualityCheckService` 只接受具有对应 `已执行` 渲染回执的有意区域；仅 planned、skipped、无蒙版或未执行的区域不能获得豁免。人物、显著主体和建筑硬保护仍优先于有意区域。
+- 有意压暗区域继续接受暗部裁切、细节能量和蒙版边缘检查；真实中性色损坏仍为 failed。
+- 一次性修正不再只抬高曝光/高光/白点，而是有界收回导致保护中性色变暗的负曝光、黑点、负中间调、整体曲线强度和独立 RGB 曲线；显式色彩分级因实现为去亮度色度向量而不被无依据清零。
+- 内部取证构建在两轮均失败时保留实际 rejected 候选字节、最终配方、区域执行回执和完整质量指标；该候选不进入 `editedImageData`、不作为正式 B、不会自动保存，只能由用户主动导出本机 ZIP。
+
+新增 app-hosted Core Image 回归覆盖：正常正式 B 的道路/白车与室内灰桌/白物体输出、实际执行区域与跳过区域的归因差异、硬保护中性色仍阻止严重损坏、一次修正恢复可交付 B，以及 rejected 候选逐字节本机导出。Windows 无 Swift/Core Image 环境，实际 Apple 测试结果必须等待本轮 CI，不能用静态检查代替。

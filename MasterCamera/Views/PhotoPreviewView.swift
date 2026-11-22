@@ -305,6 +305,25 @@ struct PhotoPreviewView: View {
             }
         }
     }
+
+    private func exportRejectedProductionCaptureEvidence() {
+        guard !isExportingDiagnostics else { return }
+        isExportingDiagnostics = true
+        diagnosticExportError = nil
+        let capturedPhoto = photo
+        DispatchQueue.global(qos: .userInitiated).async {
+            let result = Result {
+                try DiagnosticBundleExporter().makeRejectedProductionCaptureArchive(for: capturedPhoto)
+            }
+            DispatchQueue.main.async {
+                isExportingDiagnostics = false
+                switch result {
+                case let .success(url): diagnosticArchive = DiagnosticArchiveShareItem(url: url)
+                case let .failure(error): diagnosticExportError = error.localizedDescription
+                }
+            }
+        }
+    }
 #endif
 
     @ViewBuilder
@@ -325,7 +344,25 @@ struct PhotoPreviewView: View {
         let diagnostics = PhotoDiagnostics(photo: photo)
 
         if diagnostics.isEmpty {
-            debugPill("暂无成片诊断信息")
+            VStack(spacing: 10) {
+#if XIAOSU_INTERNAL_CAPTURE_EVIDENCE
+                if !photo.isDiagnosticImport, photo.rejectedFormalBEvidence != nil {
+                    Button(action: exportRejectedProductionCaptureEvidence) {
+                        Label(
+                            isExportingDiagnostics ? "正在生成 rejected 证据…" : "导出 rejected B 故障证据 ZIP",
+                            systemImage: "exclamationmark.triangle"
+                        )
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.black)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                        .background(.orange, in: RoundedRectangle(cornerRadius: 12))
+                    }
+                    .disabled(isExportingDiagnostics)
+                }
+#endif
+                debugPill("暂无可接受成片诊断信息")
+            }
         } else {
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 12) {

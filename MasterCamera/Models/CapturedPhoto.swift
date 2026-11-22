@@ -17,6 +17,10 @@ struct CapturedPhoto: Identifiable, Equatable, Sendable {
     let processingStagePreviews: [ProcessingStagePreview]
     let diagnosticCandidates: [DiagnosticCandidateEvidence]
     let originalRetentionReceipt: OriginalRetentionReceipt?
+    /// Internal-only evidence for a rendered formal-B candidate that was
+    /// rejected by technical quality. It is never treated as a deliverable B or
+    /// saved automatically, but can be exported locally by an authorised build.
+    let rejectedFormalBEvidence: RejectedFormalBEvidence?
 
     init(
         id: UUID = UUID(),
@@ -33,7 +37,8 @@ struct CapturedPhoto: Identifiable, Equatable, Sendable {
         differenceImageData: Data? = nil,
         processingStagePreviews: [ProcessingStagePreview] = [],
         diagnosticCandidates: [DiagnosticCandidateEvidence] = [],
-        originalRetentionReceipt: OriginalRetentionReceipt? = nil
+        originalRetentionReceipt: OriginalRetentionReceipt? = nil,
+        rejectedFormalBEvidence: RejectedFormalBEvidence? = nil
     ) {
         self.id = id
         self.originalImageData = originalImageData
@@ -53,6 +58,7 @@ struct CapturedPhoto: Identifiable, Equatable, Sendable {
         self.processingStagePreviews = processingStagePreviews
         self.diagnosticCandidates = diagnosticCandidates
         self.originalRetentionReceipt = originalRetentionReceipt
+        self.rejectedFormalBEvidence = rejectedFormalBEvidence
     }
 
     var originalImage: UIImage? {
@@ -95,7 +101,31 @@ struct CapturedPhoto: Identifiable, Equatable, Sendable {
             differenceImageData: differenceImageData,
             processingStagePreviews: processingStagePreviews,
             diagnosticCandidates: diagnosticCandidates,
-            originalRetentionReceipt: receipt
+            originalRetentionReceipt: receipt,
+            rejectedFormalBEvidence: rejectedFormalBEvidence
+        )
+    }
+
+    func replacingRejectedFormalBEvidence(
+        _ evidence: RejectedFormalBEvidence?
+    ) -> CapturedPhoto {
+        CapturedPhoto(
+            id: id,
+            originalImageData: originalImageData,
+            editedImageData: editedImageData,
+            capturedAt: capturedAt,
+            isDiagnosticImport: isDiagnosticImport,
+            skinMask: skinMask,
+            analysis: analysis,
+            problemReport: problemReport,
+            decision: decision,
+            qualityCheck: qualityCheck,
+            processingDiagnostics: processingDiagnostics,
+            differenceImageData: differenceImageData,
+            processingStagePreviews: processingStagePreviews,
+            diagnosticCandidates: diagnosticCandidates,
+            originalRetentionReceipt: originalRetentionReceipt,
+            rejectedFormalBEvidence: evidence
         )
     }
 
@@ -103,5 +133,15 @@ struct CapturedPhoto: Identifiable, Equatable, Sendable {
         guard let differenceImageData else { return nil }
         return UIImage(data: differenceImageData)
     }
+}
+
+struct RejectedFormalBEvidence: Equatable, Sendable {
+    let candidateImageData: Data
+    let recipe: AutomaticEditingRecipe
+    let initialQualityCheck: QualityCheckResult
+    let finalQualityCheck: QualityCheckResult
+    let analysis: PhotoAnalysis
+    let regionalExecutionDetails: [String]
+    let rejectionReason: String
 }
 

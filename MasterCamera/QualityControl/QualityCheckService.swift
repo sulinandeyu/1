@@ -89,11 +89,18 @@ final class QualityCheckService {
             original: originalImage,
             edited: editedImage
         )
+        // PT-QA-005: a planned region is not enough to exempt neutral pixels.
+        // Only a mask-backed region with a renderer receipt saying it actually
+        // executed may enter the intentional-tone bucket. This keeps a skipped
+        // or missing regional operation from hiding real neutral-object damage.
+        let executedIntentionalNeutralToneRegions = intentionalNeutralToneRegions.filter {
+            regionWasExecuted($0, regionalExecutionDetails: regionalExecutionDetails)
+        }
         let colorIntegrity = colorIntegrity(
             original: originalImage,
             edited: editedImage,
             sourceAnalysis: sourceAnalysis,
-            intentionalNeutralToneRegions: intentionalNeutralToneRegions
+            intentionalNeutralToneRegions: executedIntentionalNeutralToneRegions
         )
         let hasPortrait = sourceAnalysis?.faceRegions.isEmpty == false
         let expectsLocalTreatment = expectedRegions.contains {
@@ -218,14 +225,14 @@ final class QualityCheckService {
                 issues.append(.localMaskBoundaryArtifact)
             }
 
-            if !intentionalNeutralToneRegions.isEmpty,
+            if !executedIntentionalNeutralToneRegions.isEmpty,
                let impacts = try? measureRegionImpacts(
                     originalData: originalData,
                     editedData: editedData,
                     analysis: sourceAnalysis
                ) {
                 let hasRegionalShadowDamage = impacts.contains { impact in
-                    intentionalNeutralToneRegions.contains(impact.region)
+                    executedIntentionalNeutralToneRegions.contains(impact.region)
                         && (impact.editedShadowRatio > impact.sourceShadowRatio + 0.055
                             || impact.detailEnergyRatio < 0.72)
                 }
@@ -434,6 +441,25 @@ final class QualityCheckService {
         return expectedNames.allSatisfy { expected in
             regionalExecutionDetails.contains { $0.hasPrefix(expected) }
         }
+    }
+
+    private func regionWasExecuted(
+        _ region: TreatmentRegion,
+        regionalExecutionDetails: [String]
+    ) -> Bool {
+        let prefix: String?
+        switch region {
+        case .sky: prefix = "天空：已执行"
+        case .ground: prefix = "地面/道路：已执行"
+        case .vegetation: prefix = "植被：已执行"
+        case .water: prefix = "水面：已执行"
+        case .architecture: prefix = "建筑：已执行"
+        case .subject: prefix = "主体：已执行"
+        case .person: prefix = "人物：已执行"
+        case .global, .background: prefix = nil
+        }
+        guard let prefix else { return false }
+        return regionalExecutionDetails.contains { $0.hasPrefix(prefix) }
     }
 
     private func maskBoundaryArtifactScore(

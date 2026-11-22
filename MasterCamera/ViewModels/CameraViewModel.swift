@@ -475,7 +475,16 @@ final class CameraViewModel: ObservableObject {
                 processingState = .idle
             } catch {
                 AppLogger.imageEngine.error("照片处理失败：\(error.localizedDescription)")
+#if XIAOSU_INTERNAL_CAPTURE_EVIDENCE
+                if let processingError = error as? PhotoProcessingError,
+                   case let .formalBRejected(_, evidence) = processingError {
+                    capturedPhoto = preparedPhoto.replacingRejectedFormalBEvidence(evidence)
+                } else {
+                    capturedPhoto = preparedPhoto
+                }
+#else
                 capturedPhoto = preparedPhoto
+#endif
                 saveState = .processingFailedOriginalAvailable
                 errorMessage = "照片处理失败，原图安全副本仍可恢复：\(error.localizedDescription)"
                 processingState = .idle

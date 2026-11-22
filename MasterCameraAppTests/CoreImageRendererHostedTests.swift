@@ -212,6 +212,203 @@ final class CoreImageRendererHostedTests: XCTestCase {
         XCTAssertFalse(details.contains { $0.contains("planned") && !$0.contains("executed") })
     }
 
+    func testFormalBPipelineOutputsBForRoadVehicleAndIndoorNeutralFixtures() throws {
+        for variant in [ProductionFixtureVariant.roadVehicle, .indoorNeutral] {
+            let source = try productionJPEG(width: 176, height: 128, variant: variant)
+            let input = CapturedPhoto(
+                originalImageData: source,
+                capturedAt: Date(timeIntervalSince1970: 1_800_000_100)
+            )
+            let result = try PhotoProcessingPipeline(referenceMatcher: nil).process(input)
+            XCTAssertFalse(result.editedImageData.isEmpty, "\(variant) must deliver a real formal B")
+            XCTAssertNotEqual(result.qualityCheck?.status, .failed)
+            XCTAssertNotNil(result.decision)
+        }
+    }
+
+    func testIntentionalGroundToneRequiresExecutedReceiptAndKeepsProtectedWhiteSubject() throws {
+        let source = try productionJPEG(width: 176, height: 128, variant: .roadVehicle)
+        let analysis = productionRegionalAnalysis(includeProtectedSubject: true)
+        let adjustment = ManualRegionalToneAdjustment(
+            region: .ground,
+            exposureEV: -0.55,
+            lowerMidtoneLift: -0.12,
+            midtoneBias: -0.10,
+            highlightRollOff: 0.12,
+            luminanceLowerBound: 0.08,
+            luminanceUpperBound: 0.82,
+            luminanceFeather: 0.10
+        )
+        let plan = AdaptiveRegionalTonePlan(
+            adjustments: [adjustment],
+            evidence: ["hosted PT-QA-005 ground tone"]
+        )
+        let renderer = CoreImageRenderer()
+        let edited = try renderer.renderAutomaticEdit(
+            from: source,
+            recipe: .naturalEnhancement,
+            analysis: analysis,
+            adaptiveRegionalTonePlan: plan
+        )
+        let executed = renderer.adaptiveRegionalExecutionDetails(analysis: analysis, plan: plan)
+        XCTAssertTrue(executed.contains { $0.hasPrefix("地面/道路：已执行") })
+
+        let service = QualityCheckService()
+        let withoutAttribution = try service.check(
+            originalData: source,
+            editedData: edited,
+            sourceAnalysis: analysis,
+            expectedRegions: [.ground],
+            regionalExecutionDetails: executed
+        )
+        XCTAssertTrue(withoutAttribution.issues.contains(.neutralLuminanceLoss))
+
+        let attributed = try service.check(
+            originalData: source,
+            editedData: edited,
+            sourceAnalysis: analysis,
+            expectedRegions: [.ground],
+            regionalExecutionDetails: executed,
+            intentionalNeutralToneRegions: plan.intentionalNeutralToneRegions
+        )
+        XCTAssertFalse(attributed.issues.contains(.neutralLuminanceLoss))
+        XCTAssertGreaterThan(attributed.colorIntegrity.intentionalToneNeutralCoverage, 0.10)
+        XCTAssertGreaterThan(attributed.colorIntegrity.protectedNeutralCoverage, 0.015)
+
+        let skipped = try service.check(
+            originalData: source,
+            editedData: edited,
+            sourceAnalysis: analysis,
+            expectedRegions: [],
+            regionalExecutionDetails: ["地面/道路：跳过（故障注入）"],
+            intentionalNeutralToneRegions: plan.intentionalNeutralToneRegions
+        )
+        XCTAssertTrue(
+            skipped.issues.contains(.neutralLuminanceLoss),
+            "A merely planned or skipped region must never receive an intentional-tone exemption."
+        )
+    }
+
+    func testSevereProtectedNeutralDamageRemainsRejectedWithIntentionalGroundTone() throws {
+        let source = try productionJPEG(width: 176, height: 128, variant: .roadVehicle)
+        let damaged = try exposureAdjustedJPEG(source, ev: -1.0)
+        let analysis = productionRegionalAnalysis(includeProtectedSubject: true)
+        let result = try QualityCheckService().check(
+            originalData: source,
+            editedData: damaged,
+            sourceAnalysis: analysis,
+            expectedRegions: [],
+            regionalExecutionDetails: ["地面/道路：已执行（故障注入）"],
+            intentionalNeutralToneRegions: [.ground]
+        )
+        XCTAssertTrue(result.issues.contains(.neutralLuminanceLoss))
+        XCTAssertEqual(result.status, .failed)
+        XCTAssertLessThan(
+            result.colorIntegrity.protectedNeutralLuminanceShift,
+            NeutralToneSafetyAttribution.protectedLuminanceLossThreshold
+        )
+    }
+
+    func testRejectedFormalBCandidateExportsExactPixelsWithoutBecomingDeliverableB() throws {
+        let source = try productionJPEG(width: 176, height: 128, variant: .roadVehicle)
+        let rejected = try exposureAdjustedJPEG(source, ev: -1.0)
+        let analysis = productionRegionalAnalysis(includeProtectedSubject: true)
+        let quality = try QualityCheckService().check(
+            originalData: source,
+            editedData: rejected,
+            sourceAnalysis: analysis
+        )
+        XCTAssertEqual(quality.status, .failed)
+        var recipe = AutomaticEditingRecipe.naturalEnhancement
+        recipe.exposureEV = -0.35
+        let evidence = RejectedFormalBEvidence(
+            candidateImageData: rejected,
+            recipe: recipe.clamped(),
+            initialQualityCheck: quality,
+            finalQualityCheck: quality,
+            analysis: analysis,
+            regionalExecutionDetails: [],
+            rejectionReason: quality.issues.map(\.rawValue).joined(separator: ",")
+        )
+        let photo = CapturedPhoto(
+            originalImageData: source,
+            capturedAt: Date(timeIntervalSince1970: 1_800_000_200),
+            rejectedFormalBEvidence: evidence
+        )
+        XCTAssertTrue(photo.editedImageData.isEmpty)
+        XCTAssertFalse(photo.hasCompletedProcessing)
+
+        let archive = try DiagnosticBundleExporter(allowsProductionCaptureEvidence: true)
+            .makeRejectedProductionCaptureArchive(for: photo)
+        defer { try? FileManager.default.removeItem(at: archive) }
+        let bytes = try Data(contentsOf: archive)
+        XCTAssertNotNil(bytes.range(of: source))
+        XCTAssertNotNil(bytes.range(of: rejected))
+        for marker in ["state", "rejected", "REJECTED_NOT_A_FORMAL_B.txt"] {
+            XCTAssertNotNil(bytes.range(of: Data(marker.utf8)))
+        }
+    }
+
+    func testNeutralLuminanceCorrectionTargetsCurveAndRecoversDeliverable() throws {
+        let source = try productionJPEG(width: 176, height: 128, variant: .indoorNeutral)
+        let analysis = productionRegionalAnalysis(includeProtectedSubject: true)
+        var recipe = AutomaticEditingRecipe.naturalEnhancement
+        recipe.exposureEV = -0.35
+        recipe.blackPoint = 0.028
+        recipe.lowerMidtoneLift = -0.08
+        recipe.midtoneBias = -0.08
+        recipe.toneCurveAmount = 0.78
+        recipe.rgbCurves = ProfessionalRGBCurves(
+            red: SevenPointChannelCurve(shadow: 0.04, lowerMidtone: 0.15, midtone: 0.40, upperMidtone: 0.63, highlight: 0.84),
+            green: SevenPointChannelCurve(shadow: 0.04, lowerMidtone: 0.15, midtone: 0.40, upperMidtone: 0.63, highlight: 0.84),
+            blue: SevenPointChannelCurve(shadow: 0.04, lowerMidtone: 0.15, midtone: 0.40, upperMidtone: 0.63, highlight: 0.84),
+            intensity: 0.82
+        )
+        recipe = recipe.clamped()
+        let renderer = CoreImageRenderer()
+        let initial = try renderer.renderAutomaticEdit(
+            from: source,
+            recipe: recipe,
+            analysis: analysis,
+            adaptiveRegionalTonePlan: nil
+        )
+        let initialQuality = try QualityCheckService().check(
+            originalData: source,
+            editedData: initial,
+            sourceAnalysis: analysis
+        )
+        XCTAssertTrue(initialQuality.issues.contains(.neutralLuminanceLoss))
+
+        let target = AdaptivePhotographyTarget(
+            luminance: analysis.averageLuminance,
+            luminanceMinimum: analysis.averageLuminance - 0.08,
+            luminanceMaximum: analysis.averageLuminance + 0.08,
+            contrast: analysis.contrastRange,
+            shadowRatio: analysis.shadowRatio,
+            highlightRatio: analysis.highlightRatio,
+            saturation: analysis.averageSaturation,
+            atmosphereProtection: 0.8,
+            rationale: "hosted correction recovery"
+        )
+        let final = try PhotoProcessingPipeline(referenceMatcher: nil).chooseFinalEdit(
+            originalData: source,
+            initialEditedData: initial,
+            initialQualityCheck: initialQuality,
+            initialRecipe: recipe,
+            target: target,
+            analysis: analysis,
+            expectedRegions: [],
+            adaptiveRegionalTonePlan: nil
+        )
+        XCTAssertNotEqual(final.qualityCheck.status, .failed)
+        XCTAssertFalse(final.qualityCheck.issues.contains(.neutralLuminanceLoss))
+        XCTAssertTrue(final.qualityCheck.fallbackApplied)
+        XCTAssertFalse(final.data.isEmpty)
+        XCTAssertLessThan(final.recipe.rgbCurves.intensity, recipe.rgbCurves.intensity)
+        XCTAssertLessThan(final.recipe.blackPoint, recipe.blackPoint)
+        XCTAssertLessThan(abs(final.recipe.midtoneBias), abs(recipe.midtoneBias))
+    }
+
     private func sourceJPEG(
         width: Int,
         height: Int,
@@ -251,7 +448,18 @@ final class CoreImageRendererHostedTests: XCTestCase {
         return data
     }
 
-    private enum ProductionFixtureVariant { case balanced, warmAccent }
+    private enum ProductionFixtureVariant: Equatable, CustomStringConvertible {
+        case balanced, warmAccent, roadVehicle, indoorNeutral
+
+        var description: String {
+            switch self {
+            case .balanced: return "balanced"
+            case .warmAccent: return "warmAccent"
+            case .roadVehicle: return "roadVehicle"
+            case .indoorNeutral: return "indoorNeutral"
+            }
+        }
+    }
 
     private func productionJPEG(
         width: Int,
@@ -278,6 +486,16 @@ final class CoreImageRendererHostedTests: XCTestCase {
                     UIColor(red: 0.24, green: 0.27, blue: 0.29, alpha: 1).cgColor,
                     UIColor(red: 0.82, green: 0.57, blue: 0.16, alpha: 1).cgColor
                 ]
+            case .roadVehicle:
+                colors = [
+                    UIColor(red: 0.34, green: 0.36, blue: 0.35, alpha: 1).cgColor,
+                    UIColor(red: 0.74, green: 0.58, blue: 0.20, alpha: 1).cgColor
+                ]
+            case .indoorNeutral:
+                colors = [
+                    UIColor(red: 0.40, green: 0.39, blue: 0.37, alpha: 1).cgColor,
+                    UIColor(red: 0.68, green: 0.65, blue: 0.60, alpha: 1).cgColor
+                ]
             }
             let space = CGColorSpace(name: CGColorSpace.sRGB)!
             let gradient = CGGradient(
@@ -298,6 +516,15 @@ final class CoreImageRendererHostedTests: XCTestCase {
                 width: CGFloat(width) * 0.12,
                 height: CGFloat(height) * 0.12
             ))
+            if variant == .roadVehicle || variant == .indoorNeutral {
+                UIColor(white: 0.84, alpha: 1).setFill()
+                context.fill(CGRect(
+                    x: CGFloat(width) * 0.64,
+                    y: CGFloat(height) * 0.56,
+                    width: CGFloat(width) * 0.18,
+                    height: CGFloat(height) * 0.18
+                ))
+            }
         }
         guard let data = image.jpegData(compressionQuality: 0.97) else {
             throw TestError.encoding
@@ -305,16 +532,20 @@ final class CoreImageRendererHostedTests: XCTestCase {
         return data
     }
 
-    private func productionRegionalAnalysis() -> PhotoAnalysis {
+    private func productionRegionalAnalysis(includeProtectedSubject: Bool = false) -> PhotoAnalysis {
         let width = 8
         let height = 8
         var ground = [UInt8](repeating: 0, count: width * height)
         var vegetation = [UInt8](repeating: 0, count: width * height)
+        var subject = [UInt8](repeating: 0, count: width * height)
         for y in 0..<height {
             for x in 0..<width {
                 let index = y * width + x
                 if y >= height / 2 { ground[index] = 255 }
                 if y < height / 2 { vegetation[index] = 255 }
+                if includeProtectedSubject, x >= 5, x <= 6, y >= 4, y <= 5 {
+                    subject[index] = 255
+                }
             }
         }
         let groundMask = NormalizedPhotoMask(
@@ -327,6 +558,11 @@ final class CoreImageRendererHostedTests: XCTestCase {
             height: height,
             pixels: Data(vegetation)
         )
+        let subjectMask = includeProtectedSubject ? NormalizedPhotoMask(
+            width: width,
+            height: height,
+            pixels: Data(subject)
+        ) : nil
         return PhotoAnalysis(
             averageLuminance: 0.48,
             contrastRange: 0.62,
@@ -352,8 +588,19 @@ final class CoreImageRendererHostedTests: XCTestCase {
             faceAverageLuminance: nil,
             backgroundAverageLuminance: 0.48,
             personMask: nil,
-            salientSubjectMask: nil,
-            salientSubjectStatistics: nil,
+            salientSubjectMask: subjectMask,
+            salientSubjectStatistics: includeProtectedSubject ? PhotoRegionStatistics(
+                averageLuminance: 0.84,
+                contrastRange: 0.18,
+                redAverage: 0.84,
+                greenAverage: 0.84,
+                blueAverage: 0.84,
+                averageSaturation: 0.01,
+                yellowColorRatio: 0,
+                greenColorRatio: 0,
+                shadowRatio: 0,
+                highlightRatio: 0.04
+            ) : nil,
             skinMask: nil,
             skyMask: nil,
             skyCoverage: 0,
@@ -417,6 +664,26 @@ final class CoreImageRendererHostedTests: XCTestCase {
             ),
             semanticObjectRegions: []
         )
+    }
+
+    private func exposureAdjustedJPEG(_ data: Data, ev: Float) throws -> Data {
+        guard let image = CIImage(data: data, options: [.applyOrientationProperty: true]) else {
+            throw TestError.decoding
+        }
+        let filter = CIFilter(name: "CIExposureAdjust")!
+        filter.setValue(image, forKey: kCIInputImageKey)
+        filter.setValue(ev, forKey: kCIInputEVKey)
+        let output = filter.outputImage!.cropped(to: image.extent)
+        let context = CIContext(options: [
+            .workingColorSpace: CGColorSpace(name: CGColorSpace.extendedLinearSRGB)!,
+            .outputColorSpace: CGColorSpace(name: CGColorSpace.sRGB)!
+        ])
+        guard let encoded = context.jpegRepresentation(
+            of: output,
+            colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!,
+            options: [:]
+        ) else { throw TestError.encoding }
+        return encoded
     }
 
     private func imageProperties(_ data: Data) throws -> [CFString: Any] {
