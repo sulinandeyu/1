@@ -2477,7 +2477,7 @@ final class PhotoProcessingPipeline {
             recipe.halationIntensity = 0
         }
 
-        if set.contains(.tooFlat) {
+        if set.contains(.tooFlat), !set.contains(.neutralLuminanceLoss) {
             let residual = max(0, target.contrast - measured.contrastRange)
             recipe.toneCurveAmount += (residual * 0.5).clamped(to: 0...0.18)
             recipe.contrast += (residual * 0.12).clamped(to: 0...0.035)
@@ -2540,14 +2540,14 @@ final class PhotoProcessingPipeline {
             // midtones. Do not reset the whole photograph to a bright/neutral
             // fallback and do not touch chromatic grading, whose implementation
             // is luminance preserving.
-            recipe.blackPoint *= 0.45
-            if recipe.exposureEV < 0 { recipe.exposureEV *= 0.45 }
-            if recipe.lowerMidtoneLift < 0 { recipe.lowerMidtoneLift *= 0.35 }
-            if recipe.midtoneBias < 0 { recipe.midtoneBias *= 0.35 }
+            recipe.blackPoint *= 0.30
+            if recipe.exposureEV < 0 { recipe.exposureEV *= 0.32 }
+            if recipe.lowerMidtoneLift < 0 { recipe.lowerMidtoneLift *= 0.25 }
+            if recipe.midtoneBias < 0 { recipe.midtoneBias *= 0.25 }
             if recipe.upperMidtoneSeparation < 0 { recipe.upperMidtoneSeparation *= 0.5 }
             if recipe.contrast > 1 { recipe.contrast = 1 + ((recipe.contrast - 1) * 0.55) }
-            recipe.toneCurveAmount *= 0.72
-            recipe.rgbCurves = softenedRGBCurves(recipe.rgbCurves, factor: 0.48)
+            recipe.toneCurveAmount *= 0.60
+            recipe.rgbCurves = softenedRGBCurves(recipe.rgbCurves, factor: 0.35)
             let protectedLoss = max(
                 0,
                 -colorIntegrity.protectedNeutralLuminanceShift
@@ -2601,7 +2601,7 @@ final class PhotoProcessingPipeline {
             red: soften(curves.red),
             green: soften(curves.green),
             blue: soften(curves.blue),
-            intensity: curves.intensity * 0.58
+            intensity: curves.intensity * 0.42
         )
     }
 

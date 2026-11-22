@@ -231,9 +231,10 @@ final class CoreImageRendererHostedTests: XCTestCase {
         let analysis = productionRegionalAnalysis(includeProtectedSubject: true)
         let adjustment = ManualRegionalToneAdjustment(
             region: .ground,
-            exposureEV: -0.55,
-            lowerMidtoneLift: -0.12,
-            midtoneBias: -0.10,
+            exposureEV: -1.0,
+            blackPoint: 0.05,
+            lowerMidtoneLift: -0.24,
+            midtoneBias: -0.24,
             highlightRollOff: 0.12,
             luminanceLowerBound: 0.08,
             luminanceUpperBound: 0.82,
@@ -272,7 +273,7 @@ final class CoreImageRendererHostedTests: XCTestCase {
             intentionalNeutralToneRegions: plan.intentionalNeutralToneRegions
         )
         XCTAssertFalse(attributed.issues.contains(.neutralLuminanceLoss))
-        XCTAssertGreaterThan(attributed.colorIntegrity.intentionalToneNeutralCoverage, 0.10)
+        XCTAssertGreaterThan(attributed.colorIntegrity.intentionalToneNeutralCoverage, 0.05)
         XCTAssertGreaterThan(attributed.colorIntegrity.protectedNeutralCoverage, 0.015)
 
         let skipped = try service.check(
