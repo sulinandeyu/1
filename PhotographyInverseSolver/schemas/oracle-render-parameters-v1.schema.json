@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "XiaoSu Cross-Platform ORACLE Render Contract v1",
+  "type": "object",
+  "required": ["schema_version", "color_contract", "operator_order", "parameters"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "color_contract": {
+      "type": "object",
+      "required": ["input", "working", "output"],
+      "properties": {
+        "input": {"const": "encoded-sRGB-u8"},
+        "working": {"const": "extended-linear-sRGB"},
+        "output": {"const": "encoded-sRGB-u8"}
+      }
+    },
+    "operator_order": {
+      "const": ["linear_exposure", "encoded_master_curve", "encoded_rgb_curves", "perceptual_hsl", "three_way_grade", "regional_linear_adjustments"]
+    },
+    "parameters": {
+      "type": "object",
+      "required": ["exposure_ev", "master_curve", "rgb_curves", "rgb_intensity", "hsl", "tonal_grade", "regional"]
+    }
+  }
+}

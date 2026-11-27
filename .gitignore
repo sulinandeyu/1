@@ -31,6 +31,9 @@ TestPhotos/
 PhotographyDataset/assets/
 PhotographyDataset/downloads/
 PhotographyDataset/reports/*contact-sheet*.jpg
+PhotographyDataset/private_pairs/
+PhotographyDataset/local_manifests/
+PhotographyDataset/local_declarations*.jsonl
 
 # Human preference exports may contain reviewer notes and local filenames.
 PhoneValidationDataset/evaluation/results/*.json

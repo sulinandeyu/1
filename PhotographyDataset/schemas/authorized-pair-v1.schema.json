@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "XiaoSu Authorised Same-Capture A/T Pair",
+  "type": "object",
+  "required": ["pair_id", "original_path", "target_path", "same_capture_verified", "target_type", "usage_scope", "split", "scene_family", "edit_intent", "actual_operations", "target_authorship", "rights"],
+  "properties": {
+    "pair_id": {"type": "string", "minLength": 1},
+    "original_path": {"type": "string", "minLength": 1},
+    "target_path": {"type": "string", "minLength": 1},
+    "same_capture_verified": {"const": true},
+    "target_type": {"enum": ["independent_professional_edit", "algorithm_output", "oracle_output"]},
+    "usage_scope": {"enum": ["product_training_candidate", "research_only", "pipeline_smoke_only"]},
+    "split": {"enum": ["train", "validation", "test"]},
+    "scene_family": {"type": "string", "minLength": 1},
+    "edit_intent": {"type": "string", "minLength": 1},
+    "actual_operations": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+    "target_authorship": {
+      "type": "object",
+      "required": ["editor", "independent_from_oracle", "is_algorithm_output"],
+      "properties": {
+        "editor": {"type": "string", "minLength": 1},
+        "independent_from_oracle": {"type": "boolean"},
+        "is_algorithm_output": {"type": "boolean"}
+      }
+    },
+    "rights": {
+      "type": "object",
+      "required": ["source", "original_rights_holder", "target_rights_holder", "commercial_training_allowed", "model_distribution_allowed", "privacy_release_status", "grant_evidence"],
+      "properties": {
+        "source": {"type": "string", "minLength": 1},
+        "original_rights_holder": {"type": "string", "minLength": 1},
+        "target_rights_holder": {"type": "string", "minLength": 1},
+        "commercial_training_allowed": {"type": "boolean"},
+        "model_distribution_allowed": {"type": "boolean"},
+        "privacy_release_status": {"enum": ["not_required", "model_release_obtained", "property_and_model_releases_obtained", "missing", "unknown"]},
+        "grant_evidence": {"type": "string", "minLength": 1}
+      }
+    }
+  }
+}

@@ -726,5 +726,185 @@ final class CoreImageRendererHostedTests: XCTestCase {
         return sum / Double(width * height * 3)
     }
 
+    /// PT-LEARN-007 compares the real Apple colour operators with a Windows
+    /// reference generated entirely from programmatic pixels.  It deliberately
+    /// does not read the private autumn A/T pair and is not an aesthetic test.
+    func testCrossPlatformOracleContractOnProgrammaticPixels() throws {
+        let fixture = try crossPlatformFixture()
+        XCTAssertEqual(fixture.schemaVersion, 1)
+        XCTAssertEqual(fixture.colorContract.working, "extended-linear-sRGB")
+        XCTAssertEqual(fixture.operatorOrder, [
+            "linear_exposure", "encoded_master_curve", "encoded_rgb_curves",
+            "perceptual_hsl", "three_way_grade", "regional_linear_adjustments"
+        ])
+        let source = try fixtureImage(fixture)
+        var output = CoreImageParameterKernel.exposure(source, ev: fixture.parameters.exposureEV)
+        let curveProcessor = ProfessionalRGBCurveProcessor()
+        let master = try channelCurve(fixture.parameters.masterCurve)
+        output = curveProcessor.apply(
+            to: output,
+            curves: ProfessionalRGBCurves(red: master, green: master, blue: master, intensity: 1)
+        )
+        output = curveProcessor.apply(
+            to: output,
+            curves: ProfessionalRGBCurves(
+                red: try channelCurve(fixture.parameters.rgbCurves[0]),
+                green: try channelCurve(fixture.parameters.rgbCurves[1]),
+                blue: try channelCurve(fixture.parameters.rgbCurves[2]),
+                intensity: fixture.parameters.rgbIntensity
+            )
+        )
+        output = ProfessionalHSLProcessor().apply(
+            to: output,
+            adjustment: try hslAdjustment(fixture.parameters.hsl)
+        )
+        var gradeRecipe = AutomaticEditingRecipe.naturalEnhancement
+        gradeRecipe.tonalColorGrade = try tonalGrade(fixture.parameters.tonalGrade)
+        output = CinematicColorGradingEngine().apply(to: output, recipe: gradeRecipe)
+
+        let globalBytes = try renderedRGB(output, width: fixture.width, height: fixture.height)
+        let globalExpected = try decodedRGB(fixture.windowsGlobalRGBBase64, count: fixture.width * fixture.height * 3)
+        let globalError = pixelError(globalBytes, globalExpected)
+        print(String(format: "PT-LEARN-007 Apple/Windows global MAE=%.6f max=%.6f", globalError.mae, globalError.maximum))
+        XCTAssertLessThan(globalError.mae, 0.018)
+        XCTAssertLessThan(globalError.maximum, 0.10)
+
+        let regional = DiagnosticRegionalToneProcessor()
+        for item in fixture.parameters.regional {
+            guard let encodedMask = fixture.masksFloat32Base64[item.region] else {
+                XCTFail("missing mask \(item.region)"); continue
+            }
+            output = regional.apply(
+                to: output,
+                semanticMask: try fixtureMask(encodedMask, width: fixture.width, height: fixture.height),
+                adjustment: ManualRegionalToneAdjustment(
+                    region: try treatmentRegion(item.region),
+                    exposureEV: item.exposureEV,
+                    contrast: item.contrast,
+                    saturation: item.saturation
+                )
+            )
+        }
+        let finalBytes = try renderedRGB(output, width: fixture.width, height: fixture.height)
+        let finalExpected = try decodedRGB(fixture.windowsFinalRGBBase64, count: fixture.width * fixture.height * 3)
+        let finalError = pixelError(finalBytes, finalExpected)
+        print(String(format: "PT-LEARN-007 Apple/Windows regional MAE=%.6f max=%.6f", finalError.mae, finalError.maximum))
+        // Regional contrast/saturation uses Apple's CIColorControls; the Windows
+        // expression is intentionally only a reference approximation.  Keep the
+        // actual residual visible and fail on a material platform divergence.
+        XCTAssertLessThan(finalError.mae, 0.055)
+        XCTAssertLessThan(finalError.maximum, 0.30)
+    }
+
+    private struct CrossPlatformFixture: Decodable {
+        struct ColorContract: Decodable { let input: String; let working: String; let output: String }
+        struct Regional: Decodable {
+            let region: String; let exposureEV: Float; let contrast: Float; let saturation: Float
+            enum CodingKeys: String, CodingKey { case region, contrast, saturation; case exposureEV = "exposure_ev" }
+        }
+        struct Parameters: Decodable {
+            let exposureEV: Float; let masterCurve: [Float]; let rgbCurves: [[Float]]
+            let rgbIntensity: Float; let hsl: [[Float]]; let tonalGrade: [[Float]]; let regional: [Regional]
+            enum CodingKeys: String, CodingKey {
+                case hsl, regional
+                case exposureEV = "exposure_ev"; case masterCurve = "master_curve"
+                case rgbCurves = "rgb_curves"; case rgbIntensity = "rgb_intensity"
+                case tonalGrade = "tonal_grade"
+            }
+        }
+        let schemaVersion: Int; let colorContract: ColorContract; let operatorOrder: [String]
+        let width: Int; let height: Int; let parameters: Parameters
+        let inputRGBBase64: String; let windowsGlobalRGBBase64: String; let windowsFinalRGBBase64: String
+        let masksFloat32Base64: [String: String]
+        enum CodingKeys: String, CodingKey {
+            case width, height, parameters
+            case schemaVersion = "schema_version"; case colorContract = "color_contract"
+            case operatorOrder = "operator_order"; case inputRGBBase64 = "input_rgb_base64"
+            case windowsGlobalRGBBase64 = "windows_global_rgb_base64"
+            case windowsFinalRGBBase64 = "windows_final_rgb_base64"
+            case masksFloat32Base64 = "masks_float32_base64"
+        }
+    }
+
+    private func crossPlatformFixture() throws -> CrossPlatformFixture {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+        let url = root.appendingPathComponent("PhotographyInverseSolver/fixtures/cross_platform_oracle_v1.json")
+        return try JSONDecoder().decode(CrossPlatformFixture.self, from: Data(contentsOf: url))
+    }
+
+    private func decodedRGB(_ encoded: String, count: Int) throws -> [UInt8] {
+        guard let data = Data(base64Encoded: encoded), data.count == count else { throw TestError.decoding }
+        return [UInt8](data)
+    }
+
+    private func fixtureImage(_ fixture: CrossPlatformFixture) throws -> CIImage {
+        let rgb = try decodedRGB(fixture.inputRGBBase64, count: fixture.width * fixture.height * 3)
+        var rgba = [UInt8](); rgba.reserveCapacity(fixture.width * fixture.height * 4)
+        for index in stride(from: 0, to: rgb.count, by: 3) {
+            rgba.append(rgb[index]); rgba.append(rgb[index + 1]); rgba.append(rgb[index + 2]); rgba.append(255)
+        }
+        return CIImage(
+            bitmapData: Data(rgba), bytesPerRow: fixture.width * 4,
+            size: CGSize(width: fixture.width, height: fixture.height),
+            format: .RGBA8, colorSpace: CGColorSpace(name: CGColorSpace.sRGB)
+        )
+    }
+
+    private func fixtureMask(_ encoded: String, width: Int, height: Int) throws -> CIImage {
+        guard let data = Data(base64Encoded: encoded), data.count == width * height * 4 else { throw TestError.decoding }
+        var pixels = [UInt8](repeating: 0, count: width * height)
+        data.withUnsafeBytes { raw in
+            for index in 0..<pixels.count {
+                let offset = index * 4
+                let bits = UInt32(raw[offset]) | UInt32(raw[offset + 1]) << 8 | UInt32(raw[offset + 2]) << 16 | UInt32(raw[offset + 3]) << 24
+                pixels[index] = UInt8((min(max(Float(bitPattern: bits), 0), 1) * 255).rounded())
+            }
+        }
+        return CIImage(bitmapData: Data(pixels), bytesPerRow: width, size: CGSize(width: width, height: height), format: .L8, colorSpace: nil)
+    }
+
+    private func channelCurve(_ values: [Float]) throws -> SevenPointChannelCurve {
+        guard values.count == 7 else { throw TestError.decoding }
+        return SevenPointChannelCurve(black: values[0], shadow: values[1], lowerMidtone: values[2], midtone: values[3], upperMidtone: values[4], highlight: values[5], white: values[6])
+    }
+
+    private func hslAdjustment(_ rows: [[Float]]) throws -> ProfessionalHSLAdjustment {
+        guard rows.count == 8, rows.allSatisfy({ $0.count == 3 }) else { throw TestError.decoding }
+        var result = ProfessionalHSLAdjustment.neutral; result.mathMode = .perceptualHSL
+        result.redHue = rows[0][0]; result.redSaturation = rows[0][1]; result.redLuminance = rows[0][2]
+        result.orangeHue = rows[1][0]; result.orangeSaturation = rows[1][1]; result.orangeLuminance = rows[1][2]
+        result.yellowHue = rows[2][0]; result.yellowSaturation = rows[2][1]; result.yellowLuminance = rows[2][2]
+        result.greenHue = rows[3][0]; result.greenSaturation = rows[3][1]; result.greenLuminance = rows[3][2]
+        result.cyanHue = rows[4][0]; result.cyanSaturation = rows[4][1]; result.cyanLuminance = rows[4][2]
+        result.blueHue = rows[5][0]; result.blueSaturation = rows[5][1]; result.blueLuminance = rows[5][2]
+        result.purpleHue = rows[6][0]; result.purpleSaturation = rows[6][1]; result.purpleLuminance = rows[6][2]
+        result.magentaHue = rows[7][0]; result.magentaSaturation = rows[7][1]; result.magentaLuminance = rows[7][2]
+        return result.diagnosticRendererClamped()
+    }
+
+    private func tonalGrade(_ rows: [[Float]]) throws -> ProfessionalTonalColorGrade {
+        guard rows.count == 3, rows.allSatisfy({ $0.count == 3 }) else { throw TestError.decoding }
+        func vector(_ row: [Float]) -> TonalColorVector { TonalColorVector(red: row[0], green: row[1], blue: row[2], amount: 1) }
+        return ProfessionalTonalColorGrade(shadows: vector(rows[0]), midtones: vector(rows[1]), highlights: vector(rows[2]), neutralChromaProtection: .82, highlightNeutralProtection: .90)
+    }
+
+    private func treatmentRegion(_ value: String) throws -> TreatmentRegion {
+        switch value { case "ground": return .ground; case "vegetation": return .vegetation; case "sky": return .sky; case "architecture": return .architecture; default: throw TestError.decoding }
+    }
+
+    private func renderedRGB(_ image: CIImage, width: Int, height: Int) throws -> [UInt8] {
+        let context = CIContext(options: [.workingColorSpace: CGColorSpace(name: CGColorSpace.extendedLinearSRGB)!, .workingFormat: CIFormat.RGBAh])
+        var rgba = [UInt8](repeating: 0, count: width * height * 4)
+        context.render(image, toBitmap: &rgba, rowBytes: width * 4, bounds: CGRect(x: 0, y: 0, width: width, height: height), format: .RGBA8, colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!)
+        var rgb = [UInt8](); rgb.reserveCapacity(width * height * 3)
+        for index in stride(from: 0, to: rgba.count, by: 4) { rgb.append(rgba[index]); rgb.append(rgba[index + 1]); rgb.append(rgba[index + 2]) }
+        return rgb
+    }
+
+    private func pixelError(_ lhs: [UInt8], _ rhs: [UInt8]) -> (mae: Double, maximum: Double) {
+        let errors = zip(lhs, rhs).map { Double(abs(Int($0.0) - Int($0.1))) / 255 }
+        return (errors.reduce(0, +) / Double(errors.count), errors.max() ?? 0)
+    }
+
     private enum TestError: Error { case encoding, decoding }
 }
