@@ -314,7 +314,7 @@ Windows 当前没有 Swift/Xcode，无法在本机运行 Apple 测试；`git dif
 当前状态：
 
 - `SOURCE_IMPLEMENTED`
-- `APPLE_CI_VERIFICATION = PENDING`
+- `APPLE_CI_VERIFICATION = VERIFIED_IOS_BUILD_134`
 - `IPHONE_NORMAL_CAPTURE_RECOVERY = PENDING`
 - `HUMAN_AESTHETIC_APPROVED = PENDING`
 
@@ -328,4 +328,13 @@ Build 39 的真实正常快门证据确认正式 B 在 `neutralLuminanceLoss` �
 - 一次性修正不再只抬高曝光/高光/白点，而是有界收回导致保护中性色变暗的负曝光、黑点、负中间调、整体曲线强度和独立 RGB 曲线；显式色彩分级因实现为去亮度色度向量而不被无依据清零。
 - 内部取证构建在两轮均失败时保留实际 rejected 候选字节、最终配方、区域执行回执和完整质量指标；该候选不进入 `editedImageData`、不作为正式 B、不会自动保存，只能由用户主动导出本机 ZIP。
 
-新增 app-hosted Core Image 回归覆盖：正常正式 B 的道路/白车与室内灰桌/白物体输出、实际执行区域与跳过区域的归因差异、硬保护中性色仍阻止严重损坏、一次修正恢复可交付 B，以及 rejected 候选逐字节本机导出。Windows 无 Swift/Core Image 环境，实际 Apple 测试结果必须等待本轮 CI，不能用静态检查代替。
+新增 app-hosted Core Image 回归覆盖：正常正式 B 的道路/白车与室内灰桌/白物体输出、实际执行区域与跳过区域的归因差异、硬保护中性色仍阻止严重损坏、一次修正恢复可交付 B，以及 rejected 候选逐字节本机导出。
+
+Apple CI 真实结果：
+
+- 首次提交 `a1898f32a8068254f3a4fad2f4ec5536eab313e1` 的 `iOS Build #133` 证明正式路径归因测试已进入 Apple Core Image，但修正版的 `protectedNeutralLuminanceShift=-0.0738579` 仍超过既有 `-0.065` 阈值，因此保持失败并未被绕过。
+- 定向收回负曝光、黑点、负中间调和 RGB 曲线强度后，提交 `eb9976fec234f834ab51c81ba6bae2b3a5cd52f6` 的 `iOS Build #134`（run ID `44984223860`，<https://github.com/sulinandeyu/1/actions/runs/44984223860>）全部通过：完整 Swift 150/150（其中 macOS Core Image 11/11）、iOS app-hosted Core Image 13/13，以及 Debug Simulator、普通 Release、内部取证 Release 三种构建。
+- #134 实际像素日志中，一次性修正版的 `protectedNeutralLuminanceShift=-0.041326`、`protectedNeutralCoverage=1.0`，已不再触发 `neutralLuminanceLoss`；质量状态保留独立的 `tooFlat` warning，没有把警告伪装成完全无问题。
+- `testFormalBPipelineOutputsBForRoadVehicleAndIndoorNeutralFixtures` 确认正常非诊断管线对道路/白车及室内灰桌/白物体均生成真实正式 B；`testNeutralLuminanceCorrectionTargetsCurveAndRecoversDeliverable` 确认失败后的修正配方经过真实渲染可恢复可交付 B；`testSevereProtectedNeutralDamageRemainsRejectedWithIntentionalGroundTone` 确认即使存在有意地面影调，真实严重中性色损坏仍被阻止；`testRejectedFormalBCandidateExportsExactPixelsWithoutBecomingDeliverableB` 确认 rejected 像素只作为内部故障证据，不会成为正式 B。
+
+因此本项可标记为 `APPLE_CI_VERIFIED`，但 Build 39 截图只证明旧构建的真实失败；尚未在真实 iPhone 上用本修复提交重新拍摄，`IPHONE_NORMAL_CAPTURE_RECOVERY` 与摄影审美状态仍保持 `PENDING`。本轮未上传 TestFlight。
