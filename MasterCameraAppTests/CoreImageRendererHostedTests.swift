@@ -856,7 +856,11 @@ final class CoreImageRendererHostedTests: XCTestCase {
         data.withUnsafeBytes { raw in
             for index in 0..<pixels.count {
                 let offset = index * 4
-                let bits = UInt32(raw[offset]) | UInt32(raw[offset + 1]) << 8 | UInt32(raw[offset + 2]) << 16 | UInt32(raw[offset + 3]) << 24
+                let byte0 = UInt32(raw[offset])
+                let byte1 = UInt32(raw[offset + 1]) << 8
+                let byte2 = UInt32(raw[offset + 2]) << 16
+                let byte3 = UInt32(raw[offset + 3]) << 24
+                let bits = byte0 | byte1 | byte2 | byte3
                 pixels[index] = UInt8((min(max(Float(bitPattern: bits), 0), 1) * 255).rounded())
             }
         }
