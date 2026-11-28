@@ -885,7 +885,7 @@ final class CoreImageRendererHostedTests: XCTestCase {
     private func tonalGrade(_ rows: [[Float]]) throws -> ProfessionalTonalColorGrade {
         guard rows.count == 3, rows.allSatisfy({ $0.count == 3 }) else { throw TestError.decoding }
         func vector(_ row: [Float]) -> TonalColorVector { TonalColorVector(red: row[0], green: row[1], blue: row[2], amount: 1) }
-        return ProfessionalTonalColorGrade(shadows: vector(rows[0]), midtones: vector(rows[1]), highlights: vector(rows[2]), neutralChromaProtection: .82, highlightNeutralProtection: .90)
+        return ProfessionalTonalColorGrade(shadows: vector(rows[0]), midtones: vector(rows[1]), highlights: vector(rows[2]), neutralChromaProtection: 0.82, highlightNeutralProtection: 0.90)
     }
 
     private func treatmentRegion(_ value: String) throws -> TreatmentRegion {
