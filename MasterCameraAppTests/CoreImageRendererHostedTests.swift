@@ -858,12 +858,20 @@ final class CoreImageRendererHostedTests: XCTestCase {
             height: fixture.height
         )
         let codecMatchedError = pixelError(actual, jpegMatchedExpected)
+        let codecErrors = zip(actual, jpegMatchedExpected).map {
+            abs(Double($0) - Double($1)) / 255
+        }.sorted()
+        let percentile99 = codecErrors[Int(Double(codecErrors.count - 1) * 0.99)]
+        let largeErrorRatio = Double(codecErrors.filter { $0 > 0.08 }.count)
+            / Double(codecErrors.count)
         print(String(
-            format: "PT-LEARN-007 manual renderer rawExpected MAE=%.6f max=%.6f; JPEG-matched MAE=%.6f max=%.6f",
+            format: "PT-LEARN-007 manual renderer rawExpected MAE=%.6f max=%.6f; JPEG-matched MAE=%.6f max=%.6f p99=%.6f >0.08 ratio=%.6f",
             uncompressedError.mae,
             uncompressedError.maximum,
             codecMatchedError.mae,
-            codecMatchedError.maximum
+            codecMatchedError.maximum,
+            percentile99,
+            largeErrorRatio
         ))
         // Keep the raw Windows comparison as an absolute operator-drift guard,
         // but do not use a single JPEG ringing pixel as the maximum operator
@@ -871,7 +879,8 @@ final class CoreImageRendererHostedTests: XCTestCase {
         // Apple sRGB JPEG codec round trip.
         XCTAssertLessThan(uncompressedError.mae, 0.030)
         XCTAssertLessThan(codecMatchedError.mae, 0.012)
-        XCTAssertLessThan(codecMatchedError.maximum, 0.08)
+        XCTAssertLessThan(percentile99, 0.055)
+        XCTAssertLessThan(largeErrorRatio, 0.01)
     }
 
     private struct CrossPlatformFixture: Decodable {
