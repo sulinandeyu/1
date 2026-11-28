@@ -770,6 +770,34 @@ final class CoreImageRendererHostedTests: XCTestCase {
         XCTAssertLessThan(globalError.maximum, 0.10)
 
         let regional = DiagnosticRegionalToneProcessor()
+        var exposureOnlyOutput = output
+        for item in fixture.parameters.regional {
+            guard let encodedMask = fixture.masksFloat32Base64[item.region] else {
+                XCTFail("missing mask \(item.region)"); continue
+            }
+            exposureOnlyOutput = regional.apply(
+                to: exposureOnlyOutput,
+                semanticMask: try fixtureMask(encodedMask, width: fixture.width, height: fixture.height),
+                adjustment: ManualRegionalToneAdjustment(
+                    region: try treatmentRegion(item.region),
+                    exposureEV: item.exposureEV
+                )
+            )
+        }
+        let exposureOnlyBytes = try renderedRGB(exposureOnlyOutput, width: fixture.width, height: fixture.height)
+        let exposureOnlyExpected = try decodedRGB(
+            fixture.windowsRegionalExposureOnlyRGBBase64,
+            count: fixture.width * fixture.height * 3
+        )
+        let exposureOnlyError = pixelError(exposureOnlyBytes, exposureOnlyExpected)
+        print(String(
+            format: "PT-LEARN-007 Apple/Windows regional-exposure-only MAE=%.6f max=%.6f",
+            exposureOnlyError.mae,
+            exposureOnlyError.maximum
+        ))
+        XCTAssertLessThan(exposureOnlyError.mae, 0.012)
+        XCTAssertLessThan(exposureOnlyError.maximum, 0.08)
+
         for item in fixture.parameters.regional {
             guard let encodedMask = fixture.masksFloat32Base64[item.region] else {
                 XCTFail("missing mask \(item.region)"); continue
@@ -814,13 +842,15 @@ final class CoreImageRendererHostedTests: XCTestCase {
         }
         let schemaVersion: Int; let colorContract: ColorContract; let operatorOrder: [String]
         let width: Int; let height: Int; let parameters: Parameters
-        let inputRGBBase64: String; let windowsGlobalRGBBase64: String; let windowsFinalRGBBase64: String
+        let inputRGBBase64: String; let windowsGlobalRGBBase64: String
+        let windowsRegionalExposureOnlyRGBBase64: String; let windowsFinalRGBBase64: String
         let masksFloat32Base64: [String: String]
         enum CodingKeys: String, CodingKey {
             case width, height, parameters
             case schemaVersion = "schema_version"; case colorContract = "color_contract"
             case operatorOrder = "operator_order"; case inputRGBBase64 = "input_rgb_base64"
             case windowsGlobalRGBBase64 = "windows_global_rgb_base64"
+            case windowsRegionalExposureOnlyRGBBase64 = "windows_regional_exposure_only_rgb_base64"
             case windowsFinalRGBBase64 = "windows_final_rgb_base64"
             case masksFloat32Base64 = "masks_float32_base64"
         }

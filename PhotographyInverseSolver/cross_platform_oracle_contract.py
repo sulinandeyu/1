@@ -151,7 +151,7 @@ def color_controls(linear: np.ndarray, contrast: float, saturation: float) -> np
     return np.clip((out - 0.5) * contrast + 0.5, 0, 1)
 
 
-def render(encoded: np.ndarray, masks: dict[str, np.ndarray], p: dict) -> tuple[np.ndarray, np.ndarray]:
+def render(encoded: np.ndarray, masks: dict[str, np.ndarray], p: dict) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     linear = srgb_to_linear(encoded) * (2.0 ** p["exposure_ev"])
     master = np.array(p["master_curve"], np.float32)
     linear = color_cube(
@@ -174,12 +174,17 @@ def render(encoded: np.ndarray, masks: dict[str, np.ndarray], p: dict) -> tuple[
         linear,
     )
     global_out = linear_to_srgb(linear)
+    exposure_only = linear.copy()
+    for region in p["regional"]:
+        mask = masks[region["region"]][..., None]
+        adjusted = exposure_only * (2.0 ** region["exposure_ev"])
+        exposure_only = adjusted * mask + exposure_only * (1 - mask)
     for region in p["regional"]:
         mask = masks[region["region"]][..., None]
         adjusted = linear * (2.0 ** region["exposure_ev"])
         adjusted = color_controls(adjusted, region["contrast"], region["saturation"])
         linear = adjusted * mask + linear * (1 - mask)
-    return global_out, linear_to_srgb(linear)
+    return global_out, linear_to_srgb(exposure_only), linear_to_srgb(linear)
 
 
 def programmatic_input(width: int, height: int) -> tuple[np.ndarray, dict[str, np.ndarray]]:
@@ -240,7 +245,7 @@ def main() -> int:
     # CIImage receives the fixture as encoded 8-bit sRGB; calculate the
     # reference from those exact bytes rather than the pre-quantized floats.
     source = np.rint(np.clip(source, 0, 1) * 255).astype(np.uint8).astype(np.float32) / 255
-    global_out, final_out = render(source, masks, params)
+    global_out, regional_exposure_only, final_out = render(source, masks, params)
     payload = {
         "schema_version": 1,
         "rule_id": "PT-LEARN-007",
@@ -251,6 +256,7 @@ def main() -> int:
         "parameters": params,
         "input_rgb_base64": encode_u8(source),
         "windows_global_rgb_base64": encode_u8(global_out),
+        "windows_regional_exposure_only_rgb_base64": encode_u8(regional_exposure_only),
         "windows_final_rgb_base64": encode_u8(final_out),
         "masks_float32_base64": {k: base64.b64encode(v.tobytes()).decode("ascii") for k,v in masks.items()},
         "known_platform_boundaries": [
