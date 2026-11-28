@@ -1,0 +1,55 @@
+{
+  "schema_version": 2,
+  "pair_id": "replace-with-local-pair-id",
+  "original_path": "private/pairs/example/A_original.jpg",
+  "target_path": "private/pairs/example/T_professional.jpg",
+  "same_capture_verified": true,
+  "capture_provenance": {
+    "status": "pending",
+    "verification_method": "original_asset_id_and_edit_history",
+    "source_asset_id": "replace-with-local-asset-id",
+    "verifier": "replace-after-human-review",
+    "verified_at": "2026-11-28T00:00:00Z",
+    "evidence_reference": "local-only provenance record reference"
+  },
+  "target_type": "independent_professional_edit",
+  "usage_scope": "product_training_candidate",
+  "split": "train",
+  "scene_family": "replace-with-measured-scene-family",
+  "edit_intent": "Describe the independent editor's photographic objective for this specific source.",
+  "actual_operations": [
+    {
+      "operation": "tone curve",
+      "purpose": "Describe the source problem and desired tonal relationship.",
+      "tool": "Lightroom or other named editor",
+      "parameter_summary": "Local-only summary; do not copy a preset from another photo."
+    }
+  ],
+  "target_authorship": {
+    "editor_id": "replace-with-contract-editor-id",
+    "editor_display_name": "replace-with-editor-name",
+    "independent_from_oracle": true,
+    "is_algorithm_output": false,
+    "identity_verification": {
+      "status": "pending",
+      "verifier": "replace-after-human-review",
+      "evidence_reference": "local-only editor verification reference"
+    }
+  },
+  "rights": {
+    "source": "user-owned capture",
+    "original_rights_holder": "replace-with-rights-holder",
+    "target_rights_holder": "replace-with-editor-or-assignee",
+    "commercial_training_allowed": true,
+    "model_distribution_allowed": true,
+    "privacy_release_status": "unknown",
+    "rights_assertion_reference": "local-only assertion or draft contract reference",
+    "authorization_verification": {
+      "status": "pending",
+      "verification_basis": "signed_contract",
+      "verifier": "replace-after-legal-or-product-review",
+      "verified_at": "2026-11-28T00:00:00Z",
+      "evidence_reference": "local-only signed authorization reference"
+    }
+  }
+}

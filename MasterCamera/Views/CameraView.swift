@@ -6,6 +6,9 @@ struct CameraView: View {
     @State private var selectedSample: PhotosPickerItem?
     @State private var selectedBatchSamples: [PhotosPickerItem] = []
     @State private var selectedTask2AValidationPair: [PhotosPickerItem] = []
+#if XIAOSU_INTERNAL_CAPTURE_EVIDENCE
+    @State private var selectedPTLearnOraclePair: [PhotosPickerItem] = []
+#endif
 
     var body: some View {
         GeometryReader { geometry in
@@ -94,6 +97,30 @@ struct CameraView: View {
                 }
             }
         }
+#if XIAOSU_INTERNAL_CAPTURE_EVIDENCE
+        .onChange(of: selectedPTLearnOraclePair) { _, newValue in
+            guard newValue.count == 2 else { return }
+            let pair = newValue
+            selectedPTLearnOraclePair = []
+            Task {
+                do {
+                    guard let source = try await pair[0].loadTransferable(type: Data.self),
+                          let target = try await pair[1].loadTransferable(type: Data.self),
+                          !source.isEmpty, !target.isEmpty
+                    else {
+                        viewModel.reportImportFailure("PT-LEARN ORACLE 需要依次选择原图 A 与独立参考 T。")
+                        return
+                    }
+                    viewModel.processPTLearnOracleValidation(
+                        sourceData: source,
+                        targetData: target
+                    )
+                } catch {
+                    viewModel.reportImportFailure("PT-LEARN ORACLE A/T 读取失败：\(error.localizedDescription)")
+                }
+            }
+        }
+#endif
     }
 
     private var topBar: some View {
@@ -280,6 +307,24 @@ struct CameraView: View {
             }
             .disabled(viewModel.processingState.isProcessing)
             .accessibilityLabel("依次选择原图 A 和研究参考 T，在本机生成 Task 2-A 渲染证据")
+
+#if XIAOSU_INTERNAL_CAPTURE_EVIDENCE
+            PhotosPicker(
+                selection: $selectedPTLearnOraclePair,
+                maxSelectionCount: 2,
+                selectionBehavior: .ordered,
+                matching: .images
+            ) {
+                Label("PT-LEARN ORACLE：依次选择 A、T", systemImage: "function")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Color(red: 0.94, green: 0.79, blue: 0.45))
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 32)
+                    .background(Color.white.opacity(0.07), in: Capsule())
+            }
+            .disabled(viewModel.processingState.isProcessing)
+            .accessibilityLabel("依次选择原图 A 和研究参考 T，在本机使用固定 ORACLE 参数合同生成 Apple 成片")
+#endif
         }
         .padding(.horizontal, 16)
         .padding(.top, isCompact ? 10 : 13)

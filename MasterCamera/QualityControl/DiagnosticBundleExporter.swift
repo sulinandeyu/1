@@ -398,6 +398,12 @@ final class DiagnosticBundleExporter {
             in: photo.processingStagePreviews
         )
         let task2AImageFile = task2APreview == nil ? "unavailable" : "images/M_manual_render.jpg"
+        let manualParameterIdentifier = Self.manualParameterIdentifier(task2ACandidate)
+            ?? ManualPhotographyParameters.task2ACinematicExpression.identifier
+        let isPTLearnOracle = manualParameterIdentifier.hasPrefix("pt-learn-oracle-")
+        let validationStatusPath = isPTLearnOracle
+            ? "evidence/PTLEARN_ORACLE_VALIDATION_STATUS.json"
+            : "evidence/TASK2A_RENDER_VALIDATION_STATUS.json"
         let task2AStatus: [String: Any] = [
             "source": "\(sourcePath) identified by sourceSha256",
             "professionalTargetT": targetHash == nil
@@ -410,8 +416,14 @@ final class DiagnosticBundleExporter {
             "coreImageCandidate": task2AImageFile,
             "coreImageCandidateSha256": task2APreview.map { Self.sourceSHA256($0.imageData) } ?? "unavailable",
             "renderActuallyExecuted": task2ACandidate?.states.contains(.executed) == true && task2APreview != nil,
-            "parameterIdentifier": ManualPhotographyParameters.task2ACinematicExpression.identifier,
-            "experiment": "Task 2-A manual cinematic rendering expression; not automatic photography decision",
+            "parameterIdentifier": manualParameterIdentifier,
+            "experiment": isPTLearnOracle
+                ? "PT-LEARN-007 immutable known-target ORACLE reproduction; isolated from automatic photography decision and formal B"
+                : "Task 2-A manual cinematic rendering expression; not automatic photography decision",
+            "operatorOrder": isPTLearnOracle
+                ? ["linear_exposure", "encoded_master_curve", "encoded_rgb_curves", "perceptual_hsl", "three_way_grade", "regional_linear_adjustments"]
+                : [],
+            "targetIsolation": "A is the only image input to analysis, masks and rendering. T entered only this local exporter after rendering completed.",
             "candidateStates": task2ACandidate?.states.map(\.rawValue) ?? ["unavailable"],
             "parameterLifecycle": task2ACandidate?.parameterLifecycle.map {
                 ["stage": $0.stage, "recipeSummary": $0.recipeSummary, "changes": $0.changes]
@@ -424,9 +436,11 @@ final class DiagnosticBundleExporter {
             "recordedCandidateHumanStatus": task2ACandidate?.humanAestheticStatus ?? "notEvaluated"
         ]
         add(
-            "evidence/TASK2A_RENDER_VALIDATION_STATUS.json",
+            validationStatusPath,
             try jsonData(task2AStatus),
-            "Task 2-A Core Image expression provenance; T is intentionally external"
+            isPTLearnOracle
+                ? "PT-LEARN Apple ORACLE Core Image provenance; T is intentionally external"
+                : "Task 2-A Core Image expression provenance; T is intentionally external"
         )
 
         let inventory = entries.map { entry -> [String: Any] in
@@ -469,7 +483,9 @@ final class DiagnosticBundleExporter {
                 "D": "measured automatic aesthetic diagnostic; never replaces B",
                 "E1": "independently solved spatial-emphasis target experiment; human preference pending",
                 "E2": "independently solved restrained-depth target experiment; human preference pending",
-                "M": "Task 2-A human-declared Core Image cinematic expression; never replaces B or D",
+                "M": isPTLearnOracle
+                    ? "PT-LEARN-007 immutable ORACLE Core Image reproduction; never replaces B or D"
+                    : "Task 2-A human-declared Core Image cinematic expression; never replaces B or D",
                 "V2-1": "Automatic Photography Director V2 natural-documentary candidate",
                 "V2-2": "Automatic Photography Director V2 dimensional-hierarchy candidate",
                 "V2-3": "Automatic Photography Director V2 atmospheric-cinematic candidate",
@@ -481,7 +497,12 @@ final class DiagnosticBundleExporter {
         add("manifest.json", try jsonData(metadata), "bundle manifest")
         add(
             "README.txt",
-            Data(readme(sourceHash: sourceHash, includesLocalTarget: targetHash != nil).utf8),
+            Data(readme(
+                sourceHash: sourceHash,
+                includesLocalTarget: targetHash != nil,
+                isPTLearnOracle: isPTLearnOracle,
+                validationStatusPath: validationStatusPath
+            ).utf8),
             "human-readable evidence guide"
         )
         add(
@@ -492,7 +513,10 @@ final class DiagnosticBundleExporter {
                 includesLocalTarget: targetHash != nil,
                 includesRenderedCandidate: task2AImageFile != "unavailable",
                 technicalStatus: task2ACandidate?.qualityStatus ?? "notRun",
-                executionState: task2ACandidate?.states.map(\.rawValue).joined(separator: ",") ?? "unavailable"
+                executionState: task2ACandidate?.states.map(\.rawValue).joined(separator: ",") ?? "unavailable",
+                parameterIdentifier: manualParameterIdentifier,
+                validationStatusPath: validationStatusPath,
+                isPTLearnOracle: isPTLearnOracle
             ).utf8),
             "local A/T/R-I full-resolution comparison page"
         )
@@ -1105,10 +1129,18 @@ final class DiagnosticBundleExporter {
         try JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
     }
 
-    private func readme(sourceHash: String, includesLocalTarget: Bool) -> String {
+    private func readme(
+        sourceHash: String,
+        includesLocalTarget: Bool,
+        isPTLearnOracle: Bool,
+        validationStatusPath: String
+    ) -> String {
         let targetDescription = includesLocalTarget
             ? "由用户本次明确选择，仅写入本地分享 ZIP，未进入渲染"
             : "本次未选择，因此未打包"
+        let manualDescription = isPTLearnOracle
+            ? "PT-LEARN-007 固定 ORACLE 参数合同的 Apple Core Image 复现实验，不替换 B/D，不代表 A-only 自动预测"
+            : "Task 2-A 人工声明的 Core Image 电影影调表达能力验证，不替换 B/D"
         return """
         小苏相机诊断证据包
 
@@ -1119,13 +1151,13 @@ final class DiagnosticBundleExporter {
         D = 逐图自动后期诊断输出，不替换 B
         E1 = 由当前照片测量独立求解的空间层次目标实验，人工偏好待评价
         E2 = 由当前照片测量独立求解的克制暗调目标实验，人工偏好待评价
-        M / R-I = Task 2-A 人工声明的 Core Image 电影影调表达能力验证，不替换 B/D
+        M / R-I = \(manualDescription)
         T = 外部专业目标参考；\(targetDescription)；绝不冒充 App 成片
         差异图 = A 与 B 的五倍放大差异，不代表 D、E1、E2 或 M
 
         candidate_states_and_parameters.json 明确区分 planned、executed、rejected、fallback、unavailable，
         并分别记录技术质检、摄影目标质量状态和人工审美状态。
-        TASK2A_RENDER_VALIDATION_STATUS.json 明确区分 A、外部 T 与设备实际 M/R-I。
+        \(validationStatusPath) 明确区分 A、外部 T 与设备实际 M/R-I。
         屏幕截图不是实际成片文件；images 目录保留 A 的真实原始编码，B/D/E/M/V2 等 JPEG 才是本次处理实际输出。
         """
     }
@@ -1136,7 +1168,10 @@ final class DiagnosticBundleExporter {
         includesLocalTarget: Bool,
         includesRenderedCandidate: Bool,
         technicalStatus: String,
-        executionState: String
+        executionState: String,
+        parameterIdentifier: String,
+        validationStatusPath: String,
+        isPTLearnOracle: Bool
     ) -> String {
         let target: String
         if includesLocalTarget, let targetPath {
@@ -1144,14 +1179,29 @@ final class DiagnosticBundleExporter {
         } else {
             target = "<section><h2>T · 未选择</h2><p>本证据包不含专业参考 T。</p></section>"
         }
+        let experimentTitle = isPTLearnOracle ? "PT-LEARN Apple ORACLE" : "Task 2-A"
         let rendered = includesRenderedCandidate
-            ? "<section><h2>R-I · Task 2-A Core Image</h2><img class=\"zoomable\" src=\"images/M_manual_render.jpg\"><p>技术状态与执行参数见 evidence/TASK2A_RENDER_VALIDATION_STATUS.json；审美状态默认为 pending_human_review。</p></section>"
-            : "<section><h2>R-I · 渲染不可用</h2><p>请检查 evidence/TASK2A_RENDER_VALIDATION_STATUS.json 与候选失败记录。</p></section>"
+            ? "<section><h2>R-I · \(experimentTitle) Core Image</h2><img class=\"zoomable\" src=\"images/M_manual_render.jpg\"><p>技术状态与执行参数见 \(validationStatusPath)；审美状态默认为 pending_human_review。</p></section>"
+            : "<section><h2>R-I · 渲染不可用</h2><p>请检查 \(validationStatusPath) 与候选失败记录。</p></section>"
         return """
         <!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-        <title>Task 2-A A/T/R-I 对照</title><style>body{font:15px system-ui;background:#111;color:#eee;margin:0;padding:18px}main{max-width:1500px;margin:auto}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px}section{background:#1b1b1b;padding:12px;border-radius:12px;overflow:auto}img{width:100%;height:auto}.zoomable{cursor:zoom-in}.zoomable.zoom{width:auto;max-width:none}.review{display:flex;gap:10px;flex-wrap:wrap;margin:16px 0}button{padding:9px 12px}p{color:#bbb}</style></head>
-        <body><main><h1>Task 2-A 本机 Core Image 表达能力证据</h1><p>A 是唯一渲染输入；T 仅供独立人工评价；R-I 来自真实 M 诊断渲染。此页面不代表自动摄影决策或审美验收通过。</p><p><strong>参数来源：</strong>\(ManualPhotographyParameters.task2ACinematicExpression.identifier)（人工声明的隔离表达探针） · <strong>执行状态：</strong>\(executionState) · <strong>技术质检：</strong>\(technicalStatus)。完整实际配方、区域回执和像素证据见 evidence/TASK2A_RENDER_VALIDATION_STATUS.json。</p><div class="review"><button data-v="reached">达到摄影目标</button><button data-v="partially_reached">部分达到</button><button data-v="not_reached">未达到</button><button data-v="pending_human_review">尚无法评价</button><button id="download">导出人工评价 JSON</button><strong id="review">pending_human_review</strong></div><div class="grid"><section><h2>A · 原图</h2><img class="zoomable" src="\(sourcePath)"></section>\(target)\(rendered)<section><h2>B · 正式算法（未修改）</h2><img class="zoomable" src="images/B_formal_output.jpg"></section></div><script>let review='pending_human_review';document.querySelectorAll('.zoomable').forEach(x=>x.onclick=()=>x.classList.toggle('zoom'));document.querySelectorAll('[data-v]').forEach(b=>b.onclick=()=>{review=b.dataset.v;document.getElementById('review').textContent=review});document.getElementById('download').onclick=()=>{const payload={schemaVersion:1,experiment:'task2a_cinematic_expression',humanEntered:true,status:review,recordedAt:new Date().toISOString()};const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='task2a-human-review.json';a.click();URL.revokeObjectURL(a.href)}</script></main></body></html>
+        <title>\(experimentTitle) A/T/R-I 对照</title><style>body{font:15px system-ui;background:#111;color:#eee;margin:0;padding:18px}main{max-width:1500px;margin:auto}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px}section{background:#1b1b1b;padding:12px;border-radius:12px;overflow:auto}img{width:100%;height:auto}.zoomable{cursor:zoom-in}.zoomable.zoom{width:auto;max-width:none}.review{display:flex;gap:10px;flex-wrap:wrap;margin:16px 0}button{padding:9px 12px}p{color:#bbb}</style></head>
+        <body><main><h1>\(experimentTitle) 本机 Core Image 表达能力证据</h1><p>A 是唯一渲染输入；T 仅供独立人工评价；R-I 来自真实 M 诊断渲染。此页面不代表自动摄影决策或审美验收通过。</p><p><strong>参数来源：</strong>\(parameterIdentifier)（隔离参数合同） · <strong>执行状态：</strong>\(executionState) · <strong>技术质检：</strong>\(technicalStatus)。完整实际配方、区域回执和像素证据见 \(validationStatusPath)。</p><div class="review"><button data-v="reached">达到摄影目标</button><button data-v="partially_reached">部分达到</button><button data-v="not_reached">未达到</button><button data-v="pending_human_review">尚无法评价</button><button id="download">导出人工评价 JSON</button><strong id="review">pending_human_review</strong></div><div class="grid"><section><h2>A · 原图</h2><img class="zoomable" src="\(sourcePath)"></section>\(target)\(rendered)<section><h2>B · 正式算法（未修改）</h2><img class="zoomable" src="images/B_formal_output.jpg"></section></div><script>let review='pending_human_review';document.querySelectorAll('.zoomable').forEach(x=>x.onclick=()=>x.classList.toggle('zoom'));document.querySelectorAll('[data-v]').forEach(b=>b.onclick=()=>{review=b.dataset.v;document.getElementById('review').textContent=review});document.getElementById('download').onclick=()=>{const payload={schemaVersion:1,experiment:'\(isPTLearnOracle ? "pt_learn_oracle_v1" : "task2a_cinematic_expression")',humanEntered:true,status:review,recordedAt:new Date().toISOString()};const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='task2a-human-review.json';a.click();URL.revokeObjectURL(a.href)}</script></main></body></html>
         """
+    }
+
+    private static func manualParameterIdentifier(
+        _ candidate: DiagnosticCandidateEvidence?
+    ) -> String? {
+        let lines = (candidate?.planned ?? []) + (candidate?.executed ?? [])
+        for line in lines {
+            guard let start = line.range(of: "id=")?.upperBound else { continue }
+            let suffix = line[start...]
+            let end = suffix.firstIndex(where: { $0 == ";" || $0 == "；" }) ?? suffix.endIndex
+            let value = suffix[..<end].trimmingCharacters(in: .whitespacesAndNewlines)
+            if !value.isEmpty { return value }
+        }
+        return nil
     }
 
     static func imageFileExtension(_ data: Data) -> String {

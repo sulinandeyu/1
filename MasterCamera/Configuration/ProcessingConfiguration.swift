@@ -14,15 +14,34 @@ struct ProcessingConfiguration: Equatable, Sendable {
         referenceValidation: .diagnosticImportsOnly,
         diagnosticValidation: .diagnosticImportsOnly
     )
+
+    /// PT-LEARN-007 internal-only inverse-expression verification. Formal B is
+    /// still produced by the normal pipeline; only diagnostic M is replaced by
+    /// the immutable ORACLE contract for the user-selected A.
+    static let ptLearnOracleDiagnostic = ProcessingConfiguration(
+        analysis: .default,
+        quality: .default,
+        portrait: .default,
+        referenceValidation: .disabled,
+        diagnosticValidation: .ptLearnOracleOnly
+    )
 }
 
 struct DiagnosticValidationConfiguration: Equatable, Sendable {
     let measuredAestheticCandidateEnabled: Bool
     let manualParameters: ManualPhotographyParameters?
+    let isolatedManualOnly: Bool
 
     static let diagnosticImportsOnly = DiagnosticValidationConfiguration(
         measuredAestheticCandidateEnabled: true,
-        manualParameters: .task2ACinematicExpression
+        manualParameters: .task2ACinematicExpression,
+        isolatedManualOnly: false
+    )
+
+    static let ptLearnOracleOnly = DiagnosticValidationConfiguration(
+        measuredAestheticCandidateEnabled: false,
+        manualParameters: .ptLearnOracleAutumnStreetV1,
+        isolatedManualOnly: true
     )
 }
 
@@ -38,6 +57,11 @@ struct ReferenceValidationConfiguration: Equatable, Sendable {
     static let diagnosticImportsOnly = ReferenceValidationConfiguration(
         mode: .diagnosticImportsOnly,
         maximumMatches: 3
+    )
+
+    static let disabled = ReferenceValidationConfiguration(
+        mode: .disabled,
+        maximumMatches: 0
     )
 
     func isEnabled(isDiagnosticImport: Bool) -> Bool {

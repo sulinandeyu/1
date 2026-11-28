@@ -134,6 +134,57 @@ final class CameraViewModel: ObservableObject {
         }
     }
 
+#if XIAOSU_INTERNAL_CAPTURE_EVIDENCE
+    /// PT-LEARN-007 device-local ORACLE reproduction. A is the only render
+    /// input. T is passed only to the local ZIP exporter after all analysis,
+    /// masks, parameters and Core Image pixels have already been produced.
+    func processPTLearnOracleValidation(sourceData: Data, targetData: Data) {
+        guard !processingState.isProcessing else { return }
+        guard !sourceData.isEmpty, !targetData.isEmpty else {
+            errorMessage = "PT-LEARN ORACLE 的 A 或 T 数据为空。"
+            return
+        }
+        errorMessage = nil
+        if let previousArchive = diagnosticBatchArchive?.url {
+            try? FileManager.default.removeItem(at: previousArchive)
+        }
+        diagnosticBatchArchive = nil
+        processingState = .analyzing
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let input = CapturedPhoto(
+                    originalImageData: sourceData,
+                    editedImageData: nil,
+                    capturedAt: Date(),
+                    isDiagnosticImport: true
+                )
+                processingState = .rendering
+                let processed = try await Task.detached(priority: .userInitiated) {
+                    try PhotoProcessingPipeline(configuration: .ptLearnOracleDiagnostic)
+                        .process(input)
+                }.value
+                processingState = .finalizing
+                let archiveURL = try await Task.detached(priority: .utility) {
+                    try DiagnosticBundleExporter().makeArchive(
+                        for: processed,
+                        externalResearchTargetData: targetData
+                    )
+                }.value
+                diagnosticBatchArchive = DiagnosticBatchArchive(
+                    url: archiveURL,
+                    requestedCount: 1,
+                    completedCount: 1,
+                    failedCount: 0
+                )
+            } catch {
+                errorMessage = "PT-LEARN ORACLE 本机渲染或证据导出失败：\(error.localizedDescription)"
+            }
+            processingState = .idle
+        }
+    }
+#endif
+
     /// Runs the exact production analysis/solver/Core Image pipeline for up to
     /// seven private library assets. Processing is deliberately serial: only
     /// one original and one full-resolution CapturedPhoto are resident at a

@@ -1,0 +1,127 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://xiaosu.camera/schemas/authorized-pair-v2.schema.json",
+  "title": "XiaoSu Verified Same-Capture Professional A/T Pair",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "pair_id",
+    "original_path",
+    "target_path",
+    "same_capture_verified",
+    "capture_provenance",
+    "target_type",
+    "usage_scope",
+    "split",
+    "scene_family",
+    "edit_intent",
+    "actual_operations",
+    "target_authorship",
+    "rights"
+  ],
+  "properties": {
+    "schema_version": {"const": 2},
+    "pair_id": {"type": "string", "minLength": 1},
+    "original_path": {"type": "string", "minLength": 1},
+    "target_path": {"type": "string", "minLength": 1},
+    "same_capture_verified": {"const": true},
+    "capture_provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "verification_method", "source_asset_id", "verifier", "verified_at", "evidence_reference"],
+      "properties": {
+        "status": {"enum": ["verified", "pending", "rejected"]},
+        "verification_method": {
+          "enum": [
+            "original_asset_id_and_edit_history",
+            "raw_sidecar_and_export_record",
+            "capture_session_record_and_manual_alignment_review"
+          ]
+        },
+        "source_asset_id": {"type": "string", "minLength": 1},
+        "verifier": {"type": "string", "minLength": 1},
+        "verified_at": {"type": "string", "format": "date-time"},
+        "evidence_reference": {"type": "string", "minLength": 1}
+      }
+    },
+    "target_type": {"enum": ["independent_professional_edit", "algorithm_output", "oracle_output"]},
+    "usage_scope": {"enum": ["product_training_candidate", "research_only", "pipeline_smoke_only"]},
+    "split": {"enum": ["train", "validation", "test"]},
+    "scene_family": {"type": "string", "minLength": 1},
+    "edit_intent": {"type": "string", "minLength": 1},
+    "actual_operations": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["operation", "purpose", "tool"],
+        "properties": {
+          "operation": {"type": "string", "minLength": 1},
+          "purpose": {"type": "string", "minLength": 1},
+          "tool": {"type": "string", "minLength": 1},
+          "parameter_summary": {"type": "string"}
+        }
+      }
+    },
+    "target_authorship": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["editor_id", "editor_display_name", "independent_from_oracle", "is_algorithm_output", "identity_verification"],
+      "properties": {
+        "editor_id": {"type": "string", "minLength": 1},
+        "editor_display_name": {"type": "string", "minLength": 1},
+        "independent_from_oracle": {"const": true},
+        "is_algorithm_output": {"const": false},
+        "identity_verification": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "verifier", "evidence_reference"],
+          "properties": {
+            "status": {"enum": ["verified", "pending", "rejected"]},
+            "verifier": {"type": "string", "minLength": 1},
+            "evidence_reference": {"type": "string", "minLength": 1}
+          }
+        }
+      }
+    },
+    "rights": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source",
+        "original_rights_holder",
+        "target_rights_holder",
+        "commercial_training_allowed",
+        "model_distribution_allowed",
+        "privacy_release_status",
+        "rights_assertion_reference",
+        "authorization_verification"
+      ],
+      "properties": {
+        "source": {"type": "string", "minLength": 1},
+        "original_rights_holder": {"type": "string", "minLength": 1},
+        "target_rights_holder": {"type": "string", "minLength": 1},
+        "commercial_training_allowed": {"const": true},
+        "model_distribution_allowed": {"const": true},
+        "privacy_release_status": {
+          "enum": ["not_required", "model_release_obtained", "property_and_model_releases_obtained", "missing", "unknown"]
+        },
+        "rights_assertion_reference": {"type": "string", "minLength": 1},
+        "authorization_verification": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "verification_basis", "verifier", "verified_at", "evidence_reference"],
+          "properties": {
+            "status": {"enum": ["verified", "pending", "rejected"]},
+            "verification_basis": {"enum": ["signed_contract", "signed_release", "documented_license"]},
+            "verifier": {"type": "string", "minLength": 1},
+            "verified_at": {"type": "string", "format": "date-time"},
+            "evidence_reference": {"type": "string", "minLength": 1}
+          }
+        }
+      }
+    }
+  }
+}

@@ -170,13 +170,13 @@ final class PhotoProcessingPipeline {
             problems: problemReport,
             isDiagnosticImport: photo.isDiagnosticImport
         )
-        let measuredAestheticValidation = evaluateMeasuredAestheticCandidate(
+        let measuredAestheticValidation = configuration.diagnosticValidation.isolatedManualOnly ? nil : evaluateMeasuredAestheticCandidate(
             originalData: photo.originalImageData,
             analysis: analysis,
             problems: problemReport,
             isDiagnosticImport: photo.isDiagnosticImport
         )
-        let aestheticTargetExperiments = evaluateAestheticTargetExperiments(
+        let aestheticTargetExperiments = configuration.diagnosticValidation.isolatedManualOnly ? [] : evaluateAestheticTargetExperiments(
             originalData: photo.originalImageData,
             analysis: analysis,
             problems: problemReport,
@@ -192,7 +192,7 @@ final class PhotoProcessingPipeline {
             analysis: analysis,
             isDiagnosticImport: photo.isDiagnosticImport
         )
-        let automaticDirectorV2Validation = evaluateAutomaticDirectorV2(
+        let automaticDirectorV2Validation = configuration.diagnosticValidation.isolatedManualOnly ? nil : evaluateAutomaticDirectorV2(
             originalData: photo.originalImageData,
             analysis: analysis,
             problems: problemReport,
@@ -245,7 +245,7 @@ final class PhotoProcessingPipeline {
             stageRecords.append(measuredStage)
         }
         stageRecords.append(contentsOf: aestheticTargetExperiments.map { $0.result.stage })
-        if photo.isDiagnosticImport {
+        if photo.isDiagnosticImport, !configuration.diagnosticValidation.isolatedManualOnly {
             stageRecords.append(ProcessingStageRecord(
                 name: "摄影目标空间真实像素验证",
                 durationMilliseconds: 0,
@@ -1899,10 +1899,11 @@ final class PhotoProcessingPipeline {
             var selectedImpacts = initialImpacts
             var selectedRegionalExecution = initialRegionalExecution
             var safetyTrace = "未触发：初始 M/R3 未命中可修复的影调安全问题"
-            if let corrected = safetyCorrectedManualParameters(
-                parameters,
-                quality: initialQuality
-            ) {
+            if parameters.allowsMeasuredSafetyCorrection,
+               let corrected = safetyCorrectedManualParameters(
+                   parameters,
+                   quality: initialQuality
+               ) {
                 let correctedData = try renderer.renderManualEdit(
                     from: originalData,
                     parameters: corrected,
@@ -1973,10 +1974,10 @@ final class PhotoProcessingPipeline {
                     "[M] renderStatus=completed；technicalQualityStatus=\(quality.status.rawValue)",
                     "[M] targetQualityStatus=manual_expression_probe_not_automatic_target",
                     "[M] humanAestheticStatus=awaiting_blind_review",
-                    "[M] 声明参数=\(recipe.traceSummary)",
-                    "[M] 执行模块=\(renderer.executedModuleNames(for: recipe, analysis: analysis, manualRegionalAdjustments: selectedParameters.regionalToneAdjustments).joined(separator: " → "))",
+                    "[M] 声明参数=\(selectedParameters.executionContractSummary)；recipe=\(recipe.traceSummary)",
+                    "[M] 执行模块=\(renderer.executedModuleNames(for: recipe, analysis: analysis, manualRegionalAdjustments: selectedParameters.regionalToneAdjustments, manualMasterCurve: selectedParameters.masterCurve).joined(separator: " → "))",
                     "[M] 区域影调回执=\(regionalExecution.joined(separator: "；"))",
-                    "[M] 安全反馈=\(safetyTrace)；rules=PT-QA-003；质检阈值未修改",
+                    "[M] 安全反馈=\(parameters.allowsMeasuredSafetyCorrection ? safetyTrace : "禁用：PT-LEARN-007 ORACLE 合同必须保持参数不变，失败结果仅标记 rejected")；rules=PT-QA-003/PT-LEARN-007；质检阈值未修改",
                     "[M] 技术质检=\(quality.status.rawValue)；问题=[\(quality.issues.map(\.rawValue).joined(separator: ","))]；RGB_MAE=\(String(format: "%.4f", quality.processingImpact.normalizedMeanAbsoluteRGBDifference))",
                     String(format: "[M] 输出影调实测=avg %.4f；shadow %.4f；midtone %.4f；highlight %.4f；black %.4f；white %.4f；contrast %.4f；saturation %.4f",
                            quality.measuredAnalysis.averageLuminance,

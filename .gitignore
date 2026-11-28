@@ -32,6 +32,7 @@ PhotographyDataset/assets/
 PhotographyDataset/downloads/
 PhotographyDataset/reports/*contact-sheet*.jpg
 PhotographyDataset/private_pairs/
+PhotographyDataset/private/
 PhotographyDataset/local_manifests/
 PhotographyDataset/local_declarations*.jsonl
 

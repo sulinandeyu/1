@@ -268,7 +268,8 @@ final class CoreImageRenderer {
             recipe: recipe,
             analysis: analysis,
             enableAutomaticRegionalAdjustments: false,
-            manualRegionalToneAdjustments: parameters.regionalToneAdjustments
+            manualRegionalToneAdjustments: parameters.regionalToneAdjustments,
+            manualMasterCurve: parameters.masterCurve
         )
         guard let renderedJPEG = diagnosticContext.jpegRepresentation(
             of: result.finalImage,
@@ -352,7 +353,8 @@ final class CoreImageRenderer {
         analysis: PhotoAnalysis?,
         maximumLongEdge: CGFloat? = nil,
         enableAutomaticRegionalAdjustments: Bool = true,
-        manualRegionalToneAdjustments: [ManualRegionalToneAdjustment] = []
+        manualRegionalToneAdjustments: [ManualRegionalToneAdjustment] = [],
+        manualMasterCurve: SevenPointChannelCurve? = nil
     ) throws -> (finalImage: CIImage, canvas: CGRect, stages: [(String, CIImage)], timings: [TimeInterval]) {
         guard let decoded = CIImage(data: data, options: [.applyOrientationProperty: true]) else {
             throw ImageRenderingError.invalidImageData
@@ -368,7 +370,24 @@ final class CoreImageRenderer {
         let blackAdjusted = applyBlackPoint(to: recovered, recipe: recipe)
         let baseCurved = applyToneCurve(to: blackAdjusted, recipe: recipe)
         let filmic = cinematicToneMappingEngine.apply(to: baseCurved, recipe: recipe)
-        let channelCurved = professionalRGBCurveProcessor.apply(to: filmic, curves: recipe.rgbCurves)
+        let masterCurved: CIImage
+        if let master = manualMasterCurve?.clampedMonotonic() {
+            masterCurved = professionalRGBCurveProcessor.apply(
+                to: filmic,
+                curves: ProfessionalRGBCurves(
+                    red: master,
+                    green: master,
+                    blue: master,
+                    intensity: 1
+                )
+            )
+        } else {
+            masterCurved = filmic
+        }
+        let channelCurved = professionalRGBCurveProcessor.apply(
+            to: masterCurved,
+            curves: recipe.rgbCurves
+        )
         let curved = try checkedCanvas(luminanceZoneProcessor.apply(to: channelCurved, recipe: recipe), canvas: canvas, stage: "亮度蒙版影调")
         let toneTime = ProcessInfo.processInfo.systemUptime - start
 
@@ -641,12 +660,14 @@ final class CoreImageRenderer {
     func executedModuleNames(
         for recipe: AutomaticEditingRecipe,
         analysis: PhotoAnalysis?,
-        manualRegionalAdjustments: [ManualRegionalToneAdjustment] = []
+        manualRegionalAdjustments: [ManualRegionalToneAdjustment] = [],
+        manualMasterCurve: SevenPointChannelCurve? = nil
     ) -> [String] {
         var modules = ["方向/色彩空间", "曝光", "高光阴影"]
         if recipe.blackPoint > 0.001 { modules.append("黑位") }
         if recipe.toneCurveAmount > 0.001 { modules.append("\(recipe.toneCurveStyle.rawValue)曲线") }
         modules.append("自适应七段影调/\(recipe.cinematicIntensity.title)")
+        if manualMasterCurve != nil { modules.append("PT-LEARN ORACLE 总七锚点曲线") }
         if !recipe.rgbCurves.isIdentity { modules.append("独立 RGB 七段曲线") }
         if abs(recipe.temperatureShift) > 0.5 || abs(recipe.tintShift) > 0.01 { modules.append("白平衡") }
         modules.append("色彩控制")

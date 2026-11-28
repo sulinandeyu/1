@@ -990,6 +990,19 @@ struct ManualPhotographyParameters: Equatable, Sendable {
     var noiseReductionAmount: Float = 0
     var sharpeningAmount: Float = 0
     var regionalToneAdjustments: [ManualRegionalToneAdjustment] = []
+    /// Diagnostic-only arbitrary master curve. The production B recipe does not
+    /// expose or read this field. It exists so PT-LEARN-007 can execute the same
+    /// ordered contract on real Core Image pixels as the Windows ORACLE.
+    var masterCurve: SevenPointChannelCurve? = nil
+    /// An ORACLE contract must remain immutable after rendering. A quality
+    /// failure is evidence, not permission to silently produce different pixels.
+    var allowsMeasuredSafetyCorrection: Bool = true
+
+    var executionContractSummary: String {
+        let master = masterCurve?.anchors.map { String(format: "%.6f", $0) }
+            .joined(separator: ",") ?? "identity"
+        return "id=\(identifier);rule=PT-LEARN-007;order=linear_exposure>encoded_master_curve>encoded_rgb_curves>perceptual_hsl>three_way_grade>regional_linear_adjustments;master=[\(master)];safetyCorrection=\(allowsMeasuredSafetyCorrection ? "allowed" : "disabled_contract_immutable")"
+    }
 
     func makeRecipe() -> AutomaticEditingRecipe {
         var recipe = AutomaticEditingRecipe.naturalEnhancement
@@ -1346,6 +1359,117 @@ struct ManualPhotographyParameters: Equatable, Sendable {
                     luminanceFeather: 0.18
                 )
             ]
+        )
+    }()
+
+    /// PT-LEARN-007. Exact versioned autumn-street ORACLE contract from
+    /// `PhotographyInverseSolver/fixtures/cross_platform_oracle_v1.json`.
+    /// This single-case inverse result is available only through the isolated
+    /// internal diagnostic entry. It never participates in analysis, automatic
+    /// target selection, formal B, or training target eligibility.
+    static let ptLearnOracleAutumnStreetV1: ManualPhotographyParameters = {
+        var hsl = ProfessionalHSLAdjustment.neutral
+        hsl.mathMode = .perceptualHSL
+        hsl.redHue = 0.052750
+        hsl.redSaturation = -0.273720
+        hsl.redLuminance = -0.072780
+        hsl.orangeHue = 0.002145
+        hsl.orangeSaturation = 0.146130
+        hsl.orangeLuminance = 0.009685
+        hsl.yellowHue = -0.032779
+        hsl.yellowSaturation = 0.175332
+        hsl.yellowLuminance = 0.042585
+        hsl.greenHue = -0.044445
+        hsl.greenSaturation = -0.350000
+        hsl.greenLuminance = -0.180607
+        hsl.cyanHue = 0.067792
+        hsl.cyanSaturation = -0.114659
+        hsl.cyanLuminance = -0.131103
+        hsl.blueHue = 0.018052
+        hsl.blueSaturation = -0.239244
+        hsl.blueLuminance = -0.211707
+        hsl.purpleHue = -0.072289
+        hsl.purpleSaturation = 0.336885
+        hsl.purpleLuminance = -0.119446
+        hsl.magentaHue = 0.064676
+        hsl.magentaSaturation = -0.245225
+        hsl.magentaLuminance = -0.003323
+
+        let master = SevenPointChannelCurve(
+            black: 0,
+            shadow: 0.0340664,
+            lowerMidtone: 0.091884,
+            midtone: 0.312438,
+            upperMidtone: 0.613086,
+            highlight: 0.885867,
+            white: 1
+        )
+        let rgb = ProfessionalRGBCurves(
+            red: SevenPointChannelCurve(
+                black: 0, shadow: 0.0482327, lowerMidtone: 0.185986,
+                midtone: 0.387044, upperMidtone: 0.658897,
+                highlight: 0.876494, white: 1
+            ),
+            green: SevenPointChannelCurve(
+                black: 0, shadow: 0.0470563, lowerMidtone: 0.138933,
+                midtone: 0.361801, upperMidtone: 0.612413,
+                highlight: 0.895097, white: 1
+            ),
+            blue: SevenPointChannelCurve(
+                black: 0, shadow: 0.0463718, lowerMidtone: 0.133347,
+                midtone: 0.460457, upperMidtone: 0.725716,
+                highlight: 0.899657, white: 1
+            ),
+            intensity: 0.543546
+        )
+        let grade = ProfessionalTonalColorGrade(
+            shadows: TonalColorVector(
+                red: 0.004843, green: 0.002363, blue: -0.000525, amount: 1
+            ),
+            midtones: TonalColorVector(
+                red: 0.048057, green: 0.021405, blue: -0.057065, amount: 1
+            ),
+            highlights: TonalColorVector(
+                red: 0.011989, green: -0.009144, blue: -0.003002, amount: 1
+            ),
+            neutralChromaProtection: 0.82,
+            highlightNeutralProtection: 0.90
+        )
+        return ManualPhotographyParameters(
+            identifier: "pt-learn-oracle-autumn-street-v1",
+            renderingBoundary: .inverseResearch,
+            exposureEV: -0.4078526,
+            hsl: hsl,
+            rgbCurves: rgb,
+            tonalColorGrade: grade,
+            regionalToneAdjustments: [
+                ManualRegionalToneAdjustment(
+                    region: .ground,
+                    exposureEV: -0.890257,
+                    contrast: 1.229293,
+                    saturation: 1.3
+                ),
+                ManualRegionalToneAdjustment(
+                    region: .vegetation,
+                    exposureEV: 0.5,
+                    contrast: 0.987537,
+                    saturation: 0.988411
+                ),
+                ManualRegionalToneAdjustment(
+                    region: .sky,
+                    exposureEV: 0.302217,
+                    contrast: 1.044689,
+                    saturation: 0.728079
+                ),
+                ManualRegionalToneAdjustment(
+                    region: .architecture,
+                    exposureEV: -0.043572,
+                    contrast: 0.964028,
+                    saturation: 1.008152
+                )
+            ],
+            masterCurve: master,
+            allowsMeasuredSafetyCorrection: false
         )
     }()
 }

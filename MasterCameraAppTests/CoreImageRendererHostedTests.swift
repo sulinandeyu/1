@@ -824,6 +824,45 @@ final class CoreImageRendererHostedTests: XCTestCase {
         XCTAssertLessThan(finalError.maximum, 0.30)
     }
 
+    /// The previous PT-LEARN-007 test exercised operators directly. This test
+    /// proves the device diagnostic renderer now consumes the same immutable
+    /// parameter contract, including the formerly missing master curve, in the
+    /// shared full-resolution JPEG path. Private autumn pixels are not used.
+    func testPTLearnOracleManualRendererExecutesGlobalContract() throws {
+        let fixture = try crossPlatformFixture()
+        var parameters = ManualPhotographyParameters.ptLearnOracleAutumnStreetV1
+        parameters.regionalToneAdjustments = []
+        XCTAssertEqual(parameters.identifier, "pt-learn-oracle-autumn-street-v1")
+        XCTAssertEqual(parameters.masterCurve?.anchors, Optional(fixture.parameters.masterCurve))
+        XCTAssertFalse(parameters.allowsMeasuredSafetyCorrection)
+        XCTAssertEqual(parameters.hsl.mathMode, .perceptualHSL)
+
+        let source = try fixturePNG(fixture)
+        let rendered = try CoreImageRenderer().renderManualEdit(
+            from: source,
+            parameters: parameters,
+            analysis: nil
+        )
+        guard let image = CIImage(data: rendered, options: [.applyOrientationProperty: true]) else {
+            throw TestError.decoding
+        }
+        let actual = try renderedRGB(image, width: fixture.width, height: fixture.height)
+        let expected = try decodedRGB(
+            fixture.windowsGlobalRGBBase64,
+            count: fixture.width * fixture.height * 3
+        )
+        let error = pixelError(actual, expected)
+        print(String(
+            format: "PT-LEARN-007 manual renderer global MAE=%.6f max=%.6f",
+            error.mae,
+            error.maximum
+        ))
+        // The expected bytes are uncompressed Windows output while this path
+        // intentionally verifies the app's real JPEG encoder as well.
+        XCTAssertLessThan(error.mae, 0.030)
+        XCTAssertLessThan(error.maximum, 0.16)
+    }
+
     private struct CrossPlatformFixture: Decodable {
         struct ColorContract: Decodable { let input: String; let working: String; let output: String }
         struct Regional: Decodable {
@@ -878,6 +917,22 @@ final class CoreImageRendererHostedTests: XCTestCase {
             size: CGSize(width: fixture.width, height: fixture.height),
             format: .RGBA8, colorSpace: CGColorSpace(name: CGColorSpace.sRGB)
         )
+    }
+
+    private func fixturePNG(_ fixture: CrossPlatformFixture) throws -> Data {
+        let image = try fixtureImage(fixture)
+        let context = CIContext(options: [
+            .workingColorSpace: CGColorSpace(name: CGColorSpace.extendedLinearSRGB)!,
+            .workingFormat: CIFormat.RGBAh,
+            .outputColorSpace: CGColorSpace(name: CGColorSpace.sRGB)!
+        ])
+        guard let data = context.pngRepresentation(
+            of: image,
+            format: .RGBA8,
+            colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!,
+            options: [:]
+        ) else { throw TestError.encoding }
+        return data
     }
 
     private func fixtureMask(_ encoded: String, width: Int, height: Int) throws -> CIImage {
