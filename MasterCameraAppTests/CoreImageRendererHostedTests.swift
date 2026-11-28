@@ -847,20 +847,31 @@ final class CoreImageRendererHostedTests: XCTestCase {
             throw TestError.decoding
         }
         let actual = try renderedRGB(image, width: fixture.width, height: fixture.height)
-        let expected = try decodedRGB(
+        let uncompressedExpected = try decodedRGB(
             fixture.windowsGlobalRGBBase64,
             count: fixture.width * fixture.height * 3
         )
-        let error = pixelError(actual, expected)
+        let uncompressedError = pixelError(actual, uncompressedExpected)
+        let jpegMatchedExpected = try jpegRoundTripRGB(
+            uncompressedExpected,
+            width: fixture.width,
+            height: fixture.height
+        )
+        let codecMatchedError = pixelError(actual, jpegMatchedExpected)
         print(String(
-            format: "PT-LEARN-007 manual renderer global MAE=%.6f max=%.6f",
-            error.mae,
-            error.maximum
+            format: "PT-LEARN-007 manual renderer rawExpected MAE=%.6f max=%.6f; JPEG-matched MAE=%.6f max=%.6f",
+            uncompressedError.mae,
+            uncompressedError.maximum,
+            codecMatchedError.mae,
+            codecMatchedError.maximum
         ))
-        // The expected bytes are uncompressed Windows output while this path
-        // intentionally verifies the app's real JPEG encoder as well.
-        XCTAssertLessThan(error.mae, 0.030)
-        XCTAssertLessThan(error.maximum, 0.16)
+        // Keep the raw Windows comparison as an absolute operator-drift guard,
+        // but do not use a single JPEG ringing pixel as the maximum operator
+        // error. The strict max assertion compares both sides after the same
+        // Apple sRGB JPEG codec round trip.
+        XCTAssertLessThan(uncompressedError.mae, 0.030)
+        XCTAssertLessThan(codecMatchedError.mae, 0.012)
+        XCTAssertLessThan(codecMatchedError.maximum, 0.08)
     }
 
     private struct CrossPlatformFixture: Decodable {
@@ -933,6 +944,39 @@ final class CoreImageRendererHostedTests: XCTestCase {
             options: [:]
         ) else { throw TestError.encoding }
         return data
+    }
+
+    private func jpegRoundTripRGB(
+        _ rgb: [UInt8],
+        width: Int,
+        height: Int
+    ) throws -> [UInt8] {
+        guard rgb.count == width * height * 3 else { throw TestError.decoding }
+        var rgba = [UInt8](); rgba.reserveCapacity(width * height * 4)
+        for index in stride(from: 0, to: rgb.count, by: 3) {
+            rgba.append(rgb[index])
+            rgba.append(rgb[index + 1])
+            rgba.append(rgb[index + 2])
+            rgba.append(255)
+        }
+        let image = CIImage(
+            bitmapData: Data(rgba),
+            bytesPerRow: width * 4,
+            size: CGSize(width: width, height: height),
+            format: .RGBA8,
+            colorSpace: CGColorSpace(name: CGColorSpace.sRGB)
+        )
+        let context = CIContext(options: [
+            .workingColorSpace: CGColorSpace(name: CGColorSpace.extendedLinearSRGB)!,
+            .workingFormat: CIFormat.RGBAh
+        ])
+        guard let encoded = context.jpegRepresentation(
+            of: image,
+            colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!,
+            options: [:]
+        ), let decoded = CIImage(data: encoded, options: [.applyOrientationProperty: true])
+        else { throw TestError.encoding }
+        return try renderedRGB(decoded, width: width, height: height)
     }
 
     private func fixtureMask(_ encoded: String, width: Int, height: Int) throws -> CIImage {
