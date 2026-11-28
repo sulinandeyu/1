@@ -38,6 +38,47 @@ def curve(rgb: np.ndarray, outputs: np.ndarray, intensity: float = 1.0) -> np.nd
                      for c in range(3)], axis=-1).astype(np.float32)
 
 
+def color_cube(transform, linear: np.ndarray, dimension: int = 32) -> np.ndarray:
+    """Mirror Core Image's 32^3 CIColorCube sampling in linear working RGB.
+
+    The Swift operators build a finite linear-RGB lattice, then Core Image
+    trilinearly interpolates it.  Evaluating the analytic transform directly
+    is not a platform consistency reference because it omits that deliberate
+    production approximation.
+    """
+    axis = np.linspace(0, 1, dimension, dtype=np.float32)
+    red, green, blue = np.meshgrid(axis, axis, axis, indexing="ij")
+    lattice_input = np.stack([red, green, blue], axis=-1)
+    lattice = transform(lattice_input).astype(np.float32)
+
+    bounded = np.clip(linear, 0, 1)
+    position = bounded * np.float32(dimension - 1)
+    lower = np.floor(position).astype(np.int32)
+    upper = np.minimum(lower + 1, dimension - 1)
+    fraction = position - lower
+
+    r0, g0, b0 = lower[..., 0], lower[..., 1], lower[..., 2]
+    r1, g1, b1 = upper[..., 0], upper[..., 1], upper[..., 2]
+    fr, fg, fb = fraction[..., 0:1], fraction[..., 1:2], fraction[..., 2:3]
+    c000 = lattice[r0, g0, b0]
+    c100 = lattice[r1, g0, b0]
+    c010 = lattice[r0, g1, b0]
+    c110 = lattice[r1, g1, b0]
+    c001 = lattice[r0, g0, b1]
+    c101 = lattice[r1, g0, b1]
+    c011 = lattice[r0, g1, b1]
+    c111 = lattice[r1, g1, b1]
+    c00 = c000 * (1 - fr) + c100 * fr
+    c10 = c010 * (1 - fr) + c110 * fr
+    c01 = c001 * (1 - fr) + c101 * fr
+    c11 = c011 * (1 - fr) + c111 * fr
+    c0 = c00 * (1 - fg) + c10 * fg
+    c1 = c01 * (1 - fg) + c11 * fg
+    transformed = c0 * (1 - fb) + c1 * fb
+    # ExtendedRangeColorCube restores samples outside the cube domain.
+    return transformed + linear - bounded
+
+
 def rgb_to_hsl(rgb: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     mx, mn = rgb.max(-1), rgb.min(-1)
     d = mx - mn
@@ -112,13 +153,27 @@ def color_controls(linear: np.ndarray, contrast: float, saturation: float) -> np
 
 def render(encoded: np.ndarray, masks: dict[str, np.ndarray], p: dict) -> tuple[np.ndarray, np.ndarray]:
     linear = srgb_to_linear(encoded) * (2.0 ** p["exposure_ev"])
-    out = linear_to_srgb(linear)
-    out = curve(out, np.array(p["master_curve"], np.float32))
-    out = curve(out, np.array(p["rgb_curves"], np.float32), p["rgb_intensity"])
-    out = apply_hsl(out, np.array(p["hsl"], np.float32))
-    out = apply_grade(out, np.array(p["tonal_grade"], np.float32))
-    global_out = out.copy()
-    linear = srgb_to_linear(out)
+    master = np.array(p["master_curve"], np.float32)
+    linear = color_cube(
+        lambda value: srgb_to_linear(curve(linear_to_srgb(value), master)),
+        linear,
+    )
+    rgb_curves = np.array(p["rgb_curves"], np.float32)
+    linear = color_cube(
+        lambda value: srgb_to_linear(curve(linear_to_srgb(value), rgb_curves, p["rgb_intensity"])),
+        linear,
+    )
+    hsl = np.array(p["hsl"], np.float32)
+    linear = color_cube(
+        lambda value: srgb_to_linear(apply_hsl(linear_to_srgb(value), hsl)),
+        linear,
+    )
+    tonal_grade = np.array(p["tonal_grade"], np.float32)
+    linear = color_cube(
+        lambda value: srgb_to_linear(apply_grade(linear_to_srgb(value), tonal_grade)),
+        linear,
+    )
+    global_out = linear_to_srgb(linear)
     for region in p["regional"]:
         mask = masks[region["region"]][..., None]
         adjusted = linear * (2.0 ** region["exposure_ev"])
@@ -182,6 +237,9 @@ def main() -> int:
     }
     width, height = 64, 32
     source, masks = programmatic_input(width, height)
+    # CIImage receives the fixture as encoded 8-bit sRGB; calculate the
+    # reference from those exact bytes rather than the pre-quantized floats.
+    source = np.rint(np.clip(source, 0, 1) * 255).astype(np.uint8).astype(np.float32) / 255
     global_out, final_out = render(source, masks, params)
     payload = {
         "schema_version": 1,
@@ -196,7 +254,7 @@ def main() -> int:
         "windows_final_rgb_base64": encode_u8(final_out),
         "masks_float32_base64": {k: base64.b64encode(v.tobytes()).decode("ascii") for k,v in masks.items()},
         "known_platform_boundaries": [
-            "CIColorCube uses a 32^3 lattice while the Windows reference evaluates analytic functions",
+            "the Windows reference explicitly mirrors CIColorCube's 32^3 lattice and trilinear sampling",
             "CIColorControls is an Apple operator; the Windows regional contrast/saturation expression is a documented approximation",
             "the current production manual recipe has no arbitrary seven-anchor master-curve field, so this fixture applies the existing RGB processor twice in the isolated Apple test"
         ]
